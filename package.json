@@ -1,0 +1,11 @@
+{
+  "name": "german-trainer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Web app for active German practice: dictionary lookups, writing correction and daily drills.",
+  "scripts": {
+    "start": "npx http-server -c-1 -p 8080 .",
+    "test": "node --test tests/*.test.js"
+  }
+}
