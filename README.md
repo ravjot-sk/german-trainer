@@ -1,45 +1,180 @@
-# German Trainer
+# German Trainer 🇩🇪
 
-A web app for active German practice, built from the approved product spec
-("German Trainer: Product Spec"). It installs to the iPhone home screen and also works on a computer.
+**Turn the words you look up and the mistakes you make into daily German practice.**
 
-## What v1 does
+German Trainer is for learners who understand German well but find it hard to *produce* it. It is a
+dictionary, a writing corrector and a daily trainer in one. Every word you look up and every mistake you make
+comes back as an exercise until you can produce it correctly yourself.
 
-- **Nachschlagen (Look up):** type a German or English word, optionally with the sentence you found it in.
-  Gemini returns meaning, article, plural or verb forms, a register note and an example. Every lookup is
-  saved to the word list automatically; edit or delete it from the list.
-- **Korrigieren (Correct):** paste any German text. Gemini returns the corrected text and one record per
-  mistake, labelled with a category from the fixed list in `js/categories.js`. Mistakes are logged; word-choice
-  mistakes add the right word to the word list.
-- **Heute (Today):** one mixed daily session. Words move from typed recall (with article and plural) to gap
-  fill (in the sentence where you found them) to writing your own sentence. Grammar comes from your mistakes:
-  fix your own past sentences, plus Gemini-generated drills (gap fill, transform, write under a constraint)
-  for your weakest categories. An SM-2 scheduler decides what is due; new items join the next day, with a
-  daily cap.
-- **Profil (Profile):** mistake counts per category for the last 14 days, trend, and drill accuracy.
-- **Einstellungen (Settings):** German/English UI, Gemini key and model, new words per day, JSON backup
-  export/import.
+👉 **Open the app: [ravjot-sk.github.io/german-trainer](https://ravjot-sk.github.io/german-trainer/)**
 
-Recall, gap fill and "fix your sentence" work offline; anything that needs Gemini is skipped while offline.
+<table>
+  <tr>
+    <td><img src="docs/screenshots/lookup.png" width="200" alt="Looking up a word"></td>
+    <td><img src="docs/screenshots/correct.png" width="200" alt="A corrected text with labelled mistakes"></td>
+    <td><img src="docs/screenshots/session-feedback.png" width="200" alt="Fixing a past sentence in the daily session"></td>
+    <td><img src="docs/screenshots/profile.png" width="200" alt="The mistake profile"></td>
+  </tr>
+  <tr>
+    <td align="center">Look up</td>
+    <td align="center">Correct</td>
+    <td align="center">Practise</td>
+    <td align="center">Track</td>
+  </tr>
+</table>
 
-## Data and the API key
+---
 
-Data is stored in the browser's localStorage on each device (collections `words`, `mistakes`, `reviewItems`,
-`reviews`, matching the spec's data model). The Gemini key is entered in Settings, stays on the device and is
-sent only to Google's API. Firebase sync between phone and computer is the next step; until then use
-Settings → Export / Import to move data.
+## Get started in 3 steps
 
-## Run locally
+### 1. Install it on your iPhone
 
-No build step. Serve the folder over HTTP:
+1. Open the [app link](https://ravjot-sk.github.io/german-trainer/) in **Safari**.
+2. Tap the **Share** button, then **Zum Home-Bildschirm** (Add to Home Screen).
+3. Open the app from your home screen. It now runs full-screen, like a normal app.
 
-    npm start        # http://localhost:8080
-    npm test         # unit tests for scheduler, answer checking and session building
+On a computer, just open the link in any browser.
 
-## Deploy
+### 2. Add a free Gemini API key
 
-Any static host works. For GitHub Pages: push this folder to a repo, then Settings → Pages → deploy from the
-main branch root. Open the URL in Safari on the iPhone, tap Share → "Add to Home Screen".
+The app uses Google's Gemini AI to look up words and correct your German. You need your own key, and the
+free tier is enough for personal use.
+
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with a Google account.
+2. Click **Create API key** and copy it.
+3. In the app, tap the ⚙️ gear (top right) and paste the key under **Gemini-API-Schlüssel**.
+4. Tap **Schlüssel testen**. A green message means you're ready.
+
+Your key is stored only on your device and is sent only to Google.
+
+### 3. Use it every day
+
+- **During the day:** look up words when you meet them, and paste in German you've written.
+- **Once a day:** open **Heute** and do your session. It takes about 10 minutes.
+
+---
+
+## What each screen does
+
+### 🔍 Nachschlagen (Look up)
+
+Type a German word, or an English word to find the German one. Gemini gives you the meaning, article,
+plural or verb forms, a note on register, and an example sentence.
+
+- **Every lookup is saved to your word list automatically.** There's no extra step.
+- Tap **+ Satz hinzufügen** to add the sentence where you found the word. The app picks the right meaning for
+  that sentence, and later turns the sentence into a gap-fill exercise.
+
+### ✏️ Korrigieren (Correct)
+
+Paste or write any German: an email, a chat message, a practice paragraph. You get back:
+
+- the corrected text, with every change highlighted,
+- each mistake with a short explanation and a grammar category, such as *Adjektivendungen* or
+  *Perfekt mit haben oder sein*.
+
+Every mistake is saved to your profile and scheduled for practice. If you picked the wrong word, the right
+word goes into your word list too. Tap **Kopieren** to copy the corrected text.
+
+### ✅ Heute (Today)
+
+Your daily session mixes vocabulary and grammar. The app decides what's due using spaced repetition: things
+you get right come back after longer and longer gaps, and things you get wrong come back tomorrow.
+
+**Vocabulary.** Every exercise asks you to *produce* German, not just recognise it. Each word moves through
+three stages:
+
+| Stage | What you do |
+|---|---|
+| Recall | See the meaning, type the German word, including the article and plural for nouns |
+| Gap fill | Fill the word into the sentence where you found it |
+| Write | Write your own sentence with the word, and Gemini checks it |
+
+**Grammar.** This comes from your own mistakes:
+
+| Exercise | What you do |
+|---|---|
+| Fix your sentence | One of your old sentences comes back, and you correct it |
+| Targeted drills | Gemini makes short exercises for your weakest categories: fill in an ending, rewrite a sentence, or write one under a constraint |
+
+Tips:
+- If you were right but typed it slightly differently, tap **Ich lag richtig** to count it as correct.
+- New words and mistakes join your session **the next day**. You get at most 8 new words a day by default,
+  and you can change this in Settings.
+- Words and old sentences you get wrong come back once more at the end of the session.
+
+### 📖 Wörter (Words)
+
+All your saved words. Search them, tap one to edit any field, or delete words you don't want to practise.
+Tap **＋** to add a word by hand.
+
+### 📊 Profil (Profile)
+
+See which grammar areas trip you up most. For each category you see:
+
+- how often it came up in the **last 14 days**,
+- whether it is **improving** (wird besser) or coming up **more often** (häufiger),
+- your score in drills for that category.
+
+---
+
+## Settings
+
+Tap the ⚙️ gear (top right).
+
+| Setting | What it does |
+|---|---|
+| Sprache der App | Switch the app between German and English |
+| Gemini-API-Schlüssel | Your API key (see step 2 above) |
+| Gemini-Modell | Which Gemini model to use. The default works, and **Modelle laden** shows the others |
+| Neue Wörter pro Tag | How many new words join your session each day |
+| Sicherung | Export your data to a file, or import it again |
+
+---
+
+## Good to know
+
+**Where is my data?** Everything is stored on your device, in the app itself. Nothing goes to a server
+except the text you send to Gemini for lookups and corrections.
+
+**Back up now and then.** Use **Einstellungen → Sicherung → Exportieren** to save a backup file. Use the
+same file to **import** your data on another device, for example to move from your phone to your
+computer. Automatic sync between devices is planned.
+
+**Offline?** Recall, gap fill and "fix your sentence" all work without internet. Lookups, corrections and
+exercises that need Gemini wait until you're back online.
+
+**Something not working?**
+- *"Bitte zuerst den Gemini-Schlüssel eintragen"*: add your key in Settings.
+- *"Gemini-Fehler: …"*: tap **Schlüssel testen** in Settings. If the model isn't found, tap
+  **Modelle laden** and pick a "flash" model.
+- *The app looks out of date*: close it and open it again. Updates load in the background.
+
+---
+
+## For developers
+
+Plain HTML, CSS and JavaScript modules. There is no build step and no dependencies.
+
+```sh
+npm start   # serve locally at http://localhost:8080
+npm test    # unit tests: scheduler, answer checking, session building
+```
+
+| File | What's in it |
+|---|---|
+| `js/app.js` | Screens and navigation |
+| `js/gemini.js` | All Gemini prompts and their JSON response schemas |
+| `js/session.js` | Builds the daily mixed session |
+| `js/srs.js` | Spaced-repetition scheduler (SM-2 variant) |
+| `js/check.js` | Local answer checking and the correction diff |
+| `js/categories.js` | The fixed list of grammar categories |
+| `js/store.js` | Local storage: `words`, `mistakes`, `reviewItems`, `reviews` |
+| `js/i18n.js` | German and English UI text |
+| `sw.js` | Service worker for offline use |
+
+The app is hosted on GitHub Pages from the `main` branch. Anything merged to `main` goes live within a
+minute or two.
 
 ## License
 
