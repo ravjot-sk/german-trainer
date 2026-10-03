@@ -40,3 +40,7 @@ No build step. Serve the folder over HTTP:
 
 Any static host works. For GitHub Pages: push this folder to a repo, then Settings → Pages → deploy from the
 main branch root. Open the URL in Safari on the iPhone, tap Share → "Add to Home Screen".
+
+## License
+
+MIT, see [LICENSE](LICENSE).

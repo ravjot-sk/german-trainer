@@ -2,6 +2,7 @@
   "name": "german-trainer",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Web app for active German practice: dictionary lookups, writing correction and daily drills.",
   "scripts": {
