@@ -125,6 +125,7 @@ Tap the ⚙️ gear (top right).
 | Setting | What it does |
 |---|---|
 | Sprache der App | Switch the app between German and English |
+| Konto & Synchronisierung | Sign in to keep your data the same on all your devices (invite only, see below) |
 | Gemini-API-Schlüssel | Your API key (see step 2 above) |
 | Gemini-Modell | Which Gemini model to use. The default works, and **Modelle laden** shows the others |
 | Neue Wörter pro Tag | How many new words join your session each day |
@@ -134,12 +135,12 @@ Tap the ⚙️ gear (top right).
 
 ## Good to know
 
-**Where is my data?** Everything is stored on your device, in the app itself. Nothing goes to a server
-except the text you send to Gemini for lookups and corrections.
+**Where is my data?** On your device, in the app itself. If you sign in, it is also kept in your private
+account so your other devices get it too. The text you send for lookups and corrections goes to Gemini.
+Your Gemini key never leaves the device.
 
-**Back up now and then.** Use **Einstellungen → Sicherung → Exportieren** to save a backup file. Use the
-same file to **import** your data on another device, for example to move from your phone to your
-computer. Automatic sync between devices is planned.
+**Back up now and then.** Use **Einstellungen → Sicherung → Exportieren** to save a backup file. You can
+**import** that file again later. If you're signed in, your account is already a backup.
 
 **Offline?** Recall, gap fill and "fix your sentence" all work without internet. Lookups, corrections and
 exercises that need Gemini wait until you're back online.
@@ -152,13 +153,56 @@ exercises that need Gemini wait until you're back online.
 
 ---
 
+## Accounts and sync
+
+Accounts are optional and invite only. Without one, the app works exactly as before, with data on the
+device only.
+
+1. In **Einstellungen → Konto & Synchronisierung**, enter your email and a password and tap
+   **Konto erstellen**.
+2. Open the confirmation link in the email you get, then tap **Ich habe bestätigt** in the app.
+3. If your email hasn't been invited yet, ask the app's owner to invite it, then tap **Erneut prüfen**.
+4. On your other devices, tap **Anmelden** with the same email and password.
+
+The first time you sign in, everything already on that device is added to your account. Changes you make
+offline are sent once you're back online. **Abmelden** removes your data from that device; it stays in your
+account and comes back when you sign in again.
+
+### Setting up Firebase (app owner, one time)
+
+Sync uses a free Firebase project. Until it's set up, the account card says accounts aren't set up yet.
+
+1. Go to [console.firebase.google.com](https://console.firebase.google.com), sign in with your Google
+   account and create a project (Google Analytics is not needed).
+2. **Build → Authentication → Get started → Sign-in method → Email/Password**: turn on the first switch
+   (Email/Password, not the email link) and save.
+3. **Build → Firestore Database → Create database**: pick a location near you (for example
+   `europe-west3`, Frankfurt) and start in **production mode**.
+4. In Firestore, open the **Rules** tab, replace everything with the contents of
+   [`firestore.rules`](firestore.rules), and tap **Publish**.
+5. **Project settings (⚙️) → General → Your apps → Web (`</>`)**: register an app called German Trainer
+   (no Firebase Hosting). Copy the `firebaseConfig` values it shows into
+   [`js/firebase-config.js`](js/firebase-config.js) in place of `null`, and push that to `main`. These
+   values aren't secret; the rules decide who can read what.
+
+**Inviting someone:** in **Firestore Database → Data**, start a collection called `allowlist` (first
+time only), then add a document whose **Document ID** is their email address in lowercase, for example
+`ravi@example.com`. Give it any field, for example `name` = their name. Invite yourself the same way.
+To remove someone's access, delete their document.
+
+Everyone's data is private: each person can only read and write their own, and Firebase's free plan is
+plenty for a small group.
+
+---
+
 ## For developers
 
-Plain HTML, CSS and JavaScript modules. There is no build step and no dependencies.
+Plain HTML, CSS and JavaScript modules. There is no build step and no dependencies. The Firebase SDK is
+loaded from Google's CDN only when sync is configured.
 
 ```sh
 npm start   # serve locally at http://localhost:8080
-npm test    # unit tests: scheduler, answer checking, session building
+npm test    # unit tests: scheduler, answer checking, session building, sync merging
 ```
 
 | File | What's in it |
@@ -170,6 +214,10 @@ npm test    # unit tests: scheduler, answer checking, session building
 | `js/check.js` | Local answer checking and the correction diff |
 | `js/categories.js` | The fixed list of grammar categories |
 | `js/store.js` | Local storage: `words`, `mistakes`, `reviewItems`, `reviews` |
+| `js/sync.js` | Accounts and sync: mirrors local data to Firestore `users/{uid}/…` and merges other devices' changes |
+| `js/syncmerge.js` | Merge rules: per-record "latest edit wins", deletes as tombstones |
+| `js/firebase-config.js` | Firebase project config (`null` turns accounts off) |
+| `firestore.rules` | Security rules: invite-only allowlist, each user sees only their own data |
 | `js/i18n.js` | German and English UI text |
 | `sw.js` | Service worker for offline use |
 

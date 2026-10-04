@@ -1,6 +1,7 @@
 // Local-first data store. Everything lives in localStorage on this device; the four
-// collections mirror the spec's data model (words, mistakes, reviewItems, reviews) so a
-// later sync layer (Firebase) can push them as-is.
+// collections mirror the spec's data model (words, mistakes, reviewItems, reviews). When
+// the user signs in, sync.js mirrors each record to Firestore, using updatedAt to decide
+// which copy is newer.
 import { dayStart, addDays } from './srs.js';
 
 const DATA_KEY = 'gt.data.v1';
@@ -31,9 +32,15 @@ function loadSettings() {
   } catch { return { ...DEFAULT_SETTINGS }; }
 }
 
-function persist() {
+// remote: the change came from the server, so the sync layer has nothing to upload.
+function persist({ remote = false } = {}) {
   localStorage.setItem(DATA_KEY, JSON.stringify(data));
-  listeners.forEach((fn) => fn());
+  listeners.forEach((fn) => fn({ remote }));
+}
+
+// A strictly increasing edit time, so an edit always counts as newer than the last sync.
+function touch(rec, now = Date.now()) {
+  rec.updatedAt = Math.max(now, (rec.updatedAt || 0) + 1);
 }
 
 export function onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
@@ -73,13 +80,14 @@ export function addWord(fields, now = Date.now()) {
     for (const [k, v] of Object.entries(fields)) {
       if (v && !existing[k]) existing[k] = v;
     }
+    touch(existing, now);
     persist();
     return { word: existing, created: false };
   }
   const word = {
     id: uid(), german: '', article: '', pos: 'other', meaning: '', plural: '', verbForms: '',
     register: '', example: '', exampleTranslation: '', contextSentence: '', gapSentence: '',
-    gapAnswer: '', source: 'lookup', ...fields, addedAt: now,
+    gapAnswer: '', source: 'lookup', ...fields, addedAt: now, updatedAt: now,
   };
   data.words.unshift(word);
   ensureReviewItem('word', word.id, now);
@@ -91,6 +99,7 @@ export function updateWord(id, patch) {
   const w = getWord(id);
   if (!w) return;
   Object.assign(w, patch);
+  touch(w);
   persist();
 }
 
@@ -112,7 +121,7 @@ export function addMistakes(list, source, now = Date.now()) {
       id: uid(), original: m.original || '', corrected: m.corrected || '',
       explanation: m.explanation || '', category: m.category || 'other',
       fullSentence: m.sentence || '', correctedSentence: m.correctedSentence || '',
-      source, createdAt: now,
+      source, createdAt: now, updatedAt: now,
     };
     data.mistakes.unshift(mistake);
     // Each mistake becomes a "fix your past sentence" drill, and its category gets a
@@ -140,17 +149,21 @@ export function reviewItemFor(itemType, itemId) {
 function ensureReviewItem(itemType, itemId, now) {
   if (reviewItemFor(itemType, itemId)) return;
   data.reviewItems.push({
-    id: uid(), itemType, itemId, exerciseType: null,
+    // One id per target, so two devices adding the same grammar category agree on it.
+    id: `${itemType}:${itemId}`, itemType, itemId, exerciseType: null,
     // New items join the queue the next day.
     due: addDays(dayStart(now), 1), interval: 0, ease: 2.5, reps: 0, lapses: 0,
-    introducedAt: null, createdAt: now,
+    introducedAt: null, createdAt: now, updatedAt: now,
   });
 }
 
 export function saveReview(item, review) {
   const idx = data.reviewItems.findIndex((r) => r.id === item.id);
-  if (idx >= 0) data.reviewItems[idx] = item;
-  data.reviews.push({ id: uid(), ...review });
+  if (idx >= 0) {
+    touch(item);
+    data.reviewItems[idx] = item;
+  }
+  data.reviews.push({ id: uid(), ...review, updatedAt: Date.now() });
   persist();
 }
 
@@ -164,6 +177,9 @@ export function importData(json) {
   if (!Array.isArray(parsed.words) || !Array.isArray(parsed.mistakes)) throw new Error('Not a German Trainer backup');
   data = { ...emptyData(), words: parsed.words, mistakes: parsed.mistakes,
     reviewItems: parsed.reviewItems || [], reviews: parsed.reviews || [] };
+  // An imported backup replaces what is here, so it must also win over the synced copies.
+  const now = Date.now();
+  for (const list of Object.values(data)) list.forEach((r) => touch(r, now));
   persist();
   return { words: data.words.length, mistakes: data.mistakes.length };
 }
@@ -172,6 +188,12 @@ export function resetData() {
   data = emptyData();
   persist();
 }
+
+// ---- sync ----
+// The live data object, for sync.js to diff and merge into. Call commitRemote() after
+// changing it so the UI hears about it without the change being uploaded again.
+export function rawData() { return data; }
+export function commitRemote() { persist({ remote: true }); }
 
 // Test hook: replace in-memory data without touching storage semantics.
 export function _setData(d) { data = { ...emptyData(), ...d }; persist(); }
