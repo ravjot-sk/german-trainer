@@ -1,5 +1,5 @@
 // Local answer checking and a small word diff for showing corrections.
-import { lemmaOf, recLang } from './languages.js';
+import { lemmaOf, recLang, isSentence } from './languages.js';
 
 // Scripts written without spaces between words (Japanese, Chinese, Thai). Answers in them are
 // compared without spaces, and corrections are diffed character by character.
@@ -87,6 +87,7 @@ export function gapFor(word) {
   if (word.gapSentence && word.gapSentence.includes('___') && word.gapAnswer) {
     return { sentence: word.gapSentence, answer: word.gapAnswer };
   }
+  if (isSentence(word)) return null; // no single word to guess a gap from
   const source = word.contextSentence || word.example;
   const lemma = lemmaOf(word);
   if (!source || !lemma) return null;
@@ -105,6 +106,34 @@ export function gapFor(word) {
     }
   }
   return null;
+}
+
+// Pieces of a saved sentence for the word-order exercise: Gemini's chunks when they still add
+// up to the sentence (it may have been edited since), else its words. Null when too short.
+export function chunksFor(item) {
+  const sentence = lemmaOf(item);
+  const squash = (s) => normalize(s).replace(/\s+/g, '');
+  let parts = (item.chunks || []).map((c) => String(c).trim()).filter(Boolean);
+  if (!parts.length || squash(parts.join('')) !== squash(sentence)) {
+    parts = isUnspaced(sentence) ? [] : sentence.split(/\s+/).filter(Boolean);
+  }
+  return parts.length >= 3 ? parts : null;
+}
+
+// Joins chosen pieces back into a sentence.
+export const joinChunks = (parts) => (isUnspaced(parts.join('')) ? parts.join('') : parts.join(' '));
+
+// A shuffle that never returns the pieces in their original order (when that is possible).
+export function shuffled(parts, rnd = Math.random) {
+  const out = parts.slice();
+  for (let tries = 0; tries < 10; tries++) {
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    if (out.some((p, i) => p !== parts[i])) return out;
+  }
+  return out;
 }
 
 // Word-level diff (LCS) returning [{type: 'same'|'del'|'add', text}]. Text without spaces

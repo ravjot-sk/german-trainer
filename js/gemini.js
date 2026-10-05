@@ -146,6 +146,32 @@ function mistakeSchema(L) {
   }, ['original', 'corrected', 'explanation', 'category', 'sentence', 'correctedSentence']);
 }
 
+// The three tones a sentence can be translated into. Shared with the app (labels) and tests.
+export const TONES = ['everyday', 'formal', 'informal'];
+
+function toneGuide(L) {
+  const de = isGerman(L);
+  const ja = L.code === 'ja';
+  return `Tones:
+- everyday: natural spoken ${L.english} as people actually talk day to day (shops, colleagues, neighbours): relaxed but not slang${de ? ', common contractions such as "hab" or "gibt\'s" are fine' : ''}.
+- formal: polite and professional (letters, officials, people you don't know well)${de ? ', with Sie' : ja ? ', in keigo (teineigo, plus sonkeigo or kenjougo where natural)' : ''}.
+- informal: casual, with friends and family${de ? ', with du' : ja ? ', plain form' : ''}, colloquial expressions welcome.`;
+}
+
+// A more natural phrasing, offered next to corrections. Not a mistake: only a suggestion.
+function naturalProps(L) {
+  return {
+    natural: { type: 'STRING', description: `A more natural, idiomatic way a native ${L.english} speaker would say the whole text, keeping its meaning and tone. Only when the (corrected) text is clearly stiff, unidiomatic or a word-for-word translation; otherwise an empty string. Never just repeat the corrected text.` },
+    naturalReason: { type: 'STRING', description: `If natural is set: one short line in ${explainLang(L)} on why it sounds more natural. Otherwise empty.` },
+  };
+}
+
+function cleanNatural(r, corrected) {
+  const n = (r.natural || '').trim();
+  if (!n || n === (corrected || '').trim()) { r.natural = ''; r.naturalReason = ''; }
+  return r;
+}
+
 const correctionProps = (L) => ({
   correctedText: { type: 'STRING', description: 'The whole text corrected, keeping the learner\'s meaning and style.' },
   mistakes: { type: 'ARRAY', items: mistakeSchema(L) },
@@ -192,8 +218,76 @@ export async function correctText(text) {
   const prompt = `You correct ${L.english} written by a learner at ${levelText(L)}. Correct this text:
 """${text}"""
 
-${correctionRules(L)}`;
-  return cleanMistakes(await generate(prompt, S(correctionProps(L))));
+${correctionRules(L)}
+Separately, if the text would sound clearly more natural phrased differently, put that version in natural. That is a suggestion, not a mistake.`;
+  const r = cleanMistakes(await generate(prompt, S({ ...correctionProps(L), ...naturalProps(L) })));
+  return cleanNatural(r, r.correctedText);
+}
+
+// Translates a sentence (English or any language) into the language being learnt, in a tone.
+// keep: the text is already in that language (a suggestion being saved), so only describe it;
+// tone is then detected.
+export async function translateSentence(text, tone = 'everyday', { keep = false } = {}) {
+  const L = learner();
+  const name = L.english;
+  const unspaced = L.code === 'ja' || /^(zh|th|lo|km|my)$/.test(L.code);
+  const task = keep
+    ? `This ${name} text is correct and natural. Keep it exactly as given in sentence, and work out which tone it has.
+Text: """${text}"""`
+    : `Translate this text into natural ${name} in the ${tone} tone. If it is already ${name}, rewrite it in that tone.
+Text: """${text}"""
+Match what a native speaker would really say in that tone, not a word-for-word translation.`;
+  const props = {
+    sentence: { type: 'STRING', description: `The ${name} sentence (or short text) in normal ${name} script.` },
+    ...(L.reading ? { reading: { type: 'STRING', description: `The sentence read aloud, in ${L.reading}.` } } : {}),
+    translation: { type: 'STRING', description: 'Natural English meaning of the sentence.' },
+    tone: { type: 'STRING', enum: TONES },
+    toneNote: { type: 'STRING', description: `One short line in ${explainLang(L)} on what makes it sound ${keep ? 'like this tone' : tone} (forms of address, verb forms, word choice, contractions).` },
+    chunks: { type: 'ARRAY', items: STR, description: `The sentence split, in order, into 3 to 9 meaningful pieces for a word-order exercise (short phrases or single words, punctuation attached to the piece before it). Joined ${unspaced ? 'without spaces' : 'with single spaces'} they must give the sentence exactly.` },
+    gapSentence: { type: 'STRING', description: 'The sentence with its most useful phrase or expression (the part a learner would most likely not produce on their own) replaced by "___".' },
+    gapAnswer: { type: 'STRING', description: 'The exact text that was replaced by ___.' },
+    keyWords: {
+      type: 'ARRAY', description: `Up to 4 words or expressions from the sentence worth learning for a learner at ${levelText(L)}, in dictionary form. Skip very basic words.`,
+      items: S({ lemma: STR, meaning: { type: 'STRING', description: 'Short English meaning.' } }),
+    },
+  };
+  const prompt = `You help a ${name} learner at ${levelText(L)} whose working language is English say whole sentences.
+${task}
+
+${toneGuide(L)}`;
+  const r = await generate(prompt, S(props), { temperature: 0.4 });
+  if (keep) r.sentence = text.trim();
+  if (!TONES.includes(r.tone)) r.tone = keep ? 'everyday' : tone;
+  return r;
+}
+
+// "Say this sentence" exercise: the learner translates a saved sentence's English meaning.
+// A different tone than the saved one is not a mistake, only a hint.
+export async function gradeTranslation(item, answer) {
+  const L = learner();
+  const prompt = `A ${L.english} learner at ${levelText(L)} had to say this in ${L.english}, in the ${item.tone || 'everyday'} tone: "${item.meaning}"
+A model answer: """${lemmaOf(item)}"""
+Learner's answer: """${answer}"""
+correct: true if the answer says the same thing in grammatically correct ${L.english}. Other correct phrasings than the model count as correct. The tone does NOT affect correct and is never a mistake.
+toneMatches: false only if the answer clearly uses a different tone. Then toneHint says, in ${explainLang(L)}, how it would usually be said in the ${item.tone || 'everyday'} tone (give the phrasing).
+
+${toneGuide(L)}
+
+${correctionRules(L)}
+- Never report the tone or register of the answer as a mistake.
+Separately, if a correct answer would sound clearly more natural phrased differently, put that in natural.`;
+  const r = cleanMistakes(await generate(prompt, S({
+    correct: { type: 'BOOLEAN' },
+    toneMatches: { type: 'BOOLEAN' },
+    toneHint: { type: 'STRING', description: 'Empty when toneMatches is true.' },
+    feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(L)}.` },
+    ...correctionProps(L),
+    ...naturalProps(L),
+  })));
+  // Belt and braces: a tone mismatch never lands in the mistake profile.
+  r.mistakes = (r.mistakes || []).filter((m) => m.category !== 'register');
+  if (r.toneMatches) r.toneHint = '';
+  return cleanNatural(r, r.correctedText);
 }
 
 // "Write a sentence" exercise: correct it and judge whether the target word is used well.
@@ -203,12 +297,15 @@ export async function gradeWordSentence(word, sentence) {
 Their sentence: """${sentence}"""
 Judge whether the word is used correctly and naturally, and correct the sentence.
 
-${correctionRules(L)}`;
-  return cleanMistakes(await generate(prompt, S({
+${correctionRules(L)}
+Separately, if the sentence would sound clearly more natural phrased differently (still using the word), put that in natural.`;
+  const r = cleanMistakes(await generate(prompt, S({
     usesWordCorrectly: { type: 'BOOLEAN' },
     feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(L)}.` },
     ...correctionProps(L),
+    ...naturalProps(L),
   })));
+  return cleanNatural(r, r.correctedText);
 }
 
 // Grammar drills for a weak category. kind: gapfill | transform | constraint.

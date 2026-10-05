@@ -218,3 +218,29 @@ ins { color: var(--ok); text-decoration: none; font-weight: 600; background: var
   opacity: 0; pointer-events: none; transition: all 0.25s; z-index: 30; max-width: calc(100% - 32px);
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Lookup mode, tone and word list filter reuse .seg */
+.card .seg + .big-input, .seg + .field-label { margin-top: 4px; }
+#wfilter { background: var(--line); margin: 0 0 8px; }
+.field-label { font-size: 13px; font-weight: 600; color: var(--muted); margin-top: 4px; }
+
+/* Sentences */
+.sentence-big { font-size: 21px; font-weight: 600; line-height: 1.35; }
+.keywords { display: flex; flex-wrap: wrap; gap: 6px; }
+.kw { border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 999px; cursor: pointer; text-align: left; }
+.kw.have { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
+.rows .grow { min-width: 0; flex: 1; }
+
+/* Word-order exercise */
+.built { min-height: 52px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; border: 2px dashed var(--line); border-radius: 10px; }
+.pool { display: flex; flex-wrap: wrap; gap: 6px; }
+.chunk { border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; font-size: 17px; padding: 7px 11px; border-radius: 9px; cursor: pointer; }
+.chunk.placed { background: var(--accent-soft); border-color: transparent; }
+.pool .chunk:disabled { display: none; }
+.built .chunk:disabled { cursor: default; }
+
+/* Suggestions: never a mistake, so styled as a tip */
+.tip { background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.natural { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.natural-title { font-weight: 600; font-size: 14px; }
+.natural .btn { align-self: flex-start; }

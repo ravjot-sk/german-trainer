@@ -2,16 +2,18 @@
 import { isDue, isNew, dayStart } from './srs.js';
 import { gapFor } from './check.js';
 import { DRILLABLE } from './categories.js';
-import { parseCatKey } from './languages.js';
+import { parseCatKey, isSentence } from './languages.js';
 
 const MAX_WORD_REVIEWS = 15;
+const MAX_SENTENCE_REVIEWS = 6;
 const MAX_MISTAKES = 4;
 const MAX_CATEGORIES = 3;
 const DRILL_KINDS = ['gapfill', 'transform', 'constraint'];
 
-function introducedToday(items, type, now) {
+// only: optional extra filter on the review items (to count words and sentences apart).
+function introducedToday(items, type, now, only = () => true) {
   const today = dayStart(now);
-  return items.filter((r) => r.itemType === type && r.introducedAt && r.introducedAt >= today).length;
+  return items.filter((r) => r.itemType === type && r.introducedAt && r.introducedAt >= today && only(r)).length;
 }
 
 // Picks the exercise for a word from how far along it is.
@@ -24,6 +26,22 @@ export function wordExercise(item, word, gemini) {
   if (cycle === 'write' && !gemini) return hasGap ? 'gap' : 'recall';
   if (cycle === 'gap' && !hasGap) return gemini ? 'write' : 'recall';
   return cycle;
+}
+
+// Sentences: say it (from the English, graded by Gemini), put it back in order, fill its key
+// phrase. A new sentence starts with saying it, since that is the goal. Without Gemini an
+// answer in other words can't be judged, so saying it is left for when nothing else works.
+export function sentenceExercise(item, sentence, gemini, { chunks = true } = {}) {
+  const hasGap = !!gapFor(sentence);
+  const order = ['say', 'order', 'gap'];
+  const can = { say: gemini || (!chunks && !hasGap), order: chunks, gap: hasGap };
+  const reps = item.reps || 0;
+  const start = reps === 0 ? 0 : (reps + (item.lapses || 0)) % 3;
+  for (let i = 0; i < 3; i++) {
+    const k = order[(start + i) % 3];
+    if (can[k]) return k;
+  }
+  return 'say';
 }
 
 // Category weakness: recent mistakes in new writing, weighted toward the last two weeks.
@@ -39,20 +57,35 @@ export function weakness(category, mistakes, now) {
 
 // Callers pass one language's words, mistakes and items; drillable lists that language's
 // category keys (German ones by default).
-export function buildSession({ items, words, mistakes, reviews, settings, gemini, drillable = DRILLABLE, now = Date.now() }) {
+// hasChunks(sentence) says whether the word-order exercise works for it (check.chunksFor).
+export function buildSession({ items, words, mistakes, reviews, settings, gemini, drillable = DRILLABLE, now = Date.now(),
+  hasChunks = () => true }) {
   const wordById = new Map(words.map((w) => [w.id, w]));
+  const sentenceIds = new Set(words.filter(isSentence).map((w) => w.id));
+  const isSent = (r) => sentenceIds.has(r.itemId);
   const mistakeById = new Map(mistakes.map((m) => [m.id, m]));
   const due = items.filter((r) => isDue(r, now)).sort((a, b) => a.due - b.due);
 
   // Vocabulary: reviews first, then new words up to the daily cap.
-  const wordItems = due.filter((r) => r.itemType === 'word' && wordById.has(r.itemId));
-  const newCap = Math.max(0, (settings.newPerDay ?? 8) - introducedToday(items, 'word', now));
+  const wordItems = due.filter((r) => r.itemType === 'word' && wordById.has(r.itemId) && !isSent(r));
+  const newCap = Math.max(0, (settings.newPerDay ?? 8) - introducedToday(items, 'word', now, (r) => !isSent(r)));
   const wordTasks = [
     ...wordItems.filter((r) => !isNew(r)).slice(0, MAX_WORD_REVIEWS),
     ...wordItems.filter(isNew).slice(0, newCap),
   ].map((item) => {
     const word = wordById.get(item.itemId);
     return { item, word, kind: wordExercise(item, word, gemini) };
+  });
+
+  // Saved sentences, with their own cap for new ones so they don't crowd out words.
+  const sentItems = due.filter((r) => r.itemType === 'word' && isSent(r));
+  const newSentCap = Math.max(0, (settings.newSentencesPerDay ?? 3) - introducedToday(items, 'word', now, isSent));
+  const sentenceTasks = [
+    ...sentItems.filter((r) => !isNew(r)).slice(0, MAX_SENTENCE_REVIEWS),
+    ...sentItems.filter(isNew).slice(0, newSentCap),
+  ].map((item) => {
+    const word = wordById.get(item.itemId);
+    return { item, word, kind: sentenceExercise(item, word, gemini, { chunks: hasChunks(word) }) };
   });
 
   // Past sentences to fix.
@@ -76,7 +109,7 @@ export function buildSession({ items, words, mistakes, reviews, settings, gemini
       });
   }
 
-  return interleave(wordTasks, [...fixTasks, ...drillTasks]);
+  return interleave(interleave(wordTasks, sentenceTasks), [...fixTasks, ...drillTasks]);
 }
 
 // Spreads grammar tasks evenly through the vocabulary tasks.
@@ -98,8 +131,9 @@ export function summarizeDue(args) {
   const tasks = buildSession(args);
   return {
     total: tasks.length,
-    words: tasks.filter((x) => ['recall', 'gap', 'write'].includes(x.kind)).length,
+    words: tasks.filter((x) => x.word && !isSentence(x.word)).length,
+    sentences: tasks.filter((x) => isSentence(x.word)).length,
     grammar: tasks.filter((x) => x.kind === 'fix' || x.kind === 'drill').length,
-    newWords: tasks.filter((x) => x.word && isNew(x.item)).length,
+    newWords: tasks.filter((x) => x.word && !isSentence(x.word) && isNew(x.item)).length,
   };
 }

@@ -23,6 +23,10 @@ export const isBuiltin = (code) => code in BUILTIN;
 // Records made before languages existed are German.
 export const recLang = (r) => (r && r.lang) || 'de';
 
+// Whole sentences live in the word list too, marked kind: 'sentence'. lemma holds the sentence
+// in the language being learnt, meaning its English, tone how it was said.
+export const isSentence = (w) => !!w && w.kind === 'sentence';
+
 // Words were stored under `german` before other languages existed.
 export const lemmaOf = (w) => (w && (w.lemma ?? w.german)) || '';
 
