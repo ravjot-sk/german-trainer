@@ -1,6 +1,6 @@
 // Offline support: cache the app shell so the daily session opens without a connection.
 // Gemini and Firebase requests go to other origins and are never cached.
-const VERSION = 'gt-v3';
+const VERSION = 'gt-v4';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/i18n.js', './js/gemini.js', './js/srs.js',
@@ -21,11 +21,14 @@ self.addEventListener('activate', (e) => {
 });
 
 // Network first for our own files (so updates land), falling back to the cache offline.
+// no-cache makes every request check with the server instead of taking the browser's HTTP
+// cache (GitHub Pages allows 10 minutes), which right after a deploy could hand out an old
+// module next to new ones.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
