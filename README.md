@@ -148,7 +148,7 @@ After "write a sentence" and "say it", you may also see a more natural phrasing 
 
 Tips:
 - If you were right but typed it slightly differently, tap **Ich lag richtig** to count it as correct.
-- New words and mistakes join your session **the next day**. You get at most 8 new words a day by default,
+- New words and mistakes join your session **the same day** you add them. You get at most 8 new words a day by default,
   and you can change this in Settings. New sentences have their own limit of 3 a day.
 - Words and old sentences you get wrong come back once more at the end of the session.
 

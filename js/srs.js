@@ -16,8 +16,10 @@ export function addDays(ts, n) {
   return d.getTime();
 }
 
+// Items never practised are due from the day they are added (older data stored them as due
+// the next day, so their due date is not trusted).
 export function isDue(item, now = Date.now()) {
-  return item.due < addDays(dayStart(now), 1);
+  return !item.introducedAt || item.due < addDays(dayStart(now), 1);
 }
 
 export function isNew(item) {

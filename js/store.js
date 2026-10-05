@@ -209,8 +209,8 @@ function ensureReviewItem(itemType, itemId, now) {
   data.reviewItems.push({
     // One id per target, so two devices adding the same grammar category agree on it.
     id: `${itemType}:${itemId}`, itemType, itemId, exerciseType: null,
-    // New items join the queue the next day.
-    due: addDays(dayStart(now), 1), interval: 0, ease: 2.5, reps: 0, lapses: 0,
+    // New items can be practised the day they are added (the daily cap still applies).
+    due: dayStart(now), interval: 0, ease: 2.5, reps: 0, lapses: 0,
     introducedAt: null, createdAt: now, updatedAt: now,
   });
 }

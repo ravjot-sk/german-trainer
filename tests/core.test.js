@@ -25,7 +25,9 @@ test('correct answers grow the interval, wrong ones bring it back tomorrow', () 
 
 test('isDue counts anything due before tomorrow', () => {
   assert.ok(isDue(item({ due: NOW + 3600e3 }), NOW));
-  assert.ok(!isDue(item({ due: addDays(dayStart(NOW), 1) }), NOW));
+  assert.ok(!isDue(item({ due: addDays(dayStart(NOW), 1), introducedAt: NOW - 864e5 }), NOW));
+  // Never practised: due whatever its date says.
+  assert.ok(isDue(item({ due: addDays(dayStart(NOW), 1) }), NOW));
 });
 
 test('answer comparison is strict on spelling, lenient on case and punctuation', () => {
