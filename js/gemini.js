@@ -249,6 +249,24 @@ If the query is not a real word in either language, set found to false.`;
   return r;
 }
 
+// Random words that fit the learner's level, as full dictionary entries like a lookup.
+// exclude: dictionary forms the learner already has. topic: optional theme.
+export async function suggestWords(n, { topic = '', exclude = [] } = {}) {
+  const L = learner();
+  const name = L.english;
+  const prompt = `You pick new ${name} vocabulary for a learner at ${levelText(L)} whose working language is English.
+Suggest ${n} different words that suit this level: useful words the learner will need to speak and write, not ones every beginner knows and not rare or specialist ones. Mix nouns, verbs, adjectives and a phrase or two.
+${topic ? `Topic: "${topic}". All words should fit it.` : 'Vary the topics (work, everyday life, feelings, society, travel, ...).'}
+${exclude.length ? `The learner already has these, so do not suggest them: ${exclude.join(', ')}` : ''}
+Fill every field for each word as a dictionary entry would.`;
+  const props = wordProps(L);
+  const r = await generate(prompt, S({ words: { type: 'ARRAY', items: S(props) } }), { temperature: 1 });
+  return (r.words || []).filter((w) => w && w.lemma).map((w) => {
+    cleanWord(w);
+    return hasFurigana(L) ? collectFurigana(w, [['exampleFurigana', (x) => x.example], ['gapFurigana', (x) => x.gapSentence]]) : w;
+  });
+}
+
 export async function correctText(text) {
   const L = learner();
   const prompt = `You correct ${L.english} written by a learner at ${levelText(L)}. Correct this text:
