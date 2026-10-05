@@ -137,3 +137,99 @@ export function summarizeDue(args) {
     newWords: tasks.filter((x) => x.word && !isSentence(x.word) && isNew(x.item)).length,
   };
 }
+
+// ---------- Practice: an endless session the learner starts any time ----------
+// Unlike the daily session it draws from everything already saved, not only what is due:
+// weak, recently missed, due and long-unseen items come up more often, new words may start
+// (beyond the daily cap), and the last few tasks are not repeated.
+
+export const PRACTICE_FOCUS = ['mix', 'words', 'sentences', 'grammar', 'weak'];
+const COOLDOWN = 8;
+const WEEK = 7 * 864e5;
+
+// How strongly an item should come up next. lastReview: its latest review, if any.
+export function practiceWeight(item, lastReview, now) {
+  let w = 1;
+  if (isNew(item)) w += 1;
+  else if (isDue(item, now)) w += 2;
+  w += Math.min(item.lapses || 0, 4) * 0.5;
+  if (lastReview && !lastReview.correct && now - lastReview.reviewedAt < WEEK) w += 3;
+  const seen = item.lastReviewedAt || item.introducedAt;
+  if (seen) w += Math.min(2, (now - seen) / WEEK);
+  return w;
+}
+
+// Whether an item counts as a weak spot (focus "weak").
+function isWeak(item, lastReview, weak) {
+  return (item.lapses || 0) > 0 || (lastReview && !lastReview.correct) || weak > 0;
+}
+
+function weightedPick(list, random) {
+  const total = list.reduce((s, x) => s + x.weight, 0);
+  let r = random() * total;
+  for (const x of list) {
+    r -= x.weight;
+    if (r < 0) return x;
+  }
+  return list[list.length - 1];
+}
+
+// The candidates practice can choose from, each as { item, group, weight, make }, where
+// group is 'vocab' or 'grammar' and make() builds the task. Same arguments as buildSession.
+export function practicePool({ items, words, mistakes, reviews, gemini, drillable = DRILLABLE, now = Date.now(),
+  hasChunks = () => true, focus = 'mix' }) {
+  const wordById = new Map(words.map((w) => [w.id, w]));
+  const mistakeById = new Map(mistakes.map((m) => [m.id, m]));
+  const lastReview = new Map();
+  const done = new Map();
+  for (const v of reviews) {
+    done.set(v.reviewItemId, (done.get(v.reviewItemId) || 0) + 1);
+    const prev = lastReview.get(v.reviewItemId);
+    if (!prev || v.reviewedAt >= prev.reviewedAt) lastReview.set(v.reviewItemId, v);
+  }
+
+  const pool = [];
+  for (const item of items) {
+    const last = lastReview.get(item.id);
+    let entry = null;
+    if (item.itemType === 'word' && wordById.has(item.itemId)) {
+      const word = wordById.get(item.itemId);
+      const sentence = isSentence(word);
+      if ((focus === 'words' && sentence) || (focus === 'sentences' && !sentence) || focus === 'grammar') continue;
+      entry = { group: 'vocab', make: () => ({ item, word, kind: sentence
+        ? sentenceExercise(item, word, gemini, { chunks: hasChunks(word) }) : wordExercise(item, word, gemini) }) };
+    } else if (item.itemType === 'mistake' && mistakeById.has(item.itemId)) {
+      if (focus === 'words' || focus === 'sentences') continue;
+      entry = { group: 'grammar', make: () => ({ item, mistake: mistakeById.get(item.itemId), kind: 'fix' }) };
+    } else if (item.itemType === 'category' && gemini && drillable.includes(item.itemId)) {
+      if (focus === 'words' || focus === 'sentences') continue;
+      const category = parseCatKey(item.itemId).id;
+      const weak = weakness(category, mistakes, now);
+      if (focus === 'weak' && !isWeak(item, last, weak)) continue;
+      pool.push({ item, group: 'grammar', weight: practiceWeight(item, last, now) + weak * 0.5,
+        make: () => ({ item, category, kind: 'drill', drillKind: DRILL_KINDS[(done.get(item.id) || 0) % DRILL_KINDS.length] }) });
+      continue;
+    }
+    if (!entry) continue;
+    if (focus === 'weak' && !isWeak(item, last, 0)) continue;
+    pool.push({ item, weight: practiceWeight(item, last, now), ...entry });
+  }
+  return pool;
+}
+
+// The next task for a practice session, or null when there is nothing to practise.
+// recent: the review item ids of the latest tasks, newest last. In the mix, about one task
+// in three is grammar when there is any.
+export function nextPracticeTask(pool, recent = [], { focus = 'mix', random = Math.random } = {}) {
+  if (!pool.length) return null;
+  const cooldown = new Set(recent.slice(-Math.min(COOLDOWN, pool.length - 1)));
+  let fresh = pool.filter((x) => !cooldown.has(x.item.id));
+  if (!fresh.length) fresh = pool;
+  if (focus === 'mix') {
+    const groups = recent.slice(-2).map((id) => pool.find((x) => x.item.id === id)?.group);
+    const want = groups.length === 2 && groups.every((g) => g === 'vocab') ? 'grammar' : 'vocab';
+    const preferred = fresh.filter((x) => x.group === want);
+    if (preferred.length) fresh = preferred;
+  }
+  return weightedPick(fresh, random).make();
+}

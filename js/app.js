@@ -3,8 +3,8 @@ import { t, lang } from './i18n.js';
 import * as gemini from './gemini.js';
 import * as sync from './sync.js';
 import { logMistakes } from './actions.js';
-import { buildSession, summarizeDue } from './session.js';
-import { schedule, isNew, dayStart } from './srs.js';
+import { buildSession, summarizeDue, practicePool, nextPracticeTask, PRACTICE_FOCUS } from './session.js';
+import { schedule, schedulePractice, isNew, dayStart } from './srs.js';
 import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
 import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
 import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence } from './languages.js';
@@ -323,7 +323,9 @@ function viewToday() {
 
   const s = summarizeDue(sessionArgs());
   const today = dayStart(Date.now());
-  const doneToday = store.reviews(code()).filter((r) => r.reviewedAt >= today).length;
+  const reviewedToday = store.reviews(code()).filter((r) => r.reviewedAt >= today);
+  const doneToday = reviewedToday.filter((r) => r.mode !== 'practice').length;
+  const practisedToday = reviewedToday.length - doneToday;
   const stat = (n, label) => `<span class="stat"><b>${n}</b> ${esc(label)}</span>`;
 
   main.innerHTML = `
@@ -343,10 +345,45 @@ function viewToday() {
           </div>`}
       ${doneToday ? `<p class="muted small">${esc(t('today.doneToday', { n: doneToday }))}</p>` : ''}
     </section>
+    ${practiceCard(practisedToday)}
     ${notes.join('')}
     ${weakSpots()}
   `;
   $('#start')?.addEventListener('click', () => { session = null; go('session'); });
+  bindPracticeCard();
+}
+
+// Practice any time, as long as you like, with a focus to choose.
+function practiceFocuses() {
+  const args = sessionArgs();
+  return PRACTICE_FOCUS.filter((f) => f === 'mix' || practicePool({ ...args, focus: f }).length);
+}
+
+function practiceCard(practised) {
+  const focuses = practiceFocuses();
+  const cur = focuses.includes(pref('practiceFocus', 'mix')) ? pref('practiceFocus', 'mix') : 'mix';
+  const few = store.words(code()).length < 10;
+  return `<section class="card practice">
+    <div class="card-head"><h3>${esc(t('practice.title'))}</h3></div>
+    <p class="muted small">${esc(t('practice.help'))}</p>
+    ${focuses.length > 1 ? `<div class="seg wrap" id="pfocus">${focuses.map((f) =>
+      `<button type="button" data-v="${f}" class="${f === cur ? 'on' : ''}">${esc(t(`practice.focus.${f}`))}</button>`).join('')}</div>` : ''}
+    <button class="btn primary" id="practice">${esc(t('practice.start'))}</button>
+    ${few && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
+    ${practised ? `<p class="muted small">${esc(t('practice.doneToday', { n: practised }))}</p>` : ''}
+  </section>`;
+}
+
+function bindPracticeCard() {
+  $$('#pfocus button').forEach((b) => b.addEventListener('click', () => {
+    setPref('practiceFocus', b.dataset.v);
+    $$('#pfocus button').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+  $('#practice')?.addEventListener('click', () => {
+    startPractice($('#pfocus .on')?.dataset.v || 'mix');
+    go('session');
+  });
+  bindSuggest(main);
 }
 
 // The top of the mistake profile, with the full profile one tap away.
@@ -361,54 +398,93 @@ function weakSpots() {
 // ---------- Session ----------
 let session = null;
 
+// Starts generating a drill as soon as its task is queued, so it is ready when it comes up.
+function prepare(task) {
+  if (task.kind !== 'drill') return;
+  const examples = store.mistakes(code()).filter((m) => m.category === task.category).slice(0, 4);
+  const words = store.words(code()).filter((w) => !isSentence(w));
+  const word = task.drillKind === 'constraint' && words.length ? words[Math.floor(Math.random() * Math.min(words.length, 30))] : null;
+  task.drillPromise = gemini.generateDrill(task.category, task.drillKind, { examples, word })
+    .then((d) => (task.drill = d))
+    .catch((e) => { task.drillError = e; });
+}
+
 function startSession() {
   const tasks = buildSession(sessionArgs());
-  for (const task of tasks) {
-    if (task.kind === 'drill') {
-      const examples = store.mistakes(code()).filter((m) => m.category === task.category).slice(0, 4);
-      const words = store.words(code()).filter((w) => !isSentence(w));
-      const word = task.drillKind === 'constraint' && words.length ? words[Math.floor(Math.random() * Math.min(words.length, 30))] : null;
-      task.drillPromise = gemini.generateDrill(task.category, task.drillKind, { examples, word })
-        .then((d) => (task.drill = d))
-        .catch((e) => { task.drillError = e; });
-    }
-  }
+  tasks.forEach(prepare);
   session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0 };
   if (code() === 'ja') fillFurigana(tasks.map((x) => x.word).filter(Boolean));
 }
 
+// Practice never runs out: it keeps a few tasks queued ahead of the current one.
+const PRACTICE_AHEAD = 3;
+
+function startPractice(focus) {
+  session = { practice: true, focus, tasks: [], lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0 };
+  topUpPractice();
+}
+
+function topUpPractice() {
+  const s = session;
+  if (s.ended) return;
+  const want = s.idx + PRACTICE_AHEAD;
+  if (s.tasks.length >= want) return;
+  // Built from current data each time, so answers already given change what comes next.
+  const pool = practicePool({ ...sessionArgs(), focus: s.focus });
+  const added = [];
+  while (s.tasks.length < want) {
+    const task = nextPracticeTask(pool, s.tasks.map((x) => x.item.id), { focus: s.focus });
+    if (!task) break;
+    prepare(task);
+    s.tasks.push(task);
+    added.push(task);
+  }
+  if (code() === 'ja') fillFurigana(added.map((x) => x.word).filter(Boolean));
+}
+
 function viewSession() {
   if (!session) startSession();
-  titleEl.textContent = t('today.title');
+  if (session.practice) topUpPractice();
+  titleEl.textContent = t(session.practice ? 'practice.title' : 'today.title');
   const { tasks, idx } = session;
-  if (idx >= tasks.length) return renderSessionEnd();
+  if (session.ended || idx >= tasks.length) return renderSessionEnd();
   const task = tasks[idx];
   task.state = { phase: 'answer' };
 
+  // Practice has no end to show progress towards: it counts answers and right ones instead.
+  const top = session.practice
+    ? `<div class="grow"></div>
+      <span class="count" aria-label="${esc(t('practice.score', { c: session.correct, n: session.answered }))}">✓ ${session.correct}/${session.answered}</span>`
+    : `<div class="progress"><div style="width:${Math.round((idx / tasks.length) * 100)}%"></div></div>
+      <span class="count" aria-label="${esc(t('session.of', { i: idx + 1, n: tasks.length }))}">${idx + 1}/${tasks.length}</span>`;
   main.innerHTML = `
     <div class="session-top">
       <button class="icon-btn" id="quit" aria-label="${esc(t('session.quit'))}">${icon('close', 24)}</button>
-      <div class="progress"><div style="width:${Math.round((idx / tasks.length) * 100)}%"></div></div>
-      <span class="count" aria-label="${esc(t('session.of', { i: idx + 1, n: tasks.length }))}">${idx + 1}/${tasks.length}</span>
+      ${top}
     </div>
     <section class="card exercise" id="ex"></section>
     <div class="dock" id="dock"></div>
   `;
-  $('#quit').addEventListener('click', () => { session.idx = session.tasks.length; viewSession(); });
+  $('#quit').addEventListener('click', () => { session.ended = true; viewSession(); });
   renderTask(task);
 }
 
 function renderSessionEnd() {
   const s = session;
+  // Practice only ends by itself when there is nothing saved to practise.
+  const empty = s.practice && !s.tasks.length;
   main.innerHTML = `
     <section class="card hero end">
-      <div class="hero-num">🎉</div>
-      <h2>${esc(t('session.done'))}</h2>
-      <p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>
+      <div class="hero-num">${empty ? '📭' : '🎉'}</div>
+      <h2>${esc(t(empty ? 'practice.empty' : s.practice ? 'practice.done' : 'session.done'))}</h2>
+      ${empty ? `<p class="muted">${esc(t('practice.emptyHelp'))}</p>`
+        : `<p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>`}
       ${s.mistakesLogged ? `<p class="muted small">${esc(t('session.mistakesLogged', { n: s.mistakesLogged }))}</p>` : ''}
+      ${empty && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
       <button class="btn primary big" id="home">${esc(t('session.backHome'))}</button>
     </section>`;
   $('#home').addEventListener('click', () => { session = null; go('today'); });
+  bindSuggest(main);
 }
 
 async function renderTask(task) {
@@ -674,21 +750,29 @@ function next(task) {
   const firstTry = !session.requeued.has(task);
   if (firstTry) {
     const now = Date.now();
-    const updated = schedule(task.item, grade, now);
-    if (task.word) updated.exerciseType = task.kind;
-    if (task.kind === 'drill') updated.exerciseType = task.drillKind;
+    // The latest copy: in practice the same item can come up again before an earlier answer was saved.
+    task.item = store.reviewItems().find((r) => r.id === task.item.id) || task.item;
+    // Practice only moves the schedule for misses and for new or due items.
+    const scheduled = session.practice ? schedulePractice(task.item, grade, now) : schedule(task.item, grade, now);
+    const updated = scheduled === task.item ? { ...task.item } : scheduled;
+    if (scheduled !== task.item) {
+      if (task.word) updated.exerciseType = task.kind;
+      if (task.kind === 'drill') updated.exerciseType = task.drillKind;
+    }
     store.saveReview(updated, {
       reviewItemId: task.item.id, itemType: task.item.itemType, itemId: task.item.itemId,
       lang: session.lang, category: task.category || task.mistake?.category || null, exerciseType: task.drillKind || task.kind,
-      answer, correct: grade !== 'wrong', grade, reviewedAt: now,
+      answer, correct: grade !== 'wrong', grade, reviewedAt: now, ...(session.practice ? { mode: 'practice' } : {}),
     });
     task.item = updated;
     session.answered++;
     if (grade !== 'wrong') session.correct++;
-    // Locally checked items answered wrong come back once at the end of the session.
+    // Locally checked items answered wrong come back once: at the end of the daily session,
+    // a few tasks later in practice.
     if (grade === 'wrong' && ['recall', 'gap', 'fix', 'order'].includes(task.kind)) {
       session.requeued.add(task);
-      session.tasks.push(task);
+      if (session.practice) session.tasks.splice(session.idx + 4, 0, task);
+      else session.tasks.push(task);
     }
   }
   session.idx++;
@@ -889,6 +973,7 @@ function viewWords() {
   main.innerHTML = `
     <div class="toolbar">
       <input id="search" type="search" ${inputAttrs} placeholder="${esc(t('words.search'))}" value="${esc(wordQuery)}">
+      ${gem() ? `<button class="btn" data-suggest aria-label="${esc(t('suggest.open'))}">${icon('sparkle', 22)}</button>` : ''}
       <button class="btn" id="add" aria-label="${esc(t('words.add'))}">${icon('plus', 22)}</button>
     </div>
     ${all.some(isSentence) ? `<div class="seg" id="wfilter">${['all', 'words', 'sentences'].map((f) =>
@@ -913,7 +998,80 @@ function viewWords() {
   }));
   $('#search').addEventListener('input', (e) => { wordQuery = e.target.value; draw(); });
   $('#add').addEventListener('click', () => openEditor(null));
+  bindSuggest(main);
   draw();
+}
+
+// ---------- Suggested words ----------
+// Gemini proposes words at the learner's level; they are shown ticked, and the learner
+// unticks any they don't want before adding them.
+function bindSuggest(root) {
+  $$('[data-suggest]', root).forEach((b) => b.addEventListener('click', openSuggest));
+}
+
+const SUGGEST_COUNT = 8;
+
+function openSuggest() {
+  const c = code();
+  let found = [];
+  openSheet(`
+    ${sheetHead(t('suggest.title'))}
+    <p class="muted small">${esc(t('suggest.help', { l: langName(), level: L().level }))}</p>
+    <div class="inline"><input name="topic" id="topic" ${inputAttrs} placeholder="${esc(t('suggest.topic'))}">
+      <button type="button" class="btn small" id="sgo">${esc(t('suggest.go'))}</button></div>
+    <div id="slist"></div>
+    <button type="submit" class="btn primary wide hidden" id="sadd"></button>`, {
+    onSave: () => {
+      const picked = $$('#slist input:checked').map((x) => found[+x.value]);
+      if (!picked.length) return false;
+      let added = 0;
+      for (const w of picked) if (store.addWord({ ...w, lang: c, source: 'suggested' }).created) added++;
+      toast(t('suggest.added', { n: added }));
+    },
+  });
+  const sheet = $('.sheet');
+  const count = () => {
+    const n = $$('#slist input:checked', sheet).length;
+    const add = $('#sadd', sheet);
+    add.textContent = t('suggest.add', { n });
+    add.disabled = !n;
+  };
+  const load = async () => {
+    const list = $('#slist', sheet);
+    const go = $('#sgo', sheet);
+    $('#sadd', sheet).classList.add('hidden');
+    go.disabled = true;
+    list.innerHTML = `<div class="loading">${esc(t('suggest.loading'))}</div>`;
+    try {
+      // The newest saved words are listed so Gemini avoids them; any that slip through are dropped here.
+      const exclude = store.words(c).filter((w) => !isSentence(w)).slice(0, 300).map(lemmaOf);
+      const seen = new Set();
+      found = (await gemini.suggestWords(SUGGEST_COUNT, { topic: $('#topic', sheet).value.trim(), exclude })).filter((w) => {
+        const key = store.normKey(w.lemma, store.language(c)?.articles);
+        if (seen.has(key) || store.findWord(w.lemma, c, store.language(c)?.articles)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (!found.length) { list.innerHTML = `<p class="muted">${esc(t('suggest.none'))}</p>`; return; }
+      list.innerHTML = `<ul class="suggest">${found.map((w, i) => `<li><label>
+        <input type="checkbox" value="${i}" checked>
+        <div><b ${tl(c)}>${jt(wordTitle(w), w, c)}</b>${w.reading ? ` <span class="muted small" ${tl(c)}>${esc(w.reading)}</span>` : ''}
+          <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))} · ${esc(w.meaning)}</div>
+          ${w.example ? `<div class="small" ${tl(c)}>${jt(w.example, w, c)}</div>` : ''}</div>
+      </label></li>`).join('')}</ul>`;
+      $$('#slist input', sheet).forEach((x) => x.addEventListener('change', count));
+      $('#sadd', sheet).classList.remove('hidden');
+      count();
+    } catch (e) {
+      list.innerHTML = errorBox(e);
+    } finally {
+      go.disabled = false;
+      go.textContent = t(found.length ? 'suggest.again' : 'suggest.go');
+    }
+  };
+  $('#sgo', sheet).addEventListener('click', load);
+  $('#topic', sheet).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); load(); } });
+  load();
 }
 
 function openEditor(id) {

@@ -152,10 +152,25 @@ Tips:
   and you can change this in Settings. New sentences have their own limit of 3 a day.
 - Words and old sentences you get wrong come back once more at the end of the session.
 
+**Freies Üben (Free practice).** Below the daily session on **Heute**, tap **Üben** to practise as long as you
+like, even when nothing is due. It never runs out: it keeps picking from everything you've saved, and words
+and grammar you got wrong recently, have missed often or haven't seen for a while come up more. Choose a focus
+first if you want: **Gemischt** (mix), **Wörter**, **Sätze**, **Grammatik** or **Schwächen** (weak spots).
+The top shows how many you got right; tap ✕ to stop.
+
+- Practice never lets a word skip ahead: a right answer on a word that isn't due yet leaves its date alone.
+- A wrong answer counts, though: that word comes back in tomorrow's session.
+- Saved words you haven't started yet can come up in practice, beyond the daily limit for new words.
+
 ### 📖 Wörter (Words)
 
 All your saved words and sentences, with a filter to show only one kind. Search them, tap one to edit any field, or delete words you don't want to practise.
 Tap **+** to add a word by hand. Rarely needed fields (register, example, gap sentence) are under **Mehr Felder**.
+
+**Wörter vorschlagen (Suggest words).** Tap ✨ (also on **Heute** while your list is short) and Gemini suggests
+8 words that fit your level, leaving out words you already have. Add a topic such as *Arbeit* to steer it. All
+suggestions are ticked; untick the ones you don't want and tap **Hinzufügen**. They join your list like a
+lookup and come up in your sessions.
 
 ### 📊 Fehlerprofil (Profile)
 

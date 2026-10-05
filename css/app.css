@@ -355,3 +355,14 @@ rt { font-size: 0.5em; font-weight: 400; color: var(--muted); letter-spacing: 0;
 .furi-tap .furi.open rt, .furi-tap .chunk .furi rt { visibility: visible; }
 .furi-tap .furi:not(.open) ruby { text-decoration: underline dotted color-mix(in srgb, var(--muted) 60%, transparent); text-underline-offset: 0.25em; }
 .furi-tap .chunk .furi ruby { text-decoration: none; }
+
+/* Practice and suggested words */
+.seg.wrap { flex-wrap: wrap; }
+.seg.wrap button { flex: 1 1 auto; }
+.session-top .grow { flex: 1; }
+.suggest { list-style: none; margin: 0; padding: 0; }
+.suggest li { border-bottom: 1px solid var(--line); }
+.suggest li:last-child { border-bottom: 0; }
+.sheet .suggest label { flex-direction: row; align-items: flex-start; gap: 12px; padding: 10px 0; color: var(--text); font-size: var(--fs-body); cursor: pointer; }
+.suggest input[type=checkbox] { width: 20px; height: 20px; padding: 0; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.suggest label > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
