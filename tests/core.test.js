@@ -89,3 +89,13 @@ test('daily session caps new words and needs Gemini for drills', () => {
   const offline = buildSession({ ...args, gemini: false });
   assert.equal(offline.filter((t) => t.kind === 'drill').length, 0);
 });
+
+test('noun recall with the article and word split across the two boxes is almost', () => {
+  const w = { lemma: 'Zaun', article: 'der', pos: 'noun', plural: 'Zäune' };
+  const r = checkRecall(w, 'der', 'Zaun');
+  assert.equal(r.grade, 'almost');
+  assert.ok(r.splitArticle);
+  assert.equal(checkRecall(w, 'der Zaun', 'Zäune').grade, 'correct');
+  assert.equal(checkRecall(w, 'die', 'Zaun').grade, 'wrong');
+  assert.equal(checkRecall(w, 'der', 'Zäune').grade, 'wrong');
+});

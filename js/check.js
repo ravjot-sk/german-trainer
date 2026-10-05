@@ -62,6 +62,12 @@ export function checkRecall(word, answer, pluralAnswer) {
     return { grade: main, main, plural: null, target, pluralTarget: '', byReading };
   }
   const target = word.pos === 'noun' && word.article ? `${word.article} ${lemma}` : lemma;
+  if (word.article && needsPlural(word) && compare(answer, word.article) === 'correct'
+      && compare(pluralAnswer, lemma) !== 'wrong') {
+    // Article in the first box and the word in the plural box: the word was known, but the
+    // plural was never given, so it counts as almost.
+    return { grade: 'almost', main: 'correct', plural: null, target, pluralTarget: stripArticle(word.plural), splitArticle: true };
+  }
   let main = compare(answer, target);
   if (main === 'wrong' && word.pos !== 'noun') {
     // Accept "sich erinnern" when the stored form is "erinnern" and vice versa.

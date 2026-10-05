@@ -317,6 +317,7 @@ details.more > div { display: flex; flex-direction: column; gap: 12px; padding-t
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .field-label { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+.answer-field { display: flex; flex-direction: column; gap: 6px; }
 
 /* Sentences */
 .sentence-big { font-size: 21px; font-weight: 600; line-height: 1.35; }

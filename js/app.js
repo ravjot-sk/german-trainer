@@ -527,8 +527,7 @@ async function renderTask(task) {
       <div class="ex-label">${esc(t('ex.recall', { l: langName() }))}</div>
       <div class="prompt">${esc(w.meaning)}</div>
       <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${w.register ? ` · ${esc(w.register)}` : ''}</div>
-      <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(recallHint(w))}">
-      ${needsPlural(w) ? `<input class="answer" id="a2" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.plural'))}">` : ''}`;
+      ${recallBoxes(w)}`;
   } else if (task.kind === 'say') {
     body = `
       <div class="ex-label">${esc(t('ex.say', { l: langName() }))}</div>
@@ -636,6 +635,16 @@ function bindOrder(task) {
 
 // What to type in recall: German nouns with article, other languages' nouns with article
 // when the language has them.
+// German nouns get two labelled boxes, article + word and plural. The labels stay visible
+// while typing, unlike the placeholders.
+function recallBoxes(w) {
+  const a1 = `<input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(recallHint(w))}">`;
+  if (w.pos !== 'noun' || recLang(w) !== 'de') return a1;
+  const box = (label, input) => `<label class="answer-field"><span class="field-label">${esc(label)}</span>${input}</label>`;
+  return box(t('ex.articleWord'), a1)
+    + (needsPlural(w) ? box(t('ex.plural'), `<input class="answer" id="a2" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.plural'))}">`) : '');
+}
+
 function recallHint(w) {
   if (w.pos !== 'noun') return t('ex.yourAnswer');
   if (recLang(w) === 'de') return t('ex.recallNoun');
@@ -659,6 +668,7 @@ async function onCheck(task) {
       const r = checkRecall(task.word, a1, a2);
       grade = r.grade;
       if (r.byReading) almostKey = 'session.almostReading';
+      if (r.splitArticle) almostKey = 'session.almostSplit';
       canOverride = grade !== 'correct';
       html = wordReveal(task.word);
     } else if (task.kind === 'order') {
