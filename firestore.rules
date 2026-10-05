@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// German Trainer: invite-only, private accounts.
+// Language Trainer: invite-only, private accounts.
 // - Only verified email addresses listed in the allowlist collection get any access.
 //   To invite someone, add a document to allowlist whose id is their email in lowercase.
 // - Each user can read and write only their own data under users/{their uid}.
@@ -19,7 +19,7 @@ service cloud.firestore {
 
     match /users/{uid}/{coll}/{id} {
       allow read, write: if request.auth != null && request.auth.uid == uid && invited()
-        && coll in ['words', 'mistakes', 'reviewItems', 'reviews'];
+        && coll in ['words', 'mistakes', 'reviewItems', 'reviews', 'languages'];
     }
   }
 }

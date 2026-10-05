@@ -1,19 +1,30 @@
 // Local answer checking and a small word diff for showing corrections.
+import { lemmaOf, recLang } from './languages.js';
+
+// Scripts written without spaces between words (Japanese, Chinese, Thai). Answers in them are
+// compared without spaces, and corrections are diffed character by character.
+const UNSPACED = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\u0e00-\u0e7f]/;
+export const isUnspaced = (s) => UNSPACED.test(s || '');
 
 export function normalize(s) {
   return (s || '')
-    .normalize('NFC')
-    .replace(/[„“”"«»‚‘’']/g, '')
+    // NFKC folds full-width letters, digits and punctuation (Ａ, １, ！) to their usual forms.
+    .normalize('NFKC')
+    .replace(/[„“”"«»‚‘’'「」『』]/g, '')
     .replace(/\s+/g, ' ')
-    .replace(/\s*([,;:])\s*/g, '$1 ')
-    .replace(/[.!?…]+$/g, '')
+    .replace(/\s*([,;:、])\s*/g, '$1 ')
+    .replace(/[.!?…。]+$/g, '')
     .trim();
 }
 
 // Returns 'correct', 'almost' (differs only in capitalisation) or 'wrong'.
 export function compare(answer, expected) {
-  const a = normalize(answer);
-  const e = normalize(expected);
+  let a = normalize(answer);
+  let e = normalize(expected);
+  if (isUnspaced(e)) {
+    a = a.replace(/\s+/g, '');
+    e = e.replace(/\s+/g, '');
+  }
   if (!a || !e) return 'wrong';
   if (a === e) return 'correct';
   if (a.toLowerCase() === e.toLowerCase()) return 'almost';
@@ -35,9 +46,22 @@ export function stripArticle(s) {
   return (s || '').trim().replace(/^(der|die|das)\s+/i, '');
 }
 
-// Typed recall for a word. Nouns need article + word, and the plural if the word has one.
+// Typed recall for a word. German nouns need article + word, and the plural if the word has
+// one. Other languages compare against the form Gemini says to type (recallAnswer); typing
+// only the reading of a word normally written in kanji counts as almost.
 export function checkRecall(word, answer, pluralAnswer) {
-  const target = word.pos === 'noun' && word.article ? `${word.article} ${word.german}` : word.german;
+  const lemma = lemmaOf(word);
+  if (recLang(word) !== 'de') {
+    const target = word.recallAnswer || (word.pos === 'noun' && word.article ? `${word.article} ${lemma}` : lemma);
+    let main = compare(answer, target);
+    let byReading = false;
+    if (main === 'wrong' && word.reading && compare(answer, word.reading) === 'correct') {
+      main = 'almost';
+      byReading = true;
+    }
+    return { grade: main, main, plural: null, target, pluralTarget: '', byReading };
+  }
+  const target = word.pos === 'noun' && word.article ? `${word.article} ${lemma}` : lemma;
   let main = compare(answer, target);
   if (main === 'wrong' && word.pos !== 'noun') {
     // Accept "sich erinnern" when the stored form is "erinnern" and vice versa.
@@ -64,8 +88,14 @@ export function gapFor(word) {
     return { sentence: word.gapSentence, answer: word.gapAnswer };
   }
   const source = word.contextSentence || word.example;
-  if (!source) return null;
-  const stem = word.german.toLowerCase().slice(0, Math.max(3, Math.min(5, word.german.length - 1)));
+  const lemma = lemmaOf(word);
+  if (!source || !lemma) return null;
+  if (isUnspaced(source)) {
+    // No word boundaries to find an inflected form by, so only the exact dictionary form works.
+    const at = source.indexOf(lemma);
+    return at < 0 ? null : { sentence: source.slice(0, at) + '___' + source.slice(at + lemma.length), answer: lemma };
+  }
+  const stem = lemma.toLowerCase().slice(0, Math.max(3, Math.min(5, lemma.length - 1)));
   const tokens = source.split(/(\s+)/);
   for (let i = 0; i < tokens.length; i++) {
     const bare = tokens[i].replace(/[.,!?;:„“"()]/g, '');
@@ -77,10 +107,12 @@ export function gapFor(word) {
   return null;
 }
 
-// Word-level diff (LCS) returning [{type: 'same'|'del'|'add', text}].
+// Word-level diff (LCS) returning [{type: 'same'|'del'|'add', text}]. Text without spaces
+// between words is diffed by character.
 export function wordDiff(a, b) {
-  const x = (a || '').split(/(\s+)/).filter((s) => s !== '');
-  const y = (b || '').split(/(\s+)/).filter((s) => s !== '');
+  const split = isUnspaced(`${a}${b}`) ? (s) => Array.from(s || '') : (s) => (s || '').split(/(\s+)/).filter((p) => p !== '');
+  const x = split(a);
+  const y = split(b);
   const n = x.length, m = y.length;
   if (n * m > 250000) return [{ type: 'add', text: b }];
   const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));

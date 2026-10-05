@@ -2,6 +2,7 @@
 import { isDue, isNew, dayStart } from './srs.js';
 import { gapFor } from './check.js';
 import { DRILLABLE } from './categories.js';
+import { parseCatKey } from './languages.js';
 
 const MAX_WORD_REVIEWS = 15;
 const MAX_MISTAKES = 4;
@@ -36,7 +37,9 @@ export function weakness(category, mistakes, now) {
   return score;
 }
 
-export function buildSession({ items, words, mistakes, reviews, settings, gemini, now = Date.now() }) {
+// Callers pass one language's words, mistakes and items; drillable lists that language's
+// category keys (German ones by default).
+export function buildSession({ items, words, mistakes, reviews, settings, gemini, drillable = DRILLABLE, now = Date.now() }) {
   const wordById = new Map(words.map((w) => [w.id, w]));
   const mistakeById = new Map(mistakes.map((m) => [m.id, m]));
   const due = items.filter((r) => isDue(r, now)).sort((a, b) => a.due - b.due);
@@ -64,12 +67,12 @@ export function buildSession({ items, words, mistakes, reviews, settings, gemini
   let drillTasks = [];
   if (gemini) {
     drillTasks = due
-      .filter((r) => r.itemType === 'category' && DRILLABLE.includes(r.itemId))
-      .sort((a, b) => weakness(b.itemId, mistakes, now) - weakness(a.itemId, mistakes, now))
+      .filter((r) => r.itemType === 'category' && drillable.includes(r.itemId))
+      .sort((a, b) => weakness(parseCatKey(b.itemId).id, mistakes, now) - weakness(parseCatKey(a.itemId).id, mistakes, now))
       .slice(0, MAX_CATEGORIES)
       .map((item) => {
         const done = reviews.filter((v) => v.reviewItemId === item.id).length;
-        return { item, category: item.itemId, kind: 'drill', drillKind: DRILL_KINDS[done % DRILL_KINDS.length] };
+        return { item, category: parseCatKey(item.itemId).id, kind: 'drill', drillKind: DRILL_KINDS[done % DRILL_KINDS.length] };
       });
   }
 

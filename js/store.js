@@ -1,8 +1,10 @@
-// Local-first data store. Everything lives in localStorage on this device; the four
-// collections mirror the spec's data model (words, mistakes, reviewItems, reviews). When
+// Local-first data store. Everything lives in localStorage on this device; the collections
+// mirror the spec's data model (words, mistakes, reviewItems, reviews) plus the learner's
+// languages and levels. Words, mistakes and reviews carry a `lang` (none means German). When
 // the user signs in, sync.js mirrors each record to Firestore, using updatedAt to decide
 // which copy is newer.
 import { dayStart, addDays } from './srs.js';
+import { describe, recLang, lemmaOf, catKey } from './languages.js';
 
 const DATA_KEY = 'gt.data.v1';
 const KEY_KEY = 'gt.apiKey';
@@ -15,7 +17,7 @@ let settings = loadSettings();
 const listeners = new Set();
 
 function emptyData() {
-  return { words: [], mistakes: [], reviewItems: [], reviews: [] };
+  return { words: [], mistakes: [], reviewItems: [], reviews: [], languages: [] };
 }
 
 function load() {
@@ -59,22 +61,65 @@ export function setApiKey(k) {
   if (k) localStorage.setItem(KEY_KEY, k.trim()); else localStorage.removeItem(KEY_KEY);
 }
 
-// ---- words ----
-export function words() { return data.words; }
-export function getWord(id) { return data.words.find((w) => w.id === id); }
-
-export function findWord(german) {
-  const key = normKey(german);
-  if (!key) return null;
-  return data.words.find((w) => normKey(w.german) === key) || null;
+// ---- languages ----
+// The active language is chosen per device; levels and added languages sync with the account.
+export function language(code) {
+  return describe(code, data.languages.find((l) => l.id === code));
 }
 
-function normKey(s) {
-  return (s || '').toLowerCase().replace(/^(der|die|das)\s+/, '').trim();
+export function knownLanguages() {
+  const codes = ['de', 'ja', ...data.languages.map((l) => l.id)];
+  return [...new Set(codes)].map(language).filter(Boolean);
+}
+
+export function activeLanguage() {
+  const code = settings.target;
+  if (code && language(code)) return language(code);
+  // Data from before languages existed is German.
+  if ([...data.words, ...data.mistakes].some((r) => !r.lang)) return language('de');
+  if (data.languages.length) return language(data.languages[0].id);
+  if (data.words.length) return language(recLang(data.words[0]));
+  return null;
+}
+
+export function setActiveLanguage(code) { setSettings({ target: code }); }
+
+// Saves a language's level, or a whole added language.
+export function saveLanguage(code, patch, now = Date.now()) {
+  let rec = data.languages.find((l) => l.id === code);
+  if (!rec) {
+    rec = { id: code, createdAt: now };
+    data.languages.push(rec);
+  }
+  Object.assign(rec, patch);
+  touch(rec, now);
+  persist();
+  return language(code);
+}
+
+// ---- words ----
+export function words(code) { return code ? data.words.filter((w) => recLang(w) === code) : data.words; }
+export function getWord(id) { return data.words.find((w) => w.id === id); }
+
+// Finds a saved word by its dictionary form, ignoring a leading article of that language.
+export function findWord(lemma, code = 'de', articles = code === 'de' ? ['der', 'die', 'das'] : []) {
+  const key = normKey(lemma, articles);
+  if (!key) return null;
+  return data.words.find((w) => recLang(w) === code && normKey(lemmaOf(w), articles) === key) || null;
+}
+
+export function normKey(s, articles = []) {
+  let k = (s || '').normalize('NFKC').toLowerCase().trim();
+  for (const a of articles) {
+    const p = a.toLowerCase();
+    if (k.startsWith(`${p} `)) { k = k.slice(p.length + 1).trim(); break; }
+  }
+  return k;
 }
 
 export function addWord(fields, now = Date.now()) {
-  const existing = findWord(fields.german);
+  fields = { ...fields, lang: fields.lang || 'de' };
+  const existing = findWord(fields.lemma, fields.lang, language(fields.lang)?.articles);
   if (existing) {
     // Keep the first capture but fill gaps (for example a context sentence found later).
     for (const [k, v] of Object.entries(fields)) {
@@ -85,9 +130,9 @@ export function addWord(fields, now = Date.now()) {
     return { word: existing, created: false };
   }
   const word = {
-    id: uid(), german: '', article: '', pos: 'other', meaning: '', plural: '', verbForms: '',
-    register: '', example: '', exampleTranslation: '', contextSentence: '', gapSentence: '',
-    gapAnswer: '', source: 'lookup', ...fields, addedAt: now, updatedAt: now,
+    id: uid(), lang: 'de', lemma: '', article: '', reading: '', pos: 'other', meaning: '', plural: '',
+    verbForms: '', forms: '', recallAnswer: '', register: '', example: '', exampleTranslation: '',
+    contextSentence: '', gapSentence: '', gapAnswer: '', source: 'lookup', ...fields, addedAt: now, updatedAt: now,
   };
   data.words.unshift(word);
   ensureReviewItem('word', word.id, now);
@@ -99,6 +144,8 @@ export function updateWord(id, patch) {
   const w = getWord(id);
   if (!w) return;
   Object.assign(w, patch);
+  // An edit saves the dictionary form under its new name.
+  if ('lemma' in patch) delete w.german;
   touch(w);
   persist();
 }
@@ -111,14 +158,14 @@ export function deleteWord(id) {
 }
 
 // ---- mistakes ----
-export function mistakes() { return data.mistakes; }
+export function mistakes(code) { return code ? data.mistakes.filter((m) => recLang(m) === code) : data.mistakes; }
 export function getMistake(id) { return data.mistakes.find((m) => m.id === id); }
 
-export function addMistakes(list, source, now = Date.now()) {
+export function addMistakes(list, source, code = 'de', now = Date.now()) {
   const added = [];
   for (const m of list) {
     const mistake = {
-      id: uid(), original: m.original || '', corrected: m.corrected || '',
+      id: uid(), lang: code, original: m.original || '', corrected: m.corrected || '',
       explanation: m.explanation || '', category: m.category || 'other',
       fullSentence: m.sentence || '', correctedSentence: m.correctedSentence || '',
       source, createdAt: now, updatedAt: now,
@@ -131,7 +178,7 @@ export function addMistakes(list, source, now = Date.now()) {
     if (source !== 'drill' && mistake.fullSentence && mistake.correctedSentence) {
       ensureReviewItem('mistake', mistake.id, now);
     }
-    if (mistake.category !== 'other') ensureReviewItem('category', mistake.category, now);
+    if (mistake.category !== 'other') ensureReviewItem('category', catKey(code, mistake.category), now);
     added.push(mistake);
   }
   persist();
@@ -140,7 +187,7 @@ export function addMistakes(list, source, now = Date.now()) {
 
 // ---- review items and reviews ----
 export function reviewItems() { return data.reviewItems; }
-export function reviews() { return data.reviews; }
+export function reviews(code) { return code ? data.reviews.filter((r) => recLang(r) === code) : data.reviews; }
 
 export function reviewItemFor(itemType, itemId) {
   return data.reviewItems.find((r) => r.itemType === itemType && r.itemId === itemId);
@@ -176,7 +223,7 @@ export function importData(json) {
   const parsed = JSON.parse(json);
   if (!Array.isArray(parsed.words) || !Array.isArray(parsed.mistakes)) throw new Error('Not a German Trainer backup');
   data = { ...emptyData(), words: parsed.words, mistakes: parsed.mistakes,
-    reviewItems: parsed.reviewItems || [], reviews: parsed.reviews || [] };
+    reviewItems: parsed.reviewItems || [], reviews: parsed.reviews || [], languages: parsed.languages || [] };
   // An imported backup replaces what is here, so it must also win over the synced copies.
   const now = Date.now();
   for (const list of Object.values(data)) list.forEach((r) => touch(r, now));
