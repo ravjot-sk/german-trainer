@@ -2,7 +2,7 @@
 // and counted. The API key comes from this device's settings and is sent only to Google.
 import { getApiKey, getSettings, setSettings, activeLanguage } from './store.js';
 import { categoriesFor, categoryGuide, categoryLabel, finishCategories } from './categories.js';
-import { lemmaOf } from './languages.js';
+import { lemmaOf, cleanExamples, MORE_EXAMPLES } from './languages.js';
 import { parse as parseFurigana } from './furigana.js';
 import { t, lang } from './i18n.js';
 
@@ -233,12 +233,20 @@ ${context ? `Context sentence where the learner found it: "${context}"\nUse the 
 If the query is English${L.romanized ? ` or ${name} written in ${L.romanized}` : ''}, return the most common ${name} equivalent. If it is an inflected ${name} form, return the dictionary form.
 If the query is not a real word in either language, set found to false.`;
   const props = wordProps(L);
+  props.moreExamples = {
+    type: 'ARRAY', items: S({ text: STR, translation: STR, ...(hasFurigana(L) ? { furigana: furiganaOf('text') } : {}) }),
+    description: `Exactly ${MORE_EXAMPLES} more natural ${name} example sentences for a learner at ${levelText(L)}, each with its English translation. Each shows the word in a different situation or form than the example and each other.`,
+  };
   if (hasFurigana(L) && context) props.contextFurigana = furiganaOf('The context sentence');
   const schema = S({ found: { type: 'BOOLEAN' }, ...props }, ['found', ...Object.keys(props)]);
   const r = cleanWord(await generate(prompt, schema));
+  const extra = cleanExamples(r.moreExamples, r.example);
+  r.moreExamples = extra.map(({ text, translation }) => ({ text, translation }));
   if (!hasFurigana(L)) return r;
-  return collectFurigana(r, [['exampleFurigana', (x) => x.example], ['gapFurigana', (x) => x.gapSentence],
+  collectFurigana(r, [['exampleFurigana', (x) => x.example], ['gapFurigana', (x) => x.gapSentence],
     ['contextFurigana', () => context]]);
+  for (const e of extra) if (e.furigana && parseFurigana(e.furigana, e.text)) r.furigana.push(e.furigana);
+  return r;
 }
 
 export async function correctText(text) {

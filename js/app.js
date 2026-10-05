@@ -7,7 +7,7 @@ import { buildSession, summarizeDue } from './session.js';
 import { schedule, isNew, dayStart } from './srs.js';
 import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
 import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
-import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence } from './languages.js';
+import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence, examplesToText, examplesFromText } from './languages.js';
 import { icon } from './icons.js';
 import { segmentsFor, cutChunks, toHtml, missing, strip } from './furigana.js';
 
@@ -87,7 +87,7 @@ async function fillFurigana(recs, redraw) {
       const add = marked.filter((m) => need.includes(strip(m)));
       if (!add.length) continue;
       // Markup for texts that were edited since is dropped.
-      const texts = [lemmaOf(r), r.example, r.contextSentence, r.gapSentence];
+      const texts = [lemmaOf(r), r.example, ...(r.moreExamples || []).map((e) => e.text), r.contextSentence, r.gapSentence];
       store.updateWord(r.id, { furigana: [...(r.furigana || []).filter((m) => texts.includes(strip(m))), ...add] });
       added = true;
     }
@@ -813,6 +813,7 @@ function lookupResult({ word, note }) {
     <div class="meaning">${esc(w.meaning)}</div>
     ${w.register ? `<div class="muted small">${esc(w.register)}</div>` : ''}
     ${w.example ? `<div class="sentence"><span ${tl(c)}>${jt(w.example, w, c)}</span><div class="muted small">${esc(w.exampleTranslation)}</div></div>` : ''}
+    ${(w.moreExamples || []).map((e) => `<div class="sentence"><span ${tl(c)}>${jt(e.text, w, c)}</span><div class="muted small">${esc(e.translation)}</div></div>`).join('')}
     ${w.contextSentence ? `<div class="sentence ctx" ${tl(c)}>${jt(w.contextSentence, w, c)}</div>` : ''}
     <div class="saved-note">${icon('check', 16)} ${esc(note)}</div>
   </article>`;
@@ -947,6 +948,8 @@ function openEditor(id) {
     ${moreFields(`
       ${field('register', t('edit.register'), 'input', false)}
       ${field('example', t('edit.example'), 'textarea')}
+      <label>${esc(t('edit.moreExamples'))}<textarea name="moreExamples" rows="5" ${tl(Lw.code)}>${esc(examplesToText(w.moreExamples))}</textarea></label>
+      <p class="muted small">${esc(t('edit.moreExamplesHelp'))}</p>
       ${field('contextSentence', t('edit.context'), 'textarea')}
       ${field('gapSentence', t('edit.gapSentence'), 'textarea')}
       ${field('gapAnswer', t('edit.gapAnswer'))}`)}
@@ -968,6 +971,7 @@ function openEditor(id) {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target).entries());
     if (!fd.lemma.trim()) return;
+    fd.moreExamples = examplesFromText(fd.moreExamples);
     if (id) store.updateWord(id, fd); else store.addWord({ ...fd, lang: Lw.code, source: 'manual' });
     close();
   });

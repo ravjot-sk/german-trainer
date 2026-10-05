@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compare, checkRecall, gapFor, wordDiff, needsPlural } from '../js/check.js';
-import { catKey, parseCatKey, recLang, lemmaOf, describe } from '../js/languages.js';
+import { catKey, parseCatKey, recLang, lemmaOf, describe, cleanExamples, examplesToText, examplesFromText } from '../js/languages.js';
 import { categoriesFor, finishCategories, categoryLabel, drillableIds } from '../js/categories.js';
 import { buildSession } from '../js/session.js';
 import { dayStart } from '../js/srs.js';
@@ -127,4 +127,26 @@ test('store: legacy data is German, and each language keeps its own words and ca
   assert.equal('german' in store.getWord('w1'), false);
   assert.equal(word.lang, 'ja');
   store.setActiveLanguage(undefined);
+});
+
+test('extra lookup examples drop blanks and repeats and keep at most two', () => {
+  const list = [
+    { text: ' Ich fahre nach Berlin. ', translation: 'I drive to Berlin.' },
+    { text: 'Wir fahren morgen.', translation: 'We leave tomorrow.' },
+    { text: '', translation: 'x' },
+    { text: 'Wir fahren morgen.', translation: 'dup' },
+    { text: 'Er fährt Rad.', translation: 'He cycles.' },
+  ];
+  assert.deepEqual(cleanExamples(list, 'Ich fahre nach Berlin.'), [
+    { text: 'Wir fahren morgen.', translation: 'We leave tomorrow.' },
+    { text: 'Er fährt Rad.', translation: 'He cycles.' },
+  ]);
+  assert.deepEqual(cleanExamples(undefined), []);
+});
+
+test('extra examples round-trip through the edit form text', () => {
+  const list = [{ text: 'Wir fahren morgen.', translation: 'We leave tomorrow.' }, { text: 'Er fährt Rad.', translation: '' }];
+  assert.equal(examplesToText(list), 'Wir fahren morgen. | We leave tomorrow.\nEr fährt Rad.');
+  assert.deepEqual(examplesFromText(examplesToText(list)), list);
+  assert.deepEqual(examplesFromText('\n  \nA | b | c\n'), [{ text: 'A', translation: 'b | c' }]);
 });

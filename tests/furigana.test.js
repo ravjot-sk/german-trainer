@@ -73,3 +73,9 @@ test('missing lists the Japanese texts that still need furigana', () => {
   assert.deepEqual(missing(s), ['水を飲む。']);
   assert.equal(toHira('カタカナ'), 'かたかな');
 });
+
+test('extra examples without furigana are asked for', () => {
+  const w = { lang: 'ja', lemma: '飲む', reading: 'のむ', example: '水を飲む。', furigana: ['{水|みず}を{飲|の}む。'],
+    moreExamples: [{ text: 'お茶を飲みます。', translation: 'I drink tea.' }] };
+  assert.deepEqual(missing(w), ['お茶を飲みます。']);
+});

@@ -30,6 +30,33 @@ export const isSentence = (w) => !!w && w.kind === 'sentence';
 // Words were stored under `german` before other languages existed.
 export const lemmaOf = (w) => (w && (w.lemma ?? w.german)) || '';
 
+// A lookup saves the main example plus up to MORE_EXAMPLES more as moreExamples: [{ text, translation }].
+// Exercises only use the main one.
+export const MORE_EXAMPLES = 2;
+
+// Trimmed, non-empty extra examples that repeat neither the main one nor each other.
+export function cleanExamples(list, main = '') {
+  const seen = new Set([(main || '').trim()]);
+  const out = [];
+  for (const e of Array.isArray(list) ? list : []) {
+    const text = String(e?.text || '').trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push({ ...e, text, translation: String(e.translation || '').trim() });
+  }
+  return out.slice(0, MORE_EXAMPLES);
+}
+
+// The extra examples in the edit form: one per line, "sentence | translation".
+export const examplesToText = (list) =>
+  (list || []).map((e) => (e.translation ? `${e.text} | ${e.translation}` : e.text)).join('\n');
+export function examplesFromText(text) {
+  return String(text || '').split('\n').map((line) => {
+    const i = line.indexOf(' | ');
+    return i < 0 ? { text: line.trim(), translation: '' } : { text: line.slice(0, i).trim(), translation: line.slice(i + 3).trim() };
+  }).filter((e) => e.text);
+}
+
 // Merges a built-in definition with the stored record (level, or the whole description for an
 // added language). Returns null for an unknown code.
 export function describe(code, record) {

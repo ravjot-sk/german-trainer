@@ -108,7 +108,7 @@ export function toHtml(segments) {
 // Texts on a record that could carry furigana but have none yet (Gemini fills them in).
 export function missing(rec) {
   if (!rec || (rec.lang || 'de') !== 'ja') return [];
-  const texts = [rec.example, rec.contextSentence, rec.gapSentence];
+  const texts = [rec.example, ...(rec.moreExamples || []).map((e) => e.text), rec.contextSentence, rec.gapSentence];
   if (rec.kind === 'sentence') texts.unshift(rec.lemma);
   else if (!align(rec.lemma ?? rec.german, rec.reading)) texts.unshift(rec.lemma ?? rec.german);
   return [...new Set(texts.filter((x) => hasKanji(x)))]
