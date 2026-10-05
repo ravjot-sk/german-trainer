@@ -5,9 +5,9 @@ import * as sync from './sync.js';
 import { logMistakes } from './actions.js';
 import { buildSession, summarizeDue } from './session.js';
 import { schedule, isNew, dayStart } from './srs.js';
-import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff } from './check.js';
+import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
 import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
-import { catKey, parseCatKey, recLang, lemmaOf, displayName } from './languages.js';
+import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence } from './languages.js';
 
 const main = document.getElementById('main');
 const titleEl = document.getElementById('title');
@@ -46,6 +46,16 @@ const tl = (c = code()) => `lang="${esc(c)}" dir="auto"`;
 const readingLine = (w) => (w.reading ? `<div class="reading" ${tl(recLang(w))}>${esc(w.reading)}</div>` : '');
 const inputAttrs = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
 
+// Small per-device UI preferences (last lookup mode and tone). Storage can be unavailable.
+function pref(key, fallback) {
+  try { return localStorage.getItem(`gt.ui.${key}`) || fallback; } catch { return fallback; }
+}
+function setPref(key, value) {
+  try { localStorage.setItem(`gt.ui.${key}`, value); } catch { /* not kept */ }
+}
+
+const toneLabel = (tone) => t(`tone.${tone || 'everyday'}`);
+
 function errorBox(e) {
   return `<div class="notice error">${esc(e.message || e)}</div>`;
 }
@@ -65,6 +75,38 @@ function mistakeList(list, c = code()) {
     </li>`).join('')}</ul>`;
 }
 
+// "More natural" suggestion under a correction, with a button that saves it as a sentence.
+function naturalBlock(text, reason, c = code()) {
+  if (!text) return '';
+  const saved = store.findWord(text, c);
+  return `<div class="natural">
+    <div class="natural-title">💡 ${esc(t('natural.title'))}</div>
+    <div class="sentence" ${tl(c)}>${esc(text)}</div>
+    ${reason ? `<div class="muted small">${esc(reason)}</div>` : ''}
+    ${saved ? `<div class="saved-note">✓ ${esc(t('natural.inList'))}</div>`
+      : `<button type="button" class="btn small" data-natural="${esc(text)}" data-lang="${esc(c)}">＋ ${esc(t('natural.add'))}</button>`}
+  </div>`;
+}
+
+function bindNatural(root) {
+  $$('[data-natural]', root).forEach((b) => b.addEventListener('click', async () => {
+    const text = b.dataset.natural;
+    const c = b.dataset.lang;
+    b.disabled = true;
+    b.textContent = t('natural.saving');
+    try {
+      // Gemini describes the sentence (English, tone, pieces) so it can be practised.
+      const r = c === code() && gem() ? await gemini.translateSentence(text, null, { keep: true }) : { sentence: text };
+      store.addSentence(r, c, 'suggestion');
+      b.outerHTML = `<div class="saved-note">✓ ${esc(t('natural.saved'))}</div>`;
+    } catch (e) {
+      b.disabled = false;
+      b.textContent = `＋ ${t('natural.add')}`;
+      toast(e.message || String(e));
+    }
+  }));
+}
+
 // Everything the session needs, limited to the active language.
 function sessionArgs() {
   const c = code();
@@ -77,6 +119,7 @@ function sessionArgs() {
   return {
     items, words, mistakes, reviews: store.reviews(c), settings: store.getSettings(),
     gemini: gem() && !!L()?.level, drillable: drillableIds(cats()).map((id) => catKey(c, id)),
+    hasChunks: (w) => !!chunksFor(w),
   };
 }
 
@@ -206,6 +249,7 @@ function viewToday() {
       <div class="hero-num">${s.total}</div>
       <div class="hero-split">
         <span><b>${s.words}</b> ${esc(t('today.words'))}${s.newWords ? ` (${s.newWords} ${esc(t('today.newWords'))})` : ''}</span>
+        ${s.sentences ? `<span><b>${s.sentences}</b> ${esc(t('today.sentences'))}</span>` : ''}
         <span><b>${s.grammar}</b> ${esc(t('today.drills'))}</span>
       </div>
       ${s.total ? `<button class="btn primary big" id="start">${esc(t('today.start'))}</button>`
@@ -227,7 +271,7 @@ function startSession() {
   for (const task of tasks) {
     if (task.kind === 'drill') {
       const examples = store.mistakes(code()).filter((m) => m.category === task.category).slice(0, 4);
-      const words = store.words(code());
+      const words = store.words(code()).filter((w) => !isSentence(w));
       const word = task.drillKind === 'constraint' && words.length ? words[Math.floor(Math.random() * Math.min(words.length, 30))] : null;
       task.drillPromise = gemini.generateDrill(task.category, task.drillKind, { examples, word })
         .then((d) => (task.drill = d))
@@ -281,11 +325,27 @@ async function renderTask(task) {
       <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${w.register ? ` · ${esc(w.register)}` : ''}</div>
       <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(recallHint(w))}">
       ${needsPlural(w) ? `<input class="answer" id="a2" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.plural'))}">` : ''}`;
+  } else if (task.kind === 'say') {
+    body = `
+      <div class="ex-label">${esc(t('ex.say', { l: langName() }))}</div>
+      <div class="prompt">${esc(w.meaning)}</div>
+      <div class="muted small"><span class="chip">${esc(toneLabel(w.tone))}</span> ${esc(t(`tone.${w.tone || 'everyday'}.help`))}</div>
+      <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
+  } else if (task.kind === 'order') {
+    task.parts = chunksFor(w);
+    task.pool = shuffled(task.parts.map((p, i) => ({ p, i })));
+    task.built = [];
+    body = `
+      <div class="ex-label">${esc(t('ex.order'))}</div>
+      <div class="prompt">${esc(w.meaning)}</div>
+      <div class="built" id="built" ${tl()}><span class="muted small">${esc(t('ex.orderHint'))}</span></div>
+      <div class="pool" id="pool" ${tl()}></div>
+      <input type="hidden" id="a1">`;
   } else if (task.kind === 'gap') {
     const gap = gapFor(w);
     task.gap = gap;
     body = `
-      <div class="ex-label">${esc(t('ex.gap'))}</div>
+      <div class="ex-label">${esc(t(isSentence(w) ? 'ex.sgap' : 'ex.gap'))}</div>
       <div class="prompt sentence" ${tl()}>${esc(gap.sentence).replace('___', '<span class="gap">___</span>')}</div>
       <div class="muted small">${esc(t('ex.meaning'))}: ${esc(w.meaning)}</div>
       <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}">`;
@@ -333,6 +393,7 @@ async function renderTask(task) {
 
   const a1 = $('#a1');
   a1.focus({ preventScroll: true });
+  if (task.kind === 'order') bindOrder(task);
   $('#check').addEventListener('click', () => onCheck(task));
   $('#skip').addEventListener('click', () => { session.idx++; viewSession(); });
   $$('input.answer', ex).forEach((el) => el.addEventListener('keydown', (e) => {
@@ -341,6 +402,30 @@ async function renderTask(task) {
     if (el.id === 'a1' && $('#a2') && !$('#a2').value) $('#a2').focus();
     else (task.state.phase === 'answer' ? onCheck(task) : next(task));
   }));
+}
+
+// Word-order exercise: tap pieces to build the sentence, tap a placed piece to put it back.
+function bindOrder(task) {
+  const draw = () => {
+    const used = new Set(task.built.map((x) => x.i));
+    $('#built').innerHTML = task.built.length
+      ? task.built.map((x, k) => `<button type="button" class="chunk placed" data-k="${k}">${esc(x.p)}</button>`).join('')
+      : `<span class="muted small">${esc(t('ex.orderHint'))}</span>`;
+    $('#pool').innerHTML = task.pool.map((x, k) =>
+      `<button type="button" class="chunk" data-p="${k}" ${used.has(x.i) ? 'disabled' : ''}>${esc(x.p)}</button>`).join('');
+    $('#a1').value = joinChunks(task.built.map((x) => x.p));
+    $$('#pool .chunk').forEach((b) => b.addEventListener('click', () => {
+      if (task.state.phase !== 'answer') return;
+      task.built.push(task.pool[+b.dataset.p]);
+      draw();
+    }));
+    $$('#built .chunk').forEach((b) => b.addEventListener('click', () => {
+      if (task.state.phase !== 'answer') return;
+      task.built.splice(+b.dataset.k, 1);
+      draw();
+    }));
+  };
+  draw();
 }
 
 // What to type in recall: German nouns with article, other languages' nouns with article
@@ -370,6 +455,27 @@ async function onCheck(task) {
       if (r.byReading) almostKey = 'session.almostReading';
       canOverride = grade !== 'correct';
       html = wordReveal(task.word);
+    } else if (task.kind === 'order') {
+      grade = compare(a1, lemmaOf(task.word));
+      canOverride = grade !== 'correct';
+      html = sentenceReveal(task.word);
+    } else if (task.kind === 'say') {
+      const w = task.word;
+      if (gem()) {
+        fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
+        const r = await gemini.gradeTranslation(w, a1);
+        mistakes = r.mistakes || [];
+        grade = r.correct && !mistakes.length ? 'correct' : 'wrong';
+        html = `<p>${esc(r.feedback)}</p>
+          ${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
+          ${r.toneHint ? `<div class="tip"><b>${esc(t('ex.toneTip', { tone: toneLabel(w.tone) }))}</b> ${esc(r.toneHint)}</div>` : ''}
+          ${sentenceReveal(w)}
+          ${grade === 'correct' ? naturalBlock(r.natural, r.naturalReason) : ''}`;
+      } else {
+        grade = compare(a1, lemmaOf(w));
+        canOverride = grade !== 'correct';
+        html = sentenceReveal(w);
+      }
     } else if (task.kind === 'gap') {
       grade = compare(a1, task.gap.answer);
       canOverride = grade !== 'correct';
@@ -393,7 +499,8 @@ async function onCheck(task) {
       const r = await gemini.gradeWordSentence(task.word, a1);
       mistakes = r.mistakes || [];
       grade = r.usesWordCorrectly && !mistakes.length ? 'correct' : 'wrong';
-      html = `<p>${esc(r.feedback)}</p>${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}`;
+      html = `<p>${esc(r.feedback)}</p>${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
+        ${naturalBlock(r.natural, r.naturalReason)}`;
     } else if (task.kind === 'drill') {
       const d = task.drill;
       if (task.drillKind === 'gapfill') {
@@ -422,12 +529,18 @@ async function onCheck(task) {
 
   if (mistakes.length) {
     // Sentences written in exercises count as new writing; drill answers only feed drill accuracy.
-    const source = task.kind === 'write' ? 'exercise' : 'drill';
+    const source = ['write', 'say'].includes(task.kind) ? 'exercise' : 'drill';
     session.mistakesLogged += logMistakes(mistakes, source, session.lang).mistakes.length;
   }
 
   task.state = { phase: 'feedback', grade, almostKey, answer: a1 + (a2 ? ` / ${a2}` : ''), feedback: html };
   showFeedback(task, canOverride);
+}
+
+function sentenceReveal(w) {
+  return `<div class="reveal"><div class="muted small">${esc(t('ex.saved'))} · ${esc(toneLabel(w.tone))}</div>
+    <div class="sentence" ${tl(recLang(w))}>${esc(lemmaOf(w))}${w.reading ? `<div class="reading">${esc(w.reading)}</div>` : ''}</div>
+    ${w.toneNote ? `<div class="muted small">${esc(w.toneNote)}</div>` : ''}</div>`;
 }
 
 function wordReveal(w) {
@@ -445,6 +558,8 @@ function showFeedback(task, canOverride) {
   const cls = grade === 'correct' ? 'ok' : grade === 'almost' ? 'almost' : 'bad';
   const label = grade === 'correct' ? t('session.correct') : grade === 'almost' ? t(almostKey || 'session.almost') : t('session.wrong');
   $('#feedback').innerHTML = `<div class="result ${cls}"><div class="result-title">${esc(label)}</div>${feedback}</div>`;
+  bindNatural($('#feedback'));
+  $$('#ex .chunk').forEach((b) => (b.disabled = true));
   $('#ex .actions').innerHTML = `
     ${canOverride ? `<button class="btn" id="override">${esc(t('session.iWasRight'))}</button>` : ''}
     <button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
@@ -471,7 +586,7 @@ function next(task) {
     session.answered++;
     if (grade !== 'wrong') session.correct++;
     // Locally checked items answered wrong come back once at the end of the session.
-    if (grade === 'wrong' && ['recall', 'gap', 'fix'].includes(task.kind)) {
+    if (grade === 'wrong' && ['recall', 'gap', 'fix', 'order'].includes(task.kind)) {
       session.requeued.add(task);
       session.tasks.push(task);
     }
@@ -486,52 +601,96 @@ let lastLookup = null;
 function viewLookup() {
   titleEl.textContent = t('lookup.title');
   const recent = [...store.words(code())].sort((a, b) => b.addedAt - a.addedAt).slice(0, 12);
+  const mode = pref('lookupMode', 'word');
+  const tone = pref('tone', 'everyday');
   const romanized = L()?.romanized ? `<p class="muted small">${esc(t('lookup.romanized', { r: L().romanized }))}</p>` : '';
-  main.innerHTML = `
-    <form class="card" id="lf">
-      <input id="q" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.placeholder', { l: langName() }))}" enterkeyhint="search">
+  const seg = (id, options, current) => `<div class="seg" id="${id}">${options.map(([v, label]) =>
+    `<button type="button" data-v="${esc(v)}" class="${v === current ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
+  const form = mode === 'sentence'
+    ? `<textarea id="q" rows="3" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.sentencePlaceholder', { l: langName() }))}"></textarea>
+      <div class="field-label">${esc(t('lookup.tone'))}</div>
+      ${seg('tone', gemini.TONES.map((x) => [x, toneLabel(x)]), tone)}
+      <p class="muted small" id="tonehelp">${esc(t(`tone.${tone}.help`))}</p>
+      <button class="btn primary" type="submit">${esc(t('lookup.translate'))}</button>`
+    : `<input id="q" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.placeholder', { l: langName() }))}" enterkeyhint="search">
       ${romanized}
       <button type="button" class="btn link small" id="addctx">${esc(t('lookup.addContext'))}</button>
       <textarea id="ctx" rows="2" class="hidden" ${tl()} placeholder="${esc(t('lookup.context'))}"></textarea>
-      <button class="btn primary" type="submit">${esc(t('lookup.go'))}</button>
+      <button class="btn primary" type="submit">${esc(t('lookup.go'))}</button>`;
+  main.innerHTML = `
+    <form class="card" id="lf">
+      ${seg('mode', [['word', t('lookup.modeWord')], ['sentence', t('lookup.modeSentence')]], mode)}
+      ${form}
     </form>
     <div id="lres">${lastLookup ? lookupResult(lastLookup) : ''}</div>
     ${recent.length ? `<h3>${esc(t('lookup.recent'))}</h3>${wordRows(recent)}` : ''}
   `;
-  $('#addctx').addEventListener('click', () => { $('#ctx').classList.remove('hidden'); $('#addctx').remove(); $('#ctx').focus(); });
+  $$('#mode button').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.v === mode) return;
+    setPref('lookupMode', b.dataset.v);
+    viewLookup();
+    $('#q').focus();
+  }));
+  $$('#tone button').forEach((b) => b.addEventListener('click', () => {
+    setPref('tone', b.dataset.v);
+    $$('#tone button').forEach((x) => x.classList.toggle('on', x === b));
+    $('#tonehelp').textContent = t(`tone.${b.dataset.v}.help`);
+  }));
+  $('#addctx')?.addEventListener('click', () => { $('#ctx').classList.remove('hidden'); $('#addctx').remove(); $('#ctx').focus(); });
   $('#lf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const q = $('#q').value.trim();
-    const ctx = $('#ctx').value.trim();
     if (!q) return;
     $('#q').blur();
-    const res = $('#lres');
-    if (!gem()) {
-      const local = store.findWord(q, code(), L()?.articles)
-        || store.words(code()).find((w) => w.reading === q || w.meaning.toLowerCase().includes(q.toLowerCase()));
-      if (local) { lastLookup = { word: local, note: t('lookup.offlineHit') }; res.innerHTML = lookupResult(lastLookup); bindWordCard(res); }
-      else res.innerHTML = errorBox(store.getApiKey() ? t('err.offline') : t('err.noKey'));
-      return;
-    }
-    res.innerHTML = `<div class="card loading">${esc(t('lookup.loading'))}</div>`;
-    try {
-      const r = await gemini.lookup(q, ctx);
-      if (!r.found || !r.lemma) { res.innerHTML = `<div class="notice">${esc(t('lookup.notFound'))}</div>`; return; }
-      const { found, ...fields } = r;
-      const { word, created } = store.addWord({ ...fields, lang: code(), contextSentence: ctx, source: 'lookup' });
-      lastLookup = { word, note: created ? t('lookup.saved') : t('lookup.already') };
-      viewLookup();
-    } catch (err) {
-      res.innerHTML = errorBox(err);
-    }
+    if (mode === 'sentence') translate(q, $('#tone .on')?.dataset.v || 'everyday');
+    else lookupWord(q, $('#ctx').value.trim());
   });
   bindWordCard($('#lres'));
   bindWordRows(main);
 }
 
+async function lookupWord(q, ctx) {
+  const res = $('#lres');
+  if (!gem()) {
+    const local = store.findWord(q, code(), L()?.articles)
+      || store.words(code()).find((w) => w.reading === q || w.meaning.toLowerCase().includes(q.toLowerCase()));
+    if (local) { lastLookup = { word: local, note: t('lookup.offlineHit') }; res.innerHTML = lookupResult(lastLookup); bindWordCard(res); }
+    else res.innerHTML = errorBox(store.getApiKey() ? t('err.offline') : t('err.noKey'));
+    return;
+  }
+  res.innerHTML = `<div class="card loading">${esc(t('lookup.loading'))}</div>`;
+  try {
+    const r = await gemini.lookup(q, ctx);
+    if (!r.found || !r.lemma) { res.innerHTML = `<div class="notice">${esc(t('lookup.notFound'))}</div>`; return; }
+    const { found, ...fields } = r;
+    const { word, created } = store.addWord({ ...fields, lang: code(), contextSentence: ctx, source: 'lookup' });
+    lastLookup = { word, note: created ? t('lookup.saved') : t('lookup.already') };
+    viewLookup();
+  } catch (err) {
+    res.innerHTML = errorBox(err);
+  }
+}
+
+async function translate(q, tone) {
+  const res = $('#lres');
+  if (!gem()) { res.innerHTML = errorBox(store.getApiKey() ? t('err.offline') : t('err.noKey')); return; }
+  res.innerHTML = `<div class="card loading">${esc(t('lookup.translating'))}</div>`;
+  try {
+    const r = await gemini.translateSentence(q, tone);
+    if (!r.sentence) { res.innerHTML = `<div class="notice">${esc(t('lookup.notTranslated'))}</div>`; return; }
+    const { word, created } = store.addSentence({ ...r, query: q }, code());
+    lastLookup = { word, note: created ? t('lookup.sentenceSaved') : t('lookup.sentenceAlready') };
+    viewLookup();
+    $('#q').value = q;
+  } catch (err) {
+    res.innerHTML = errorBox(err);
+  }
+}
+
 function lookupResult({ word, note }) {
   const w = store.getWord(word.id) || word;
   if (!store.getWord(word.id)) return '';
+  if (isSentence(w)) return sentenceCard(w, note);
   const c = recLang(w);
   const forms = w.verbForms || w.forms;
   return `<article class="card word-card" data-id="${esc(w.id)}">
@@ -549,8 +708,47 @@ function lookupResult({ word, note }) {
   </article>`;
 }
 
+function sentenceCard(w, note) {
+  const c = recLang(w);
+  const keyWords = (w.keyWords || []).map((k) => {
+    const have = store.findWord(k.lemma, c, store.language(c)?.articles);
+    return `<button type="button" class="kw ${have ? 'have' : ''}" data-kw="${esc(k.lemma)}" ${have ? 'disabled' : ''}>
+      <span ${tl(c)}>${have ? '✓ ' : '＋ '}${esc(k.lemma)}</span> <span class="muted">${esc(k.meaning)}</span></button>`;
+  }).join('');
+  return `<article class="card word-card" data-id="${esc(w.id)}">
+    <div class="word-head">
+      <span class="chip">${esc(toneLabel(w.tone))}</span>
+      <button class="btn small" data-edit="${esc(w.id)}">✎</button>
+    </div>
+    <div class="sentence-big" ${tl(c)}>${esc(lemmaOf(w))}</div>
+    ${readingLine(w)}
+    <div class="meaning">${esc(w.meaning)}</div>
+    ${w.toneNote ? `<div class="muted small">${esc(w.toneNote)}</div>` : ''}
+    ${keyWords ? `<div class="field-label">${esc(t('lookup.keyWords'))}</div><div class="keywords">${keyWords}</div>` : ''}
+    <div class="saved-note">✓ ${esc(note)}</div>
+  </article>`;
+}
+
 function bindWordCard(root) {
   $$('[data-edit]', root).forEach((b) => b.addEventListener('click', () => openEditor(b.dataset.edit)));
+  // Words from a translated sentence: a full lookup in the sentence's sense, then saved.
+  $$('[data-kw]', root).forEach((b) => b.addEventListener('click', async () => {
+    const sentence = store.getWord(b.closest('[data-id]').dataset.id);
+    if (!gem()) { toast(store.getApiKey() ? t('err.offline') : t('err.noKey')); return; }
+    b.disabled = true;
+    try {
+      const r = await gemini.lookup(b.dataset.kw, lemmaOf(sentence));
+      if (!r.found || !r.lemma) throw new Error(t('lookup.notFound'));
+      const { found, ...fields } = r;
+      store.addWord({ ...fields, lang: recLang(sentence), contextSentence: lemmaOf(sentence), source: 'sentence' });
+      b.classList.add('have');
+      b.querySelector('span').textContent = `✓ ${r.lemma}`;
+      toast(t('lookup.saved'));
+    } catch (e) {
+      b.disabled = false;
+      toast(e.message || String(e));
+    }
+  }));
 }
 
 // ---------- Word list ----------
@@ -559,6 +757,10 @@ function wordRows(list) {
     const item = store.reviewItemFor('word', w.id);
     const status = !item || isNew(item) ? `<span class="chip new">${esc(t('words.new'))}</span>`
       : `<span class="muted small">${esc(t('words.due', { d: fmtDate(item.due) }))}</span>`;
+    if (isSentence(w)) {
+      return `<li data-word="${esc(w.id)}"><div class="grow"><div class="ellipsis" ${tl(recLang(w))}>${esc(lemmaOf(w))}</div>
+        <div class="muted small ellipsis">${esc(toneLabel(w.tone))} · ${esc(w.meaning)}</div></div>${status}</li>`;
+    }
     const reading = w.reading ? ` <span class="muted small" ${tl(recLang(w))}>${esc(w.reading)}</span>` : '';
     return `<li data-word="${esc(w.id)}"><div><b ${tl(recLang(w))}>${esc(wordTitle(w))}</b>${reading}<div class="muted small ellipsis">${esc(w.meaning)}</div></div>${status}</li>`;
   }).join('')}</ul>`;
@@ -571,21 +773,33 @@ function bindWordRows(root) {
 let wordQuery = '';
 function viewWords() {
   titleEl.textContent = t('words.title');
+  const all = store.words(code());
+  let show = pref('wordFilter', 'all');
   main.innerHTML = `
     <div class="toolbar">
       <input id="search" type="search" ${inputAttrs} placeholder="${esc(t('words.search'))}" value="${esc(wordQuery)}">
       <button class="btn" id="add">＋</button>
     </div>
+    ${all.some(isSentence) ? `<div class="seg" id="wfilter">${['all', 'words', 'sentences'].map((f) =>
+      `<button type="button" data-v="${f}" class="${f === show ? 'on' : ''}">${esc(t(`words.filter.${f}`))}</button>`).join('')}</div>` : ''}
     <div id="wlist"></div>`;
   const draw = () => {
     const q = wordQuery.toLowerCase();
-    const all = store.words(code());
-    const list = all.filter((w) => !q || [lemmaOf(w), w.reading, w.meaning].some((f) => (f || '').toLowerCase().includes(q)));
+    const kind = all.some(isSentence) ? show : 'all';
+    const list = all
+      .filter((w) => kind === 'all' || (kind === 'sentences') === isSentence(w))
+      .filter((w) => !q || [lemmaOf(w), w.reading, w.meaning].some((f) => (f || '').toLowerCase().includes(q)));
     $('#wlist').innerHTML = all.length
-      ? `<p class="muted small">${esc(t('words.count', { n: list.length }))}</p>${wordRows(list)}`
+      ? `<p class="muted small">${esc(t(`words.count.${kind}`, { n: list.length }))}</p>${wordRows(list)}`
       : `<p class="muted center">${esc(t('words.empty'))}</p>`;
     bindWordRows($('#wlist'));
   };
+  $$('#wfilter button').forEach((b) => b.addEventListener('click', () => {
+    show = b.dataset.v;
+    setPref('wordFilter', show);
+    $$('#wfilter button').forEach((x) => x.classList.toggle('on', x === b));
+    draw();
+  }));
   $('#search').addEventListener('input', (e) => { wordQuery = e.target.value; draw(); });
   $('#add').addEventListener('click', () => openEditor(null));
   draw();
@@ -594,6 +808,7 @@ function viewWords() {
 function openEditor(id) {
   const saved = id ? store.getWord(id) : null;
   if (id && !saved) return;
+  if (isSentence(saved)) return openSentenceEditor(saved);
   const Lw = store.language(saved ? recLang(saved) : code()) || store.language('de');
   const de = Lw.code === 'de';
   const w = saved ? { ...saved, lemma: lemmaOf(saved) } : { lemma: '', article: '', pos: 'noun', meaning: '' };
@@ -649,6 +864,60 @@ function openEditor(id) {
   });
 }
 
+// Opens a bottom sheet with a form; onSave gets the form fields.
+function openSheet(html, { onSave, onDelete }) {
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-backdrop';
+  sheet.innerHTML = `<form class="sheet">${html}</form>`;
+  document.body.appendChild(sheet);
+  document.body.classList.add('no-scroll');
+  const close = () => { sheet.remove(); document.body.classList.remove('no-scroll'); route(); };
+  sheet.addEventListener('click', (e) => { if (e.target === sheet) close(); });
+  $('[data-act=cancel]', sheet).addEventListener('click', close);
+  $('[data-act=delete]', sheet)?.addEventListener('click', () => { if (onDelete()) close(); });
+  $('form', sheet).addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (onSave(Object.fromEntries(new FormData(e.target).entries())) !== false) close();
+  });
+}
+
+function openSentenceEditor(w) {
+  const c = recLang(w);
+  const Lw = store.language(c) || store.language('de');
+  const field = (k, label, { area = false, target = true } = {}) => {
+    const attrs = target ? tl(c) : '';
+    return area
+      ? `<label>${esc(label)}<textarea name="${k}" rows="2" ${attrs}>${esc(k === 'lemma' ? lemmaOf(w) : w[k])}</textarea></label>`
+      : `<label>${esc(label)}<input name="${k}" value="${esc(w[k])}" ${inputAttrs} ${attrs}></label>`;
+  };
+  openSheet(`
+    <h2>${esc(t('edit.sentenceTitle'))}</h2>
+    ${field('lemma', t('edit.sentence'), { area: true })}
+    ${Lw.reading ? field('reading', t('edit.reading'), { area: true }) : ''}
+    ${field('meaning', t('edit.meaning'), { area: true, target: false })}
+    <label>${esc(t('lookup.tone'))}<select name="tone">${gemini.TONES.map((x) =>
+      `<option value="${x}" ${x === (w.tone || 'everyday') ? 'selected' : ''}>${esc(toneLabel(x))}</option>`).join('')}</select></label>
+    ${field('toneNote', t('edit.toneNote'), { target: false })}
+    ${field('gapSentence', t('edit.gapSentence'), { area: true })}
+    ${field('gapAnswer', t('edit.gapAnswer'))}
+    <div class="actions">
+      <button type="button" class="btn" data-act="cancel">${esc(t('edit.cancel'))}</button>
+      <button type="submit" class="btn primary">${esc(t('edit.save'))}</button>
+    </div>
+    <button type="button" class="btn danger wide" data-act="delete">${esc(t('edit.delete'))}</button>`, {
+    onSave: (fd) => {
+      if (!fd.lemma.trim()) return false;
+      store.updateWord(w.id, fd);
+    },
+    onDelete: () => {
+      if (!confirm(t('edit.confirmDelete', { w: lemmaOf(w) }))) return false;
+      store.deleteWord(w.id);
+      if (lastLookup?.word.id === w.id) lastLookup = null;
+      return true;
+    },
+  });
+}
+
 // ---------- Correct ----------
 let lastCorrection = null;
 
@@ -688,10 +957,12 @@ function correctionResult(c) {
     ${c.mistakes.length ? `<h3>${esc(t('correct.mistakes', { n: c.mistakes.length }))}</h3>${mistakeList(c.mistakes, c.lang)}
       <p class="muted small">${esc(t('correct.logged'))}</p>` : `<p>${esc(t('correct.noMistakes'))}</p>`}
     ${c.newWords?.length ? `<p class="muted small">${esc(t('correct.wordsAdded', { w: c.newWords.join(', ') }))}</p>` : ''}
+    ${naturalBlock(c.natural, c.naturalReason, c.lang)}
   </section>`;
 }
 
 function bindCopy() {
+  bindNatural($('#cres'));
   $('#copy')?.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(lastCorrection.correctedText); toast(t('correct.copied')); } catch { /* ignore */ }
   });

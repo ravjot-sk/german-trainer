@@ -81,6 +81,18 @@ article, plural or key forms (the reading for Japanese), a note on register, and
 - Tap **+ Satz hinzufügen** to add the sentence where you found the word. The app picks the right meaning for
   that sentence, and later turns the sentence into a gap-fill exercise.
 
+**Whole sentences.** Switch to **Satz** to translate a sentence (typed in English or in the language you're
+learning) and pick a tone:
+
+| Tone | When to use it |
+|---|---|
+| Alltag (everyday) | How people really talk day to day. This is the default. |
+| Förmlich (formal) | Polite and professional: officials, work, people you don't know (Sie, keigo) |
+| Informell (informal) | Casual, with friends and family (du, plain form) |
+
+You get the translation, a one-line note on what makes it sound that way, and the useful words in it. Tap
+a word to save it too. The sentence is saved automatically and joins your daily practice.
+
 ### ✏️ Korrigieren (Correct)
 
 Paste or write anything in the language you're learning: an email, a chat message, a practice paragraph.
@@ -92,6 +104,9 @@ You get back:
 
 Every mistake is saved to your profile and scheduled for practice. If you picked the wrong word, the right
 word goes into your word list too. Tap **Kopieren** to copy the corrected text.
+
+If your text is correct but could sound more natural, you also see **Natürlicher klingt es so** with a better
+phrasing and why. That's a suggestion, not a mistake. Tap **Zum Üben speichern** to add it to your sentences.
 
 ### ✅ Heute (Today)
 
@@ -107,6 +122,16 @@ three stages:
 | Gap fill | Fill the word into the sentence where you found it |
 | Write | Write your own sentence with the word, and Gemini checks it |
 
+**Sentences.** Saved sentences rotate through three exercises:
+
+| Exercise | What you do |
+|---|---|
+| Say it | See the English and the tone, and write the sentence. Gemini checks it, so any correct phrasing counts. Using a different tone is never a mistake: you only get a tip on how it's usually said. |
+| Put it in order | Tap the shuffled pieces back into the right order (works offline) |
+| Fill the gap | Fill in the sentence's key expression |
+
+After "write a sentence" and "say it", you may also see a more natural phrasing that you can save.
+
 **Grammar.** This comes from your own mistakes:
 
 | Exercise | What you do |
@@ -117,12 +142,12 @@ three stages:
 Tips:
 - If you were right but typed it slightly differently, tap **Ich lag richtig** to count it as correct.
 - New words and mistakes join your session **the next day**. You get at most 8 new words a day by default,
-  and you can change this in Settings.
+  and you can change this in Settings. New sentences have their own limit of 3 a day.
 - Words and old sentences you get wrong come back once more at the end of the session.
 
 ### 📖 Wörter (Words)
 
-All your saved words. Search them, tap one to edit any field, or delete words you don't want to practise.
+All your saved words and sentences, with a filter to show only one kind. Search them, tap one to edit any field, or delete words you don't want to practise.
 Tap **＋** to add a word by hand.
 
 ### 📊 Profil (Profile)

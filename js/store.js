@@ -10,7 +10,7 @@ const DATA_KEY = 'gt.data.v1';
 const KEY_KEY = 'gt.apiKey';
 const SETTINGS_KEY = 'gt.settings.v1';
 
-const DEFAULT_SETTINGS = { lang: 'de', model: 'gemini-flash-latest', newPerDay: 8, newMistakesPerDay: 4 };
+const DEFAULT_SETTINGS = { lang: 'de', model: 'gemini-flash-latest', newPerDay: 8, newSentencesPerDay: 3, newMistakesPerDay: 4 };
 
 let data = load();
 let settings = loadSettings();
@@ -138,6 +138,16 @@ export function addWord(fields, now = Date.now()) {
   ensureReviewItem('word', word.id, now);
   persist();
   return { word, created: true };
+}
+
+// Saves a translated sentence (from gemini.translateSentence) as a learnable item.
+export function addSentence(r, code, source = 'translate', now = Date.now()) {
+  return addWord({
+    kind: 'sentence', lang: code, lemma: (r.sentence || '').trim(), reading: r.reading || '', pos: 'sentence',
+    meaning: r.translation || '', tone: r.tone || 'everyday', toneNote: r.toneNote || '',
+    chunks: (r.chunks || []).filter(Boolean), gapSentence: r.gapSentence || '', gapAnswer: r.gapAnswer || '',
+    keyWords: (r.keyWords || []).filter((k) => k && k.lemma).slice(0, 4), query: r.query || '', source,
+  }, now);
 }
 
 export function updateWord(id, patch) {
