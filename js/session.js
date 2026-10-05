@@ -1,6 +1,7 @@
 // Builds the daily mixed session: due vocabulary exercises interleaved with grammar drills.
 import { isDue, isNew, dayStart } from './srs.js';
 import { gapFor } from './check.js';
+import { pickGap } from './gappool.js';
 import { DRILLABLE } from './categories.js';
 import { parseCatKey, isSentence } from './languages.js';
 
@@ -18,7 +19,7 @@ function introducedToday(items, type, now, only = () => true) {
 
 // Picks the exercise for a word from how far along it is.
 export function wordExercise(item, word, gemini) {
-  const hasGap = !!gapFor(word);
+  const hasGap = !!pickGap(word, item.reps || 0);
   const reps = item.reps || 0;
   if (reps === 0) return 'recall';
   if (reps === 1) return hasGap ? 'gap' : 'recall';

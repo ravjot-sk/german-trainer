@@ -126,8 +126,14 @@ three stages:
 | Stage | What you do |
 |---|---|
 | Recall | See the meaning and type the word: for German nouns with article and plural, for Japanese in kanji |
-| Gap fill | Fill the word into the sentence where you found it |
+| Gap fill | Fill the word into a sentence: first the one where you found it, then new ones |
 | Write | Write your own sentence with the word, and Gemini checks it |
+
+**Gap sentences change.** Each word keeps a small set of gap sentences. Get one right and you won't see it
+again for that word; get it wrong and the same sentence comes back next time. They get harder as you learn the
+word (another form or tense, then longer sentences). They come from the lookup's examples and from your own
+sentences in the Write exercise once corrected. When a word coming up soon runs low, Gemini writes new ones for up to ten words
+in one go, in the background when a session starts.
 
 **Sentences.** Saved sentences rotate through three exercises:
 

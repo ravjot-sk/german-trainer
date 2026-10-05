@@ -9,7 +9,8 @@ import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff, chunks
 import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
 import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence, examplesToText, examplesFromText } from './languages.js';
 import { icon } from './icons.js';
-import { segmentsFor, cutChunks, toHtml, missing, strip } from './furigana.js';
+import { pickGap, afterGap, poolOf, addToPool, poolFromLookup, replaceInPool, refillList, gapLevel } from './gappool.js';
+import { segmentsFor, cutChunks, toHtml, missing, strip, poolTexts } from './furigana.js';
 
 const main = document.getElementById('main');
 const titleEl = document.getElementById('title');
@@ -87,7 +88,7 @@ async function fillFurigana(recs, redraw) {
       const add = marked.filter((m) => need.includes(strip(m)));
       if (!add.length) continue;
       // Markup for texts that were edited since is dropped.
-      const texts = [lemmaOf(r), r.example, ...(r.moreExamples || []).map((e) => e.text), r.contextSentence, r.gapSentence];
+      const texts = [lemmaOf(r), r.example, ...(r.moreExamples || []).map((e) => e.text), r.contextSentence, r.gapSentence, ...poolTexts(r)];
       store.updateWord(r.id, { furigana: [...(r.furigana || []).filter((m) => texts.includes(strip(m))), ...add] });
       added = true;
     }
@@ -414,6 +415,35 @@ function startSession() {
   tasks.forEach(prepare);
   session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0 };
   if (code() === 'ja') fillFurigana(tasks.map((x) => x.word).filter(Boolean));
+  refillGaps();
+}
+
+// Words coming up soon that are running out of gap sentences get new ones, in one Gemini call
+// in the background. A word is asked for at most once per app start, even if the call fails.
+const refillAsked = new Set();
+let refilling = false;
+async function refillGaps() {
+  if (refilling || !gem()) return;
+  const lang = code();
+  const list = refillList({ items: store.reviewItems(), words: store.words(lang), skip: refillAsked });
+  if (!list.length) return;
+  list.forEach((x) => refillAsked.add(x.word.id));
+  refilling = true;
+  try {
+    const got = await gemini.gapSentences(list);
+    const updated = [];
+    list.forEach((x, i) => {
+      const w = store.getWord(x.word.id);
+      if (!w || !got[i].length) return;
+      store.updateWord(w.id, { gapPool: addToPool(poolOf(w), got[i], { level: x.level, source: 'gemini' }) });
+      updated.push(w);
+    });
+    if (lang === 'ja') fillFurigana(updated);
+  } catch (e) {
+    console.warn('gap sentences', e);
+  } finally {
+    refilling = false;
+  }
 }
 
 // Practice never runs out: it keeps a few tasks queued ahead of the current one.
@@ -422,6 +452,7 @@ const PRACTICE_AHEAD = 3;
 function startPractice(focus) {
   session = { practice: true, focus, tasks: [], lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0 };
   topUpPractice();
+  refillGaps();
 }
 
 function topUpPractice() {
@@ -516,7 +547,8 @@ async function renderTask(task) {
       <div class="pool" id="pool" ${tl()}></div>
       <input type="hidden" id="a1">`;
   } else if (task.kind === 'gap') {
-    const gap = gapFor(w);
+    // A word's sentence comes from its pool; a task shown again in the same session keeps it.
+    const gap = task.gap || (isSentence(w) ? gapFor(w) : pickGap(store.getWord(w.id) || w, task.item.reps || 0));
     task.gap = gap;
     body = `
       <div class="ex-label">${esc(t(isSentence(w) ? 'ex.sgap' : 'ex.gap'))}</div>
@@ -653,7 +685,8 @@ async function onCheck(task) {
     } else if (task.kind === 'gap') {
       grade = compare(a1, task.gap.answer);
       canOverride = grade !== 'correct';
-      html = `<div class="reveal" ${tl()}><b>${esc(task.gap.answer)}</b><div class="sentence">${jt(task.gap.sentence.replace('___', task.gap.answer), task.word)}</div></div>`;
+      html = `<div class="reveal" ${tl()}><b>${esc(task.gap.answer)}</b><div class="sentence">${jt(task.gap.sentence.replace('___', task.gap.answer), task.word)}</div>
+        ${task.gap.translation ? `<div class="muted small" lang="en">${esc(task.gap.translation)}</div>` : ''}</div>`;
     } else if (task.kind === 'fix') {
       const m = task.mistake;
       grade = compare(a1, m.correctedSentence);
@@ -673,6 +706,12 @@ async function onCheck(task) {
       const r = await gemini.gradeWordSentence(task.word, a1);
       mistakes = r.mistakes || [];
       grade = r.usesWordCorrectly && !mistakes.length ? 'correct' : 'wrong';
+      // The learner's own sentence, corrected, becomes one of the word's gap sentences.
+      if (r.usesWordCorrectly && r.gapSentence) {
+        const w = store.getWord(task.word.id);
+        if (w) store.updateWord(w.id, { gapPool: addToPool(poolOf(w), [{ sentence: r.gapSentence, answer: r.gapAnswer }],
+          { level: gapLevel(task.item.reps || 0), source: 'own' }) });
+      }
       html = `<p>${esc(r.feedback)}</p>${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
         ${naturalBlock(r.natural, r.naturalReason)}`;
     } else if (task.kind === 'drill') {
@@ -765,6 +804,11 @@ function next(task) {
       answer, correct: grade !== 'wrong', grade, reviewedAt: now, ...(session.practice ? { mode: 'practice' } : {}),
     });
     task.item = updated;
+    // Right: that sentence is retired. Wrong: it comes back at the word's next gap fill.
+    if (task.kind === 'gap' && !isSentence(task.word) && task.gap) {
+      const w = store.getWord(task.word.id);
+      if (w) store.updateWord(w.id, afterGap(w, task.gap.sentence, grade, now));
+    }
     session.answered++;
     if (grade !== 'wrong') session.correct++;
     // Locally checked items answered wrong come back once: at the end of the daily session,
@@ -843,6 +887,15 @@ function viewLookup() {
   }
 }
 
+// Saves a lookup. Its gap sentences start the word's pool, or join the pool of a word saved before.
+function saveLookup(r, extra) {
+  const { found, moreGaps, ...fields } = r;
+  const seed = poolFromLookup(r, !!extra.contextSentence);
+  const res = store.addWord({ ...fields, ...extra, gapPool: seed });
+  if (!res.created && seed.length) store.updateWord(res.word.id, { gapPool: addToPool(poolOf(res.word), seed) });
+  return res;
+}
+
 async function lookupWord(q, ctx) {
   const res = $('#lres');
   if (!gem()) {
@@ -856,8 +909,7 @@ async function lookupWord(q, ctx) {
   try {
     const r = await gemini.lookup(q, ctx);
     if (!r.found || !r.lemma) { res.innerHTML = `<div class="notice">${esc(t('lookup.notFound'))}</div>`; return; }
-    const { found, ...fields } = r;
-    const { word, created } = store.addWord({ ...fields, lang: code(), contextSentence: ctx, source: 'lookup' });
+    const { word, created } = saveLookup(r, { lang: code(), contextSentence: ctx, source: 'lookup' });
     lastLookup = { word, note: created ? t('lookup.saved') : t('lookup.already') };
     viewLookup();
   } catch (err) {
@@ -934,8 +986,7 @@ function bindWordCard(root) {
     try {
       const r = await gemini.lookup(b.dataset.kw, lemmaOf(sentence));
       if (!r.found || !r.lemma) throw new Error(t('lookup.notFound'));
-      const { found, ...fields } = r;
-      store.addWord({ ...fields, lang: recLang(sentence), contextSentence: lemmaOf(sentence), source: 'sentence' });
+      saveLookup(r, { lang: recLang(sentence), contextSentence: lemmaOf(sentence), source: 'sentence' });
       b.classList.add('have');
       b.querySelector('span').textContent = `✓ ${r.lemma}`;
       toast(t('lookup.saved'));
@@ -1130,6 +1181,10 @@ function openEditor(id) {
     const fd = Object.fromEntries(new FormData(e.target).entries());
     if (!fd.lemma.trim()) return;
     fd.moreExamples = examplesFromText(fd.moreExamples);
+    if (id && !isSentence(w) && 'gapSentence' in fd && (fd.gapSentence !== (w.gapSentence || '') || fd.gapAnswer !== (w.gapAnswer || ''))) {
+      fd.gapPool = replaceInPool(poolOf(w), w.gapSentence, { sentence: fd.gapSentence, answer: fd.gapAnswer });
+      fd.gapCurrent = null;
+    }
     if (id) store.updateWord(id, fd); else store.addWord({ ...fd, lang: Lw.code, source: 'manual' });
     close();
   });

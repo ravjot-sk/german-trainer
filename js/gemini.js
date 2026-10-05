@@ -155,6 +155,14 @@ function wordProps(L) {
   return p;
 }
 
+// A sentence with the word blanked out, for the gap-fill exercise.
+function gapProps(L, of) {
+  return {
+    gapSentence: { type: 'STRING', description: `${of} with the exact inflected form of the word replaced by "___".${isGerman(L) ? ' For separable verbs gap only the verb stem part.' : ''}` },
+    gapAnswer: { type: 'STRING', description: 'The exact text that was replaced by ___.' },
+  };
+}
+
 function mistakeSchema(L) {
   const wp = wordProps(L);
   const keep = ['lemma', 'article', 'reading', 'pos', 'meaning', 'plural', 'verbForms', 'forms', 'recallAnswer'];
@@ -234,7 +242,7 @@ If the query is English${L.romanized ? ` or ${name} written in ${L.romanized}` :
 If the query is not a real word in either language, set found to false.`;
   const props = wordProps(L);
   props.moreExamples = {
-    type: 'ARRAY', items: S({ text: STR, translation: STR, ...(hasFurigana(L) ? { furigana: furiganaOf('text') } : {}) }),
+    type: 'ARRAY', items: S({ text: STR, translation: STR, ...gapProps(L, 'text'), ...(hasFurigana(L) ? { furigana: furiganaOf('text') } : {}) }),
     description: `Exactly ${MORE_EXAMPLES} more natural ${name} example sentences for a learner at ${levelText(L)}, each with its English translation. Each shows the word in a different situation or form than the example and each other.`,
   };
   if (hasFurigana(L) && context) props.contextFurigana = furiganaOf('The context sentence');
@@ -242,6 +250,8 @@ If the query is not a real word in either language, set found to false.`;
   const r = cleanWord(await generate(prompt, schema));
   const extra = cleanExamples(r.moreExamples, r.example);
   r.moreExamples = extra.map(({ text, translation }) => ({ text, translation }));
+  // The gapped extras only seed the word's gap sentences (gappool.poolFromLookup).
+  r.moreGaps = extra.map(({ gapSentence, gapAnswer, translation }) => ({ gapSentence, gapAnswer, translation }));
   if (!hasFurigana(L)) return r;
   collectFurigana(r, [['exampleFurigana', (x) => x.example], ['gapFurigana', (x) => x.gapSentence],
     ['contextFurigana', () => context]]);
@@ -357,11 +367,41 @@ ${correctionRules(L)}
 Separately, if the sentence would sound clearly more natural phrased differently (still using the word), put that in natural.`;
   const r = cleanMistakes(await generate(prompt, S({
     usesWordCorrectly: { type: 'BOOLEAN' },
+    gapSentence: { type: 'STRING', description: 'If the word is used correctly: the corrected sentence with the exact form of the word replaced by "___". Otherwise empty.' },
+    gapAnswer: { type: 'STRING', description: 'The exact text replaced by ___, or empty.' },
     feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(L)}.` },
     ...correctionProps(L),
     ...naturalProps(L),
   })));
   return cleanNatural(r, r.correctedText);
+}
+
+// New gap-fill sentences for several words in one call. list: [{ word, level, existing }],
+// level 1-3 (1: short everyday sentence, 3: demanding context). Returns one list per word,
+// in order: [{ sentence (with ___), answer, translation }].
+export const GAP_LEVELS = {
+  1: 'short, everyday sentences using the most common form of the word',
+  2: 'sentences using a different form, case or tense than the basic one, in a less obvious situation',
+  3: 'longer sentences with a subordinate clause or an idiomatic, less common use of the word',
+};
+export async function gapSentences(list, n = 3) {
+  const L = learner();
+  const name = L.english;
+  const lines = list.map((x, i) => `${i + 1}. "${target(x.word)}" (${x.word.meaning}). Difficulty: ${GAP_LEVELS[x.level] || GAP_LEVELS[1]}.${x.existing.length
+    ? ` Already used, so write different ones: ${x.existing.map((s) => `"${s}"`).join('; ')}` : ''}`).join('\n');
+  const prompt = `Write gap-fill exercises for a ${name} learner at ${levelText(L)}. For each word below write ${n} new, natural ${name} sentences, each showing the word in a different situation, then replace the exact form of the word in the sentence with "___".${isGerman(L) ? ' For separable verbs gap only the verb stem part.' : ''}
+Return one entry per word, in the same order.
+${lines}`;
+  const r = await generate(prompt, S({
+    words: { type: 'ARRAY', items: S({
+      sentences: { type: 'ARRAY', items: S({
+        sentence: { type: 'STRING', description: 'The sentence with the word replaced by "___".' },
+        answer: { type: 'STRING', description: 'The exact text replaced by ___.' },
+        translation: { type: 'STRING', description: 'English translation of the full sentence.' },
+      }) },
+    }) },
+  }), { temperature: 0.8 });
+  return list.map((_, i) => r.words?.[i]?.sentences || []);
 }
 
 // Grammar drills for a weak category. kind: gapfill | transform | constraint.

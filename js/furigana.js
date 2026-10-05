@@ -105,10 +105,14 @@ export function toHtml(segments) {
   return segments.map((s) => (s.rt ? `<ruby>${escHtml(s.text)}<rt>${escHtml(s.rt)}</rt></ruby>` : escHtml(s.text))).join('');
 }
 
+// A word's gap sentences, as shown in the exercise and filled in on the answer.
+export const poolTexts = (rec) => (Array.isArray(rec?.gapPool) ? rec.gapPool : [])
+  .flatMap((g) => (g?.sentence ? [g.sentence, g.sentence.replace('___', g.answer || '')] : []));
+
 // Texts on a record that could carry furigana but have none yet (Gemini fills them in).
 export function missing(rec) {
   if (!rec || (rec.lang || 'de') !== 'ja') return [];
-  const texts = [rec.example, ...(rec.moreExamples || []).map((e) => e.text), rec.contextSentence, rec.gapSentence];
+  const texts = [rec.example, ...(rec.moreExamples || []).map((e) => e.text), rec.contextSentence, rec.gapSentence, ...poolTexts(rec)];
   if (rec.kind === 'sentence') texts.unshift(rec.lemma);
   else if (!align(rec.lemma ?? rec.german, rec.reading)) texts.unshift(rec.lemma ?? rec.german);
   return [...new Set(texts.filter((x) => hasKanji(x)))]
