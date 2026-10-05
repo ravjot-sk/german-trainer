@@ -9,6 +9,7 @@ import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff, chunks
 import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
 import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence } from './languages.js';
 import { icon } from './icons.js';
+import { segmentsFor, cutChunks, toHtml, missing, strip } from './furigana.js';
 
 const main = document.getElementById('main');
 const titleEl = document.getElementById('title');
@@ -44,7 +45,16 @@ const cats = (x = L()) => categoriesFor(x);
 // Marks text in the language being learnt, so iOS picks the right glyphs (Japanese kanji,
 // not Chinese) and right-to-left text runs the right way.
 const tl = (c = code()) => `lang="${esc(c)}" dir="auto"`;
-const readingLine = (w) => (w.reading ? `<div class="reading" ${tl(recLang(w))}>${esc(w.reading)}</div>` : '');
+// Furigana over Japanese kanji: 'tap' (shown when the text is tapped), 'always' or 'off'.
+const furiMode = () => store.getSettings().furigana || 'tap';
+// Text in the language being learnt, with furigana when the record has it for exactly this text.
+function jt(text, rec, c = code()) {
+  const segs = c === 'ja' && furiMode() !== 'off' ? segmentsFor(text, rec) : null;
+  return segs ? `<span class="furi">${toHtml(segs)}</span>` : esc(text);
+}
+// The separate reading line is only needed when the word itself shows no furigana.
+const furiShown = (w) => recLang(w) === 'ja' && furiMode() !== 'off' && !!segmentsFor(lemmaOf(w), w);
+const readingLine = (w) => (w.reading && !furiShown(w) ? `<div class="reading" ${tl(recLang(w))}>${esc(w.reading)}</div>` : '');
 const inputAttrs = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
 
 // Small per-device UI preferences (last lookup mode and tone). Storage can be unavailable.
@@ -59,6 +69,32 @@ const toneLabel = (tone) => t(`tone.${tone || 'everyday'}`);
 
 function errorBox(e) {
   return `<div class="notice error">${esc(e.message || e)}</div>`;
+}
+
+// Japanese texts saved without furigana get it from Gemini once, in one call for a batch of
+// records; redraw runs when anything was added.
+const furiAsked = new Set();
+async function fillFurigana(recs, redraw) {
+  if (furiMode() === 'off' || !gem()) return;
+  const todo = recs.filter((r) => r && !furiAsked.has(r.id) && missing(r).length);
+  if (!todo.length) return;
+  todo.forEach((r) => furiAsked.add(r.id));
+  try {
+    const marked = await gemini.annotate([...new Set(todo.flatMap(missing))].slice(0, 40));
+    let added = false;
+    for (const r of todo) {
+      const need = missing(r);
+      const add = marked.filter((m) => need.includes(strip(m)));
+      if (!add.length) continue;
+      // Markup for texts that were edited since is dropped.
+      const texts = [lemmaOf(r), r.example, r.contextSentence, r.gapSentence];
+      store.updateWord(r.id, { furigana: [...(r.furigana || []).filter((m) => texts.includes(strip(m))), ...add] });
+      added = true;
+    }
+    if (added && redraw) redraw();
+  } catch (e) {
+    console.warn('furigana', e);
+  }
 }
 
 function diffHtml(a, b) {
@@ -222,6 +258,7 @@ function route() {
   updatePill(name);
   document.documentElement.lang = lang();
   document.body.classList.toggle('in-session', name === 'session');
+  document.body.classList.toggle('furi-tap', furiMode() === 'tap');
   main.scrollTop = 0;
   window.scrollTo(0, 0);
   view();
@@ -337,6 +374,7 @@ function startSession() {
     }
   }
   session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0 };
+  if (code() === 'ja') fillFurigana(tasks.map((x) => x.word).filter(Boolean));
 }
 
 function viewSession() {
@@ -392,7 +430,8 @@ async function renderTask(task) {
       <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
   } else if (task.kind === 'order') {
     task.parts = chunksFor(w);
-    task.pool = shuffled(task.parts.map((p, i) => ({ p, i })));
+    const furi = code() === 'ja' && furiMode() !== 'off' ? cutChunks(segmentsFor(lemmaOf(w), w), task.parts) : null;
+    task.pool = shuffled(task.parts.map((p, i) => ({ p, i, html: furi ? `<span class="furi">${toHtml(furi[i])}</span>` : esc(p) })));
     task.built = [];
     body = `
       <div class="ex-label">${esc(t('ex.order'))}</div>
@@ -405,13 +444,13 @@ async function renderTask(task) {
     task.gap = gap;
     body = `
       <div class="ex-label">${esc(t(isSentence(w) ? 'ex.sgap' : 'ex.gap'))}</div>
-      <div class="prompt sentence" ${tl()}>${esc(gap.sentence).replace('___', '<span class="gap">___</span>')}</div>
+      <div class="prompt sentence" ${tl()}>${jt(gap.sentence, w).replace('___', '<span class="gap">___</span>')}</div>
       <div class="muted small">${esc(t('ex.meaning'))}: ${esc(w.meaning)}</div>
       <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}">`;
   } else if (task.kind === 'write') {
     body = `
       <div class="ex-label">${esc(t('ex.write'))}</div>
-      <div class="prompt" ${tl()}>${esc(wordTitle(w))}</div>${readingLine(w)}
+      <div class="prompt" ${tl()}>${jt(wordTitle(w), w)}</div>${readingLine(w)}
       <div class="muted small">${esc(w.meaning)}</div>
       <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
   } else if (task.kind === 'fix') {
@@ -439,7 +478,7 @@ async function renderTask(task) {
     body = `
       <div class="ex-label">${esc(t('ex.drill', { c: categoryLabel(task.category, lang(), cats()) }))}</div>
       <div class="instruction">${esc(d.instruction)}</div>
-      ${d.prompt ? `<div class="prompt sentence" ${tl()}>${esc(d.prompt).replace('___', '<span class="gap">___</span>')}</div>` : ''}
+      ${d.prompt ? `<div class="prompt sentence" ${tl()}>${jt(d.prompt, d).replace('___', '<span class="gap">___</span>')}</div>` : ''}
       ${isGap ? `<input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}">`
         : `<textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`}`;
   }
@@ -468,10 +507,10 @@ function bindOrder(task) {
   const draw = () => {
     const used = new Set(task.built.map((x) => x.i));
     $('#built').innerHTML = task.built.length
-      ? task.built.map((x, k) => `<button type="button" class="chunk placed" data-k="${k}">${esc(x.p)}</button>`).join('')
+      ? task.built.map((x, k) => `<button type="button" class="chunk placed" data-k="${k}">${x.html}</button>`).join('')
       : `<span class="muted small">${esc(t('ex.orderHint'))}</span>`;
     $('#pool').innerHTML = task.pool.map((x, k) =>
-      `<button type="button" class="chunk" data-p="${k}" ${used.has(x.i) ? 'disabled' : ''}>${esc(x.p)}</button>`).join('');
+      `<button type="button" class="chunk" data-p="${k}" ${used.has(x.i) ? 'disabled' : ''}>${x.html}</button>`).join('');
     $('#a1').value = joinChunks(task.built.map((x) => x.p));
     $$('#pool .chunk').forEach((b) => b.addEventListener('click', () => {
       if (task.state.phase !== 'answer') return;
@@ -538,7 +577,7 @@ async function onCheck(task) {
     } else if (task.kind === 'gap') {
       grade = compare(a1, task.gap.answer);
       canOverride = grade !== 'correct';
-      html = `<div class="reveal" ${tl()}><b>${esc(task.gap.answer)}</b><div class="sentence">${esc(task.gap.sentence.replace('___', task.gap.answer))}</div></div>`;
+      html = `<div class="reveal" ${tl()}><b>${esc(task.gap.answer)}</b><div class="sentence">${jt(task.gap.sentence.replace('___', task.gap.answer), task.word)}</div></div>`;
     } else if (task.kind === 'fix') {
       const m = task.mistake;
       grade = compare(a1, m.correctedSentence);
@@ -565,7 +604,7 @@ async function onCheck(task) {
       if (task.drillKind === 'gapfill') {
         grade = compareAny(a1, [d.answer, ...(d.acceptableAnswers || [])]);
         canOverride = grade !== 'correct';
-        html = `<div class="reveal"><b ${tl()}>${esc(d.answer)}</b>${d.prompt ? `<div class="sentence" ${tl()}>${esc(d.prompt.replace('___', d.answer))}</div>` : ''}
+        html = `<div class="reveal"><b ${tl()}>${esc(d.answer)}</b>${d.prompt ? `<div class="sentence" ${tl()}>${jt(d.prompt.replace('___', d.answer), d)}</div>` : ''}
           <div class="muted small">${esc(d.explanation)}</div></div>`;
       } else {
         fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
@@ -574,7 +613,7 @@ async function onCheck(task) {
         grade = r.correct ? 'correct' : 'wrong';
         html = `<p>${esc(r.feedback)}</p>
           ${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
-          <div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${esc(d.answer)}</div>
+          <div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${jt(d.answer, d)}</div>
           <div class="muted small">${esc(d.explanation)}</div></div>`;
       }
     }
@@ -598,7 +637,7 @@ async function onCheck(task) {
 
 function sentenceReveal(w) {
   return `<div class="reveal"><div class="muted small">${esc(t('ex.saved'))} · ${esc(toneLabel(w.tone))}</div>
-    <div class="sentence" ${tl(recLang(w))}>${esc(lemmaOf(w))}${w.reading ? `<div class="reading">${esc(w.reading)}</div>` : ''}</div>
+    <div class="sentence" ${tl(recLang(w))}>${jt(lemmaOf(w), w, recLang(w))}${w.reading && !furiShown(w) ? `<div class="reading">${esc(w.reading)}</div>` : ''}</div>
     ${w.toneNote ? `<div class="muted small">${esc(w.toneNote)}</div>` : ''}</div>`;
 }
 
@@ -606,11 +645,11 @@ function wordReveal(w) {
   const forms = w.verbForms || w.forms;
   const c = recLang(w);
   return `<div class="reveal">
-    <div class="kv"><span>${esc(t('session.answer'))}</span><b ${tl(c)}>${esc(wordTitle(w))}</b></div>
+    <div class="kv"><span>${esc(t('session.answer'))}</span><b ${tl(c)}>${jt(wordTitle(w), w, c)}</b></div>
     ${w.reading ? `<div class="kv"><span>${esc(t('edit.reading'))}</span><span ${tl(c)}>${esc(w.reading)}</span></div>` : ''}
     ${needsPlural(w) ? `<div class="kv"><span>${esc(t('ex.plural'))}</span><b ${tl(c)}>${esc(w.plural)}</b></div>` : ''}
     ${forms ? `<div class="kv"><span>${esc(t('edit.forms'))}</span><span ${tl(c)}>${esc(forms)}</span></div>` : ''}
-    ${w.example ? `<div class="sentence" ${tl(c)}>${esc(w.example)}</div>` : ''}
+    ${w.example ? `<div class="sentence" ${tl(c)}>${jt(w.example, w, c)}</div>` : ''}
   </div>`;
 }
 
@@ -710,6 +749,14 @@ function viewLookup() {
   });
   bindWordCard($('#lres'));
   bindWordRows(main);
+  if (lastLookup && store.getWord(lastLookup.word.id)) {
+    fillFurigana([store.getWord(lastLookup.word.id)], () => {
+      const res = $('#lres');
+      if (!res || !lastLookup) return;
+      res.innerHTML = lookupResult(lastLookup);
+      bindWordCard(res);
+    });
+  }
 }
 
 async function lookupWord(q, ctx) {
@@ -758,15 +805,15 @@ function lookupResult({ word, note }) {
   const forms = w.verbForms || w.forms;
   return `<article class="card word-card" data-id="${esc(w.id)}">
     <div class="word-head">
-      <div>${readingLine(w)}<div class="word-title" ${tl(c)}>${esc(wordTitle(w))}</div>
+      <div>${readingLine(w)}<div class="word-title" ${tl(c)}>${jt(wordTitle(w), w, c)}</div>
       <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${w.plural && w.pos === 'noun' ? ` · ${esc(t('ex.plural'))}: <span ${tl(c)}>${esc(w.plural)}</span>` : ''}</div></div>
       <button class="icon-btn" data-edit="${esc(w.id)}" aria-label="${esc(t('edit.title'))}">${icon('edit', 20)}</button>
     </div>
     ${forms ? `<div class="forms" ${tl(c)}>${esc(forms)}</div>` : ''}
     <div class="meaning">${esc(w.meaning)}</div>
     ${w.register ? `<div class="muted small">${esc(w.register)}</div>` : ''}
-    ${w.example ? `<div class="sentence"><span ${tl(c)}>${esc(w.example)}</span><div class="muted small">${esc(w.exampleTranslation)}</div></div>` : ''}
-    ${w.contextSentence ? `<div class="sentence ctx" ${tl(c)}>${esc(w.contextSentence)}</div>` : ''}
+    ${w.example ? `<div class="sentence"><span ${tl(c)}>${jt(w.example, w, c)}</span><div class="muted small">${esc(w.exampleTranslation)}</div></div>` : ''}
+    ${w.contextSentence ? `<div class="sentence ctx" ${tl(c)}>${jt(w.contextSentence, w, c)}</div>` : ''}
     <div class="saved-note">${icon('check', 16)} ${esc(note)}</div>
   </article>`;
 }
@@ -783,7 +830,7 @@ function sentenceCard(w, note) {
       <span class="chip">${esc(toneLabel(w.tone))}</span>
       <button class="icon-btn" data-edit="${esc(w.id)}" aria-label="${esc(t('edit.sentenceTitle'))}">${icon('edit', 20)}</button>
     </div>
-    <div class="sentence-big" ${tl(c)}>${esc(lemmaOf(w))}</div>
+    <div class="sentence-big" ${tl(c)}>${jt(lemmaOf(w), w, c)}</div>
     ${readingLine(w)}
     <div class="meaning">${esc(w.meaning)}</div>
     ${w.toneNote ? `<div class="muted small">${esc(w.toneNote)}</div>` : ''}
@@ -1112,6 +1159,10 @@ function viewSettings() {
       <div class="row-label"><span>${esc(t('settings.newPerDay'))}</span>
         <div class="stepper"><button type="button" id="npdminus" aria-label="−">−</button><output id="npd">${esc(s.newPerDay)}</output><button type="button" id="npdplus" aria-label="+">+</button></div></div>
       <p class="muted small">${esc(t('settings.learningHelp'))}</p>
+      ${code() === 'ja' ? `<div class="row-label"><span>${esc(t('settings.furigana'))}</span>
+        <div class="seg" id="furi" style="min-width:210px">${['tap', 'always', 'off'].map((v) =>
+          `<button type="button" data-v="${v}" class="${furiMode() === v ? 'on' : ''}">${esc(t(`settings.furigana.${v}`))}</button>`).join('')}</div></div>
+      <p class="muted small">${esc(t('settings.furiganaHelp'))}</p>` : ''}
     </section>
     <div class="group-label">${esc(t('sync.title'))}</div>
     <section class="card form" id="synccard"></section>
@@ -1145,6 +1196,11 @@ function viewSettings() {
 
   bindLearnCard(viewSettings);
   $$('#lang button').forEach((b) => b.addEventListener('click', () => { store.setSettings({ lang: b.dataset.lang }); route(); }));
+  $$('#furi button').forEach((b) => b.addEventListener('click', () => {
+    store.setSettings({ furigana: b.dataset.v });
+    $$('#furi button').forEach((x) => x.classList.toggle('on', x === b));
+    document.body.classList.toggle('furi-tap', furiMode() === 'tap');
+  }));
   $('#key').addEventListener('change', (e) => { store.setApiKey(e.target.value); toast(t('settings.saved')); });
   $('#showkey').addEventListener('click', (e) => {
     const k = $('#key');
@@ -1352,6 +1408,12 @@ async function exportBackup() {
 
 // ---------- boot ----------
 window.addEventListener('hashchange', route);
+// Furigana on tap: tapping Japanese text shows its readings, tapping again hides them.
+// Word-order pieces are buttons, so they always show theirs.
+document.addEventListener('click', (e) => {
+  const f = e.target.closest('.furi');
+  if (f && document.body.classList.contains('furi-tap') && !e.target.closest('button')) f.classList.toggle('open');
+});
 window.addEventListener('online', () => { if (!session) route(); });
 window.addEventListener('offline', () => { if (!session) route(); });
 $('#gear').addEventListener('click', () => go('settings'));

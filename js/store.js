@@ -147,6 +147,7 @@ export function addSentence(r, code, source = 'translate', now = Date.now()) {
     meaning: r.translation || '', tone: r.tone || 'everyday', toneNote: r.toneNote || '',
     chunks: (r.chunks || []).filter(Boolean), gapSentence: r.gapSentence || '', gapAnswer: r.gapAnswer || '',
     keyWords: (r.keyWords || []).filter((k) => k && k.lemma).slice(0, 4), query: r.query || '', source,
+    furigana: r.furigana || [],
   }, now);
 }
 

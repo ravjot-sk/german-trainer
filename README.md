@@ -62,6 +62,9 @@ and you can change it any time in Settings.
 
 **Japanese:** type with the iPhone Japanese keyboard. Words are saved with their kana reading, and in recall
 the kanji form is correct while typing only the reading counts as *almost*. Lookups also accept romaji.
+Words, example sentences, saved sentences and drills show furigana above the kanji. In **Settings › Furigana**
+choose *Tap* (readings appear when you tap the text, so you try reading first; the default), *Always* or *Off*.
+Sentences saved before furigana existed get theirs from Gemini the first time they come up.
 
 ### 4. Use it every day
 
