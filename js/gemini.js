@@ -3,6 +3,7 @@
 import { getApiKey, getSettings, setSettings, activeLanguage } from './store.js';
 import { categoriesFor, categoryGuide, categoryLabel, finishCategories } from './categories.js';
 import { lemmaOf } from './languages.js';
+import { parse as parseFurigana } from './furigana.js';
 import { t, lang } from './i18n.js';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -85,6 +86,25 @@ export async function testKey() {
 const S = (props, required) => ({ type: 'OBJECT', properties: props, required: required || Object.keys(props) });
 const STR = { type: 'STRING' };
 
+// Furigana for Japanese texts, as {kanji|reading} markup (see furigana.js).
+const hasFurigana = (L) => L.code === 'ja';
+const FURIGANA_RULE = 'write every kanji or run of kanji as {kanji|reading in hiragana}, reading it as it is read in this sentence, e.g. "{毎朝|まいあさ}{水|みず}を{飲|の}む". Only kanji go inside the braces, never the kana after them. Kana, punctuation, spaces and "___" stay exactly as they are.';
+const furiganaOf = (what) => ({ type: 'STRING', description: `${what} again with furigana: ${FURIGANA_RULE}` });
+
+// Moves the *Furigana fields of a reply into one list kept on the record, dropping any whose
+// text does not match what it annotates.
+function collectFurigana(r, pairs) {
+  const list = [];
+  for (const [field, plainOf] of pairs) {
+    const marked = r[field];
+    delete r[field];
+    const plain = plainOf(r);
+    if (marked && plain && parseFurigana(marked, plain)) list.push(marked);
+  }
+  r.furigana = list;
+  return r;
+}
+
 // The language being practised, with the learner's level. Every prompt needs both.
 function learner() {
   const L = activeLanguage();
@@ -128,6 +148,10 @@ function wordProps(L) {
   p.exampleTranslation = { type: 'STRING', description: 'English translation of the example.' };
   p.gapSentence = { type: 'STRING', description: `The context sentence if given (else the example) with the exact inflected form of the word replaced by "___".${isGerman(L) ? ' For separable verbs gap only the verb stem part.' : ''}` };
   p.gapAnswer = { type: 'STRING', description: 'The exact text that was replaced by ___.' };
+  if (hasFurigana(L)) {
+    p.exampleFurigana = furiganaOf('The example');
+    p.gapFurigana = furiganaOf('gapSentence');
+  }
   return p;
 }
 
@@ -209,8 +233,12 @@ ${context ? `Context sentence where the learner found it: "${context}"\nUse the 
 If the query is English${L.romanized ? ` or ${name} written in ${L.romanized}` : ''}, return the most common ${name} equivalent. If it is an inflected ${name} form, return the dictionary form.
 If the query is not a real word in either language, set found to false.`;
   const props = wordProps(L);
+  if (hasFurigana(L) && context) props.contextFurigana = furiganaOf('The context sentence');
   const schema = S({ found: { type: 'BOOLEAN' }, ...props }, ['found', ...Object.keys(props)]);
-  return cleanWord(await generate(prompt, schema));
+  const r = cleanWord(await generate(prompt, schema));
+  if (!hasFurigana(L)) return r;
+  return collectFurigana(r, [['exampleFurigana', (x) => x.example], ['gapFurigana', (x) => x.gapSentence],
+    ['contextFurigana', () => context]]);
 }
 
 export async function correctText(text) {
@@ -246,6 +274,7 @@ Match what a native speaker would really say in that tone, not a word-for-word t
     chunks: { type: 'ARRAY', items: STR, description: `The sentence split, in order, into 3 to 9 meaningful pieces for a word-order exercise (short phrases or single words, punctuation attached to the piece before it). Joined ${unspaced ? 'without spaces' : 'with single spaces'} they must give the sentence exactly.` },
     gapSentence: { type: 'STRING', description: 'The sentence with its most useful phrase or expression (the part a learner would most likely not produce on their own) replaced by "___".' },
     gapAnswer: { type: 'STRING', description: 'The exact text that was replaced by ___.' },
+    ...(hasFurigana(L) ? { sentenceFurigana: furiganaOf('The sentence'), gapFurigana: furiganaOf('gapSentence') } : {}),
     keyWords: {
       type: 'ARRAY', description: `Up to 4 words or expressions from the sentence worth learning for a learner at ${levelText(L)}, in dictionary form. Skip very basic words.`,
       items: S({ lemma: STR, meaning: { type: 'STRING', description: 'Short English meaning.' } }),
@@ -258,6 +287,7 @@ ${toneGuide(L)}`;
   const r = await generate(prompt, S(props), { temperature: 0.4 });
   if (keep) r.sentence = text.trim();
   if (!TONES.includes(r.tone)) r.tone = keep ? 'everyday' : tone;
+  if (hasFurigana(L)) collectFurigana(r, [['sentenceFurigana', (x) => (x.sentence || '').trim()], ['gapFurigana', (x) => x.gapSentence]]);
   return r;
 }
 
@@ -330,13 +360,32 @@ Category: ${label}${hint ? ` (${hint})` : ''}
 Exercise type: ${kinds[kind]}
 ${own}
 Write the instruction in ${explainLang(L)}. Keep sentences natural and everyday (work, travel, friends, news), with vocabulary and grammar that suit the learner's level.`;
-  return generate(prompt, S({
+  const r = await generate(prompt, S({
     instruction: STR,
     prompt: { type: 'STRING', description: `${name} sentence(s) shown to the learner; for gapfill it contains ___.` },
     answer: STR,
     acceptableAnswers: { type: 'ARRAY', items: STR },
     explanation: { type: 'STRING', description: `Why the answer is right, in ${explainLang(L)}.` },
+    ...(hasFurigana(L) ? { promptFurigana: furiganaOf('prompt (empty if prompt is empty)'), answerFurigana: furiganaOf('answer') } : {}),
   }), { temperature: 0.9 });
+  if (!hasFurigana(L)) return r;
+  // A gapfill answer is shown in its sentence afterwards, so the filled sentence gets furigana too.
+  const valid = (m, plain) => (m && plain && parseFurigana(m, plain) ? m : '');
+  const pm = valid(r.promptFurigana, r.prompt);
+  const am = valid(r.answerFurigana, r.answer) || r.answer || '';
+  collectFurigana(r, [['promptFurigana', (x) => x.prompt], ['answerFurigana', (x) => x.answer]]);
+  if (pm.includes('___')) r.furigana.push(pm.replace('___', am));
+  return r;
+}
+
+// Furigana for Japanese texts saved before Gemini added it. Returns the markup for each text
+// that came back valid.
+export async function annotate(texts) {
+  if (!texts.length) return [];
+  const prompt = `Add furigana to each of these Japanese texts. For each text, in the same order, ${FURIGANA_RULE}
+${texts.map((x, i) => `${i + 1}. ${x}`).join('\n')}`;
+  const r = await generate(prompt, S({ texts: { type: 'ARRAY', items: STR, description: 'The texts with furigana, same order and count.' } }), { temperature: 0 });
+  return (r.texts || []).filter((m, i) => texts[i] && parseFurigana(m, texts[i]));
 }
 
 // Grades a free answer to a drill (transform, constraint or "fix your sentence").

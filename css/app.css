@@ -345,3 +345,13 @@ details.more > div { display: flex; flex-direction: column; gap: 12px; padding-t
 .natural .btn { align-self: flex-start; background: var(--surface); border-color: transparent; }
 #wlist { display: flex; flex-direction: column; gap: 8px; }
 .form label.btn { color: var(--accent); flex-direction: row; font-size: var(--fs-body); }
+
+/* Furigana: readings above kanji. On tap, they stay hidden (keeping their space, so the text
+   doesn't jump) until the text is tapped; word-order pieces always show theirs. */
+ruby { ruby-position: over; }
+rt { font-size: 0.5em; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.furi-tap .furi { cursor: pointer; }
+.furi-tap .furi rt { visibility: hidden; }
+.furi-tap .furi.open rt, .furi-tap .chunk .furi rt { visibility: visible; }
+.furi-tap .furi:not(.open) ruby { text-decoration: underline dotted color-mix(in srgb, var(--muted) 60%, transparent); text-underline-offset: 0.25em; }
+.furi-tap .chunk .furi ruby { text-decoration: none; }
