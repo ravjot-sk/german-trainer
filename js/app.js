@@ -8,6 +8,7 @@ import { schedule, isNew, dayStart } from './srs.js';
 import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
 import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
 import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence } from './languages.js';
+import { icon } from './icons.js';
 
 const main = document.getElementById('main');
 const titleEl = document.getElementById('title');
@@ -80,11 +81,11 @@ function naturalBlock(text, reason, c = code()) {
   if (!text) return '';
   const saved = store.findWord(text, c);
   return `<div class="natural">
-    <div class="natural-title">💡 ${esc(t('natural.title'))}</div>
-    <div class="sentence" ${tl(c)}>${esc(text)}</div>
+    <div class="natural-title">${icon('bulb', 18)} ${esc(t('natural.title'))}</div>
+    <div class="natural-text" ${tl(c)}>${esc(text)}</div>
     ${reason ? `<div class="muted small">${esc(reason)}</div>` : ''}
-    ${saved ? `<div class="saved-note">✓ ${esc(t('natural.inList'))}</div>`
-      : `<button type="button" class="btn small" data-natural="${esc(text)}" data-lang="${esc(c)}">＋ ${esc(t('natural.add'))}</button>`}
+    ${saved ? `<div class="saved-note">${icon('check', 16)} ${esc(t('natural.inList'))}</div>`
+      : `<button type="button" class="btn small" data-natural="${esc(text)}" data-lang="${esc(c)}">${icon('plus', 16)} ${esc(t('natural.add'))}</button>`}
   </div>`;
 }
 
@@ -98,10 +99,10 @@ function bindNatural(root) {
       // Gemini describes the sentence (English, tone, pieces) so it can be practised.
       const r = c === code() && gem() ? await gemini.translateSentence(text, null, { keep: true }) : { sentence: text };
       store.addSentence(r, c, 'suggestion');
-      b.outerHTML = `<div class="saved-note">✓ ${esc(t('natural.saved'))}</div>`;
+      b.outerHTML = `<div class="saved-note">${icon('check', 16)} ${esc(t('natural.saved'))}</div>`;
     } catch (e) {
       b.disabled = false;
-      b.textContent = `＋ ${t('natural.add')}`;
+      b.innerHTML = `${icon('plus', 16)} ${esc(t('natural.add'))}`;
       toast(e.message || String(e));
     }
   }));
@@ -128,6 +129,7 @@ function resetViews() {
   session = null;
   lastLookup = null;
   lastCorrection = null;
+  correctOpen = false;
   wordQuery = '';
 }
 
@@ -195,18 +197,29 @@ function bindLearnCard(redraw) {
 
 // ---------- routing ----------
 const routes = { today: viewToday, session: viewSession, lookup: viewLookup, correct: viewCorrect,
-  words: viewWords, profile: viewProfile, settings: viewSettings };
+  words: viewWords, profile: viewProfile, settings: viewSettings,
+  'settings/advanced': viewAdvanced, 'settings/backup': viewBackup };
+// Pages opened from another page get a back button to it; the tab bar marks their parent.
+const parents = { profile: 'today', 'settings/advanced': 'settings', 'settings/backup': 'settings' };
 
 const routeName = () => (location.hash.replace(/^#\/?/, '') || 'today').split('?')[0];
 
 function route() {
   const name = routeName();
   // Until a language and level are chosen, every page except Settings shows that choice.
-  const view = !L()?.level && name !== 'settings' ? viewToday : routes[name] || viewToday;
+  const view = !L()?.level && !name.startsWith('settings') ? viewToday : routes[name] || viewToday;
+  const parent = parents[name];
   $$('#tabs a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === name);
+    a.classList.toggle('active', a.dataset.route === (parent || name));
     $('span', a).textContent = t(`tab.${a.dataset.route}`);
   });
+  const back = $('#back');
+  back.classList.toggle('hidden', !parent);
+  back.setAttribute('aria-label', t('nav.back'));
+  back.dataset.to = parent || '';
+  $('#gear').classList.toggle('hidden', name.startsWith('settings'));
+  $('#gear').setAttribute('aria-label', t('settings.title'));
+  updatePill(name);
   document.documentElement.lang = lang();
   document.body.classList.toggle('in-session', name === 'session');
   main.scrollTop = 0;
@@ -216,6 +229,38 @@ function route() {
 
 function go(name) {
   if (location.hash === `#/${name}`) route(); else location.hash = `#/${name}`;
+}
+
+// ---------- Language pill and sheet ----------
+const PILL_ROUTES = ['today', 'lookup', 'correct', 'words', 'profile'];
+
+function updatePill(name) {
+  const pill = $('#langpill');
+  const cur = L();
+  const show = !!cur?.level && PILL_ROUTES.includes(name);
+  pill.classList.toggle('hidden', !show);
+  if (show) {
+    pill.innerHTML = `<span class="ellipsis">${esc(code().toUpperCase())} · ${esc(cur.level)}</span>${icon('down', 14)}`;
+    pill.title = `${langName()} · ${cur.level}`;
+    pill.setAttribute('aria-label', t('settings.langSheet'));
+  }
+}
+
+function openLangSheet() {
+  const back = document.createElement('div');
+  back.className = 'sheet-backdrop';
+  back.innerHTML = `<div class="sheet form">
+    <div class="sheet-head"><h2>${esc(t('settings.langSheet'))}</h2>
+      <button type="button" class="icon-btn" data-act="close" aria-label="${esc(t('edit.close'))}">${icon('close', 22)}</button></div>
+    ${learnCard()}
+    <p class="muted small">${esc(t('settings.learningHelp'))}</p>
+  </div>`;
+  document.body.appendChild(back);
+  document.body.classList.add('no-scroll');
+  const close = () => { back.remove(); document.body.classList.remove('no-scroll'); route(); };
+  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  $('[data-act=close]', back).addEventListener('click', close);
+  bindLearnCard(close);
 }
 
 // ---------- Today ----------
@@ -242,25 +287,38 @@ function viewToday() {
   const s = summarizeDue(sessionArgs());
   const today = dayStart(Date.now());
   const doneToday = store.reviews(code()).filter((r) => r.reviewedAt >= today).length;
+  const stat = (n, label) => `<span class="stat"><b>${n}</b> ${esc(label)}</span>`;
 
   main.innerHTML = `
     <section class="card hero">
       <div class="hero-label">${esc(t('today.due'))}</div>
       <div class="hero-num">${s.total}</div>
-      <div class="hero-split">
-        <span><b>${s.words}</b> ${esc(t('today.words'))}${s.newWords ? ` (${s.newWords} ${esc(t('today.newWords'))})` : ''}</span>
-        ${s.sentences ? `<span><b>${s.sentences}</b> ${esc(t('today.sentences'))}</span>` : ''}
-        <span><b>${s.grammar}</b> ${esc(t('today.drills'))}</span>
+      <div class="chips">
+        <span class="stat"><b>${s.words}</b> ${esc(t('today.words'))}${s.newWords ? ` · ${esc(t('today.newShort', { n: s.newWords }))}` : ''}</span>
+        ${s.sentences ? stat(s.sentences, t('today.sentences')) : ''}
+        ${stat(s.grammar, t('today.drills'))}
       </div>
       ${s.total ? `<button class="btn primary big" id="start">${esc(t('today.start'))}</button>`
-        : `<p class="muted">${esc(t('today.nothing'))}</p>`}
+        : `<p class="muted">${esc(t('today.nothing'))}</p>
+          <div class="empty-actions">
+            <a class="btn" href="#/lookup">${icon('search', 18)} ${esc(t('today.goLookup'))}</a>
+            <a class="btn" href="#/correct">${icon('edit', 18)} ${esc(t('today.goCorrect'))}</a>
+          </div>`}
       ${doneToday ? `<p class="muted small">${esc(t('today.doneToday', { n: doneToday }))}</p>` : ''}
     </section>
     ${notes.join('')}
-    <p class="muted center small"><a href="#/settings">${esc(langName())} · ${esc(cur.level)}</a> ·
-      ${esc(t('today.stats', { w: store.words(code()).length, m: store.mistakes(code()).length }))}</p>
+    ${weakSpots()}
   `;
   $('#start')?.addEventListener('click', () => { session = null; go('session'); });
+}
+
+// The top of the mistake profile, with the full profile one tap away.
+function weakSpots() {
+  const stats = sortedStats().slice(0, 3);
+  const head = `<div class="group-label">${esc(t('today.weak'))}</div>`;
+  if (!stats.length) return `${head}<section class="card"><p class="muted small">${esc(t('today.weakEmpty'))}</p></section>`;
+  return `${head}<section class="card">${catList(stats)}
+    <a class="more-link" href="#/profile">${esc(t('today.fullProfile'))}${icon('chevron', 16)}</a></section>`;
 }
 
 // ---------- Session ----------
@@ -290,12 +348,13 @@ function viewSession() {
   task.state = { phase: 'answer' };
 
   main.innerHTML = `
-    <div class="progress"><div style="width:${Math.round((idx / tasks.length) * 100)}%"></div></div>
     <div class="session-top">
-      <span class="muted small">${esc(t('session.of', { i: idx + 1, n: tasks.length }))}</span>
-      <button class="btn link" id="quit">${esc(t('session.quit'))}</button>
+      <button class="icon-btn" id="quit" aria-label="${esc(t('session.quit'))}">${icon('close', 24)}</button>
+      <div class="progress"><div style="width:${Math.round((idx / tasks.length) * 100)}%"></div></div>
+      <span class="count" aria-label="${esc(t('session.of', { i: idx + 1, n: tasks.length }))}">${idx + 1}/${tasks.length}</span>
     </div>
     <section class="card exercise" id="ex"></section>
+    <div class="dock" id="dock"></div>
   `;
   $('#quit').addEventListener('click', () => { session.idx = session.tasks.length; viewSession(); });
   renderTask(task);
@@ -304,12 +363,12 @@ function viewSession() {
 function renderSessionEnd() {
   const s = session;
   main.innerHTML = `
-    <section class="card hero">
+    <section class="card hero end">
       <div class="hero-num">🎉</div>
       <h2>${esc(t('session.done'))}</h2>
       <p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>
       ${s.mistakesLogged ? `<p class="muted small">${esc(t('session.mistakesLogged', { n: s.mistakesLogged }))}</p>` : ''}
-      <button class="btn primary" id="home">${esc(t('session.backHome'))}</button>
+      <button class="btn primary big" id="home">${esc(t('session.backHome'))}</button>
     </section>`;
   $('#home').addEventListener('click', () => { session = null; go('today'); });
 }
@@ -365,12 +424,13 @@ async function renderTask(task) {
   } else if (task.kind === 'drill') {
     if (!task.drill && !task.drillError) {
       ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
+      $('#dock').innerHTML = '';
       await task.drillPromise;
       if (session?.tasks[session.idx] !== task) return; // user moved on
     }
     if (task.drillError || !task.drill) {
-      ex.innerHTML = `${errorBox(task.drillError || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>
-        <div class="actions"><button class="btn primary" id="next">${esc(t('session.next'))}</button></div>`;
+      ex.innerHTML = `${errorBox(task.drillError || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
+      $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
       $('#next').addEventListener('click', () => { session.idx++; viewSession(); });
       return;
     }
@@ -385,11 +445,10 @@ async function renderTask(task) {
   }
 
   ex.innerHTML = `${body}
-    <div id="feedback"></div>
-    <div class="actions">
-      <button class="btn" id="skip">${esc(t('session.skip'))}</button>
-      <button class="btn primary" id="check">${esc(t('session.check'))}</button>
-    </div>`;
+    <div id="feedback"></div>`;
+  $('#dock').innerHTML = `
+    <button class="btn primary" id="check">${esc(t('session.check'))}</button>
+    <button class="btn text" id="skip">${esc(t('session.skip'))}</button>`;
 
   const a1 = $('#a1');
   a1.focus({ preventScroll: true });
@@ -545,11 +604,13 @@ function sentenceReveal(w) {
 
 function wordReveal(w) {
   const forms = w.verbForms || w.forms;
-  return `<div class="reveal" ${tl(recLang(w))}>
-    <b>${esc(wordTitle(w))}</b>${needsPlural(w) ? ` · ${esc(t('ex.plural'))}: <b>${esc(w.plural)}</b>` : ''}
-    ${readingLine(w)}
-    ${forms ? `<div class="small">${esc(forms)}</div>` : ''}
-    ${w.example ? `<div class="sentence">${esc(w.example)}</div>` : ''}
+  const c = recLang(w);
+  return `<div class="reveal">
+    <div class="kv"><span>${esc(t('session.answer'))}</span><b ${tl(c)}>${esc(wordTitle(w))}</b></div>
+    ${w.reading ? `<div class="kv"><span>${esc(t('edit.reading'))}</span><span ${tl(c)}>${esc(w.reading)}</span></div>` : ''}
+    ${needsPlural(w) ? `<div class="kv"><span>${esc(t('ex.plural'))}</span><b ${tl(c)}>${esc(w.plural)}</b></div>` : ''}
+    ${forms ? `<div class="kv"><span>${esc(t('edit.forms'))}</span><span ${tl(c)}>${esc(forms)}</span></div>` : ''}
+    ${w.example ? `<div class="sentence" ${tl(c)}>${esc(w.example)}</div>` : ''}
   </div>`;
 }
 
@@ -560,9 +621,9 @@ function showFeedback(task, canOverride) {
   $('#feedback').innerHTML = `<div class="result ${cls}"><div class="result-title">${esc(label)}</div>${feedback}</div>`;
   bindNatural($('#feedback'));
   $$('#ex .chunk').forEach((b) => (b.disabled = true));
-  $('#ex .actions').innerHTML = `
-    ${canOverride ? `<button class="btn" id="override">${esc(t('session.iWasRight'))}</button>` : ''}
-    <button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
+  $('#dock').innerHTML = `
+    <button class="btn primary" id="next">${esc(t('session.next'))}</button>
+    ${canOverride ? `<button class="btn text" id="override">${esc(t('session.iWasRight'))}</button>` : ''}`;
   $('#override')?.addEventListener('click', () => { task.state.grade = 'correct'; next(task); });
   $('#next').addEventListener('click', () => next(task));
   $('#next').focus({ preventScroll: true });
@@ -600,7 +661,8 @@ let lastLookup = null;
 
 function viewLookup() {
   titleEl.textContent = t('lookup.title');
-  const recent = [...store.words(code())].sort((a, b) => b.addedAt - a.addedAt).slice(0, 12);
+  const all = store.words(code());
+  const recent = [...all].sort((a, b) => b.addedAt - a.addedAt).slice(0, 5);
   const mode = pref('lookupMode', 'word');
   const tone = pref('tone', 'everyday');
   const romanized = L()?.romanized ? `<p class="muted small">${esc(t('lookup.romanized', { r: L().romanized }))}</p>` : '';
@@ -612,18 +674,19 @@ function viewLookup() {
       ${seg('tone', gemini.TONES.map((x) => [x, toneLabel(x)]), tone)}
       <p class="muted small" id="tonehelp">${esc(t(`tone.${tone}.help`))}</p>
       <button class="btn primary" type="submit">${esc(t('lookup.translate'))}</button>`
-    : `<input id="q" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.placeholder', { l: langName() }))}" enterkeyhint="search">
+    : `<div class="search-field"><input id="q" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.placeholder', { l: langName() }))}" enterkeyhint="search">
+      <button class="go" type="submit" aria-label="${esc(t('lookup.go'))}">${icon('search', 20)}</button></div>
       ${romanized}
       <button type="button" class="btn link small" id="addctx">${esc(t('lookup.addContext'))}</button>
-      <textarea id="ctx" rows="2" class="hidden" ${tl()} placeholder="${esc(t('lookup.context'))}"></textarea>
-      <button class="btn primary" type="submit">${esc(t('lookup.go'))}</button>`;
+      <textarea id="ctx" rows="2" class="hidden" ${tl()} placeholder="${esc(t('lookup.context'))}"></textarea>`;
   main.innerHTML = `
     <form class="card" id="lf">
       ${seg('mode', [['word', t('lookup.modeWord')], ['sentence', t('lookup.modeSentence')]], mode)}
       ${form}
     </form>
     <div id="lres">${lastLookup ? lookupResult(lastLookup) : ''}</div>
-    ${recent.length ? `<h3>${esc(t('lookup.recent'))}</h3>${wordRows(recent)}` : ''}
+    ${recent.length ? `<div class="group-label">${esc(t('lookup.recent'))}</div>${wordRows(recent)}
+      ${all.length > recent.length ? `<a class="more-link" href="#/words">${esc(t('words.all'))} (${all.length})${icon('chevron', 16)}</a>` : ''}` : ''}
   `;
   $$('#mode button').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.v === mode) return;
@@ -697,14 +760,14 @@ function lookupResult({ word, note }) {
     <div class="word-head">
       <div>${readingLine(w)}<div class="word-title" ${tl(c)}>${esc(wordTitle(w))}</div>
       <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${w.plural && w.pos === 'noun' ? ` · ${esc(t('ex.plural'))}: <span ${tl(c)}>${esc(w.plural)}</span>` : ''}</div></div>
-      <button class="btn small" data-edit="${esc(w.id)}">✎</button>
+      <button class="icon-btn" data-edit="${esc(w.id)}" aria-label="${esc(t('edit.title'))}">${icon('edit', 20)}</button>
     </div>
     ${forms ? `<div class="forms" ${tl(c)}>${esc(forms)}</div>` : ''}
     <div class="meaning">${esc(w.meaning)}</div>
     ${w.register ? `<div class="muted small">${esc(w.register)}</div>` : ''}
     ${w.example ? `<div class="sentence"><span ${tl(c)}>${esc(w.example)}</span><div class="muted small">${esc(w.exampleTranslation)}</div></div>` : ''}
     ${w.contextSentence ? `<div class="sentence ctx" ${tl(c)}>${esc(w.contextSentence)}</div>` : ''}
-    <div class="saved-note">✓ ${esc(note)}</div>
+    <div class="saved-note">${icon('check', 16)} ${esc(note)}</div>
   </article>`;
 }
 
@@ -718,14 +781,14 @@ function sentenceCard(w, note) {
   return `<article class="card word-card" data-id="${esc(w.id)}">
     <div class="word-head">
       <span class="chip">${esc(toneLabel(w.tone))}</span>
-      <button class="btn small" data-edit="${esc(w.id)}">✎</button>
+      <button class="icon-btn" data-edit="${esc(w.id)}" aria-label="${esc(t('edit.sentenceTitle'))}">${icon('edit', 20)}</button>
     </div>
     <div class="sentence-big" ${tl(c)}>${esc(lemmaOf(w))}</div>
     ${readingLine(w)}
     <div class="meaning">${esc(w.meaning)}</div>
     ${w.toneNote ? `<div class="muted small">${esc(w.toneNote)}</div>` : ''}
     ${keyWords ? `<div class="field-label">${esc(t('lookup.keyWords'))}</div><div class="keywords">${keyWords}</div>` : ''}
-    <div class="saved-note">✓ ${esc(note)}</div>
+    <div class="saved-note">${icon('check', 16)} ${esc(note)}</div>
   </article>`;
 }
 
@@ -755,10 +818,11 @@ function bindWordCard(root) {
 function wordRows(list) {
   return `<ul class="rows">${list.map((w) => {
     const item = store.reviewItemFor('word', w.id);
-    const status = !item || isNew(item) ? `<span class="chip new">${esc(t('words.new'))}</span>`
-      : `<span class="muted small">${esc(t('words.due', { d: fmtDate(item.due) }))}</span>`;
+    const dueNow = item && !isNew(item) && item.due <= Date.now();
+    const status = !item || isNew(item) ? `<span class="status">${esc(t('words.new'))}</span>`
+      : `<span class="status ${dueNow ? 'due' : ''}">${esc(t('words.due', { d: fmtDate(item.due) }))}</span>`;
     if (isSentence(w)) {
-      return `<li data-word="${esc(w.id)}"><div class="grow"><div class="ellipsis" ${tl(recLang(w))}>${esc(lemmaOf(w))}</div>
+      return `<li data-word="${esc(w.id)}"><div class="grow"><div class="ellipsis"><span class="kind">${icon('speech', 15)}</span><span ${tl(recLang(w))}>${esc(lemmaOf(w))}</span></div>
         <div class="muted small ellipsis">${esc(toneLabel(w.tone))} · ${esc(w.meaning)}</div></div>${status}</li>`;
     }
     const reading = w.reading ? ` <span class="muted small" ${tl(recLang(w))}>${esc(w.reading)}</span>` : '';
@@ -778,7 +842,7 @@ function viewWords() {
   main.innerHTML = `
     <div class="toolbar">
       <input id="search" type="search" ${inputAttrs} placeholder="${esc(t('words.search'))}" value="${esc(wordQuery)}">
-      <button class="btn" id="add">＋</button>
+      <button class="btn" id="add" aria-label="${esc(t('words.add'))}">${icon('plus', 22)}</button>
     </div>
     ${all.some(isSentence) ? `<div class="seg" id="wfilter">${['all', 'words', 'sentences'].map((f) =>
       `<button type="button" data-v="${f}" class="${f === show ? 'on' : ''}">${esc(t(`words.filter.${f}`))}</button>`).join('')}</div>` : ''}
@@ -826,22 +890,20 @@ function openEditor(id) {
   const sheet = document.createElement('div');
   sheet.className = 'sheet-backdrop';
   sheet.innerHTML = `<form class="sheet">
-    <h2>${esc(id ? t('edit.title') : t('edit.newTitle'))}</h2>
+    ${sheetHead(id ? t('edit.title') : t('edit.newTitle'))}
     ${articleSelect ? `<div class="row2">${articleSelect}${lemmaField}</div>` : lemmaField}
     ${Lw.reading ? field('reading', t('edit.reading')) : ''}
-    <label>${esc(t('edit.pos'))}<select name="pos">${['noun', 'verb', 'adjective', 'adverb', 'phrase', 'other'].map((p) => `<option value="${p}" ${p === w.pos ? 'selected' : ''}>${esc(t(`pos.${p}`))}</option>`).join('')}</select></label>
     ${field('meaning', t('edit.meaning'), 'input', false)}
+    <label>${esc(t('edit.pos'))}<select name="pos">${['noun', 'verb', 'adjective', 'adverb', 'phrase', 'other'].map((p) => `<option value="${p}" ${p === w.pos ? 'selected' : ''}>${esc(t(`pos.${p}`))}</option>`).join('')}</select></label>
     ${de ? `${field('plural', t('edit.plural'))}${field('verbForms', t('edit.verbForms'))}`
       : `${field('forms', t('edit.forms'))}${field('recallAnswer', t('edit.recallAnswer'))}`}
-    ${field('register', t('edit.register'), 'input', false)}
-    ${field('example', t('edit.example'), 'textarea')}
-    ${field('contextSentence', t('edit.context'), 'textarea')}
-    ${field('gapSentence', t('edit.gapSentence'), 'textarea')}
-    ${field('gapAnswer', t('edit.gapAnswer'))}
-    <div class="actions">
-      <button type="button" class="btn" data-act="cancel">${esc(t('edit.cancel'))}</button>
-      <button type="submit" class="btn primary">${esc(t('edit.save'))}</button>
-    </div>
+    ${moreFields(`
+      ${field('register', t('edit.register'), 'input', false)}
+      ${field('example', t('edit.example'), 'textarea')}
+      ${field('contextSentence', t('edit.context'), 'textarea')}
+      ${field('gapSentence', t('edit.gapSentence'), 'textarea')}
+      ${field('gapAnswer', t('edit.gapAnswer'))}`)}
+    <button type="submit" class="btn primary wide">${esc(t('edit.save'))}</button>
     ${id ? `<button type="button" class="btn danger wide" data-act="delete">${esc(t('edit.delete'))}</button>` : ''}
   </form>`;
   document.body.appendChild(sheet);
@@ -863,6 +925,13 @@ function openEditor(id) {
     close();
   });
 }
+
+// Sheet title with a close button (it cancels), and the fields most edits don't need.
+function sheetHead(title) {
+  return `<div class="sheet-head"><h2>${esc(title)}</h2>
+    <button type="button" class="icon-btn" data-act="cancel" aria-label="${esc(t('edit.cancel'))}">${icon('close', 22)}</button></div>`;
+}
+const moreFields = (html) => `<details class="more"><summary>${esc(t('edit.more'))} ${icon('down', 16)}</summary><div>${html}</div></details>`;
 
 // Opens a bottom sheet with a form; onSave gets the form fields.
 function openSheet(html, { onSave, onDelete }) {
@@ -891,19 +960,17 @@ function openSentenceEditor(w) {
       : `<label>${esc(label)}<input name="${k}" value="${esc(w[k])}" ${inputAttrs} ${attrs}></label>`;
   };
   openSheet(`
-    <h2>${esc(t('edit.sentenceTitle'))}</h2>
+    ${sheetHead(t('edit.sentenceTitle'))}
     ${field('lemma', t('edit.sentence'), { area: true })}
     ${Lw.reading ? field('reading', t('edit.reading'), { area: true }) : ''}
     ${field('meaning', t('edit.meaning'), { area: true, target: false })}
     <label>${esc(t('lookup.tone'))}<select name="tone">${gemini.TONES.map((x) =>
       `<option value="${x}" ${x === (w.tone || 'everyday') ? 'selected' : ''}>${esc(toneLabel(x))}</option>`).join('')}</select></label>
-    ${field('toneNote', t('edit.toneNote'), { target: false })}
-    ${field('gapSentence', t('edit.gapSentence'), { area: true })}
-    ${field('gapAnswer', t('edit.gapAnswer'))}
-    <div class="actions">
-      <button type="button" class="btn" data-act="cancel">${esc(t('edit.cancel'))}</button>
-      <button type="submit" class="btn primary">${esc(t('edit.save'))}</button>
-    </div>
+    ${moreFields(`
+      ${field('toneNote', t('edit.toneNote'), { target: false })}
+      ${field('gapSentence', t('edit.gapSentence'), { area: true })}
+      ${field('gapAnswer', t('edit.gapAnswer'))}`)}
+    <button type="submit" class="btn primary wide">${esc(t('edit.save'))}</button>
     <button type="button" class="btn danger wide" data-act="delete">${esc(t('edit.delete'))}</button>`, {
     onSave: (fd) => {
       if (!fd.lemma.trim()) return false;
@@ -921,28 +988,46 @@ function openSentenceEditor(w) {
 // ---------- Correct ----------
 let lastCorrection = null;
 
+// After a correction the result comes first; the text collapses to one line until reopened.
+let correctOpen = false;
+
 function viewCorrect() {
   titleEl.textContent = t('correct.title');
   const draft = sessionStorage.getItem('gt.draft') || '';
+  const collapsed = lastCorrection && !correctOpen;
   main.innerHTML = `
-    <form class="card" id="cf">
+    ${collapsed ? `<section class="card draft-row" id="reopen">
+        <div class="grow"><div class="muted small">${esc(t('correct.yourText'))}</div><div class="ellipsis" ${tl(lastCorrection.lang)}>${esc(lastCorrection.text)}</div></div>
+        ${icon('down', 18)}
+      </section>` : ''}
+    <form class="card ${collapsed ? 'hidden' : ''}" id="cf">
       <textarea id="text" rows="6" spellcheck="false" ${tl()} placeholder="${esc(t('correct.placeholder', { l: langName() }))}">${esc(draft)}</textarea>
       <button class="btn primary" type="submit">${esc(t('correct.go'))}</button>
     </form>
-    <div id="cres">${lastCorrection ? correctionResult(lastCorrection) : ''}</div>`;
+    <div id="cres">${lastCorrection ? correctionResult(lastCorrection) : ''}</div>
+    ${lastCorrection ? `<button class="btn" id="newtext">${icon('plus', 18)} ${esc(t('correct.newText'))}</button>` : ''}`;
+  $('#reopen')?.addEventListener('click', () => { correctOpen = true; viewCorrect(); $('#text').focus(); });
+  $('#newtext')?.addEventListener('click', () => {
+    sessionStorage.removeItem('gt.draft');
+    lastCorrection = null;
+    correctOpen = false;
+    viewCorrect();
+    $('#text').focus();
+  });
   $('#text').addEventListener('input', (e) => sessionStorage.setItem('gt.draft', e.target.value));
   $('#cf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = $('#text').value.trim();
     if (!text) return;
+    $('#text').blur();
     const res = $('#cres');
     res.innerHTML = `<div class="card loading">${esc(t('correct.loading'))}</div>`;
     try {
       const r = await gemini.correctText(text);
       const logged = logMistakes(r.mistakes, 'correction', code());
       lastCorrection = { text, lang: code(), ...r, newWords: logged.words.map(wordTitle) };
-      res.innerHTML = correctionResult(lastCorrection);
-      bindCopy();
+      correctOpen = false;
+      if (routeName() === 'correct') { viewCorrect(); window.scrollTo(0, 0); }
     } catch (err) {
       res.innerHTML = errorBox(err);
     }
@@ -952,7 +1037,8 @@ function viewCorrect() {
 
 function correctionResult(c) {
   return `<section class="card">
-    <div class="word-head"><h3>${esc(t('correct.result'))}</h3><button class="btn small" id="copy">${esc(t('correct.copy'))}</button></div>
+    <div class="card-head"><h3>${esc(t('correct.result'))}</h3>
+      <button class="btn small text" id="copy">${icon('copy', 16)} ${esc(t('correct.copy'))}</button></div>
     <div class="sentence corrected" ${tl(c.lang)}>${diffHtml(c.text, c.correctedText)}</div>
     ${c.mistakes.length ? `<h3>${esc(t('correct.mistakes', { n: c.mistakes.length }))}</h3>${mistakeList(c.mistakes, c.lang)}
       <p class="muted small">${esc(t('correct.logged'))}</p>` : `<p>${esc(t('correct.noMistakes'))}</p>`}
@@ -986,75 +1072,75 @@ export function categoryStats(now = Date.now()) {
   }).filter((s) => s.total || s.drills);
 }
 
+const sortedStats = () => categoryStats().sort((a, b) => b.recent - a.recent || b.total - a.total);
+
+function catList(stats) {
+  const max = Math.max(...stats.map((s) => s.recent), 1);
+  const trendLabel = { improving: `↘ ${t('profile.improving')}`, worse: `↗ ${t('profile.worse')}`, steady: `→ ${t('profile.steady')}` };
+  return `<ul class="cats">${stats.map((s) => `
+    <li>
+      <div class="cat-head"><b>${esc(lang() === 'en' ? s.en : s.de)}</b><span class="trend ${s.trend}">${esc(trendLabel[s.trend])}</span></div>
+      <div class="bar"><div style="width:${Math.round((s.recent / max) * 100)}%"></div></div>
+      <div class="muted small">${s.recent} · ${esc(t('profile.last14'))} &nbsp;|&nbsp; ${s.total} ${esc(t('profile.total'))}
+        ${s.drills ? ` &nbsp;|&nbsp; ${esc(t('profile.drills'))}: ${esc(t('profile.accuracy', { p: Math.round(s.acc * 100) }))}` : ''}</div>
+    </li>`).join('')}</ul>`;
+}
+
 function viewProfile() {
   titleEl.textContent = t('profile.title');
-  const stats = categoryStats().sort((a, b) => b.recent - a.recent || b.total - a.total);
+  const stats = sortedStats();
   if (!stats.length) {
     main.innerHTML = `<p class="muted center">${esc(t('profile.empty'))}</p>`;
     return;
   }
-  const max = Math.max(...stats.map((s) => s.recent), 1);
-  const trendLabel = { improving: `↘ ${t('profile.improving')}`, worse: `↗ ${t('profile.worse')}`, steady: `→ ${t('profile.steady')}` };
   const recentMistakes = store.mistakes(code()).filter((m) => m.source !== 'drill').slice(0, 10);
   main.innerHTML = `
-    <section class="card">
-      <ul class="cats">${stats.map((s) => `
-        <li>
-          <div class="cat-head"><b>${esc(lang() === 'en' ? s.en : s.de)}</b><span class="trend ${s.trend}">${esc(trendLabel[s.trend])}</span></div>
-          <div class="bar"><div style="width:${Math.round((s.recent / max) * 100)}%"></div></div>
-          <div class="muted small">${s.recent} · ${esc(t('profile.last14'))} &nbsp;|&nbsp; ${s.total} ${esc(t('profile.total'))}
-            ${s.drills ? ` &nbsp;|&nbsp; ${esc(t('profile.drills'))}: ${esc(t('profile.accuracy', { p: Math.round(s.acc * 100) }))}` : ''}</div>
-        </li>`).join('')}</ul>
-    </section>
-    ${recentMistakes.length ? `<h3>${esc(t('profile.recent'))}</h3><section class="card">${mistakeList(recentMistakes)}</section>` : ''}`;
+    <section class="card">${catList(stats)}</section>
+    ${recentMistakes.length ? `<div class="group-label">${esc(t('profile.recent'))}</div><section class="card">${mistakeList(recentMistakes)}</section>` : ''}`;
 }
 
 // ---------- Settings ----------
+const standalone = () => navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
+
 function viewSettings() {
   titleEl.textContent = t('settings.title');
   const s = store.getSettings();
   main.innerHTML = `
+    <div class="group-label">${esc(t('settings.groupLearn'))}</div>
     <section class="card form" id="learncard">
       ${learnCard()}
+      <div class="row-label"><span>${esc(t('settings.newPerDay'))}</span>
+        <div class="stepper"><button type="button" id="npdminus" aria-label="−">−</button><output id="npd">${esc(s.newPerDay)}</output><button type="button" id="npdplus" aria-label="+">+</button></div></div>
       <p class="muted small">${esc(t('settings.learningHelp'))}</p>
     </section>
-    <section class="card form">
-      <label>${esc(t('settings.language'))}
-        <div class="seg" id="lang">
-          <button data-lang="de" class="${s.lang !== 'en' ? 'on' : ''}">Deutsch</button>
-          <button data-lang="en" class="${s.lang === 'en' ? 'on' : ''}">English</button>
-        </div>
-      </label>
-    </section>
+    <div class="group-label">${esc(t('sync.title'))}</div>
     <section class="card form" id="synccard"></section>
+    <div class="group-label">Gemini</div>
     <section class="card form">
       <label>${esc(t('settings.apiKey'))}
         <div class="inline"><input id="key" type="password" ${inputAttrs} value="${esc(store.getApiKey())}" placeholder="AIza…">
-        <button class="btn small" id="showkey">${esc(t('settings.show'))}</button></div>
+        <button class="btn small text" id="showkey">${esc(t('settings.show'))}</button></div>
       </label>
       <p class="muted small">${esc(t('settings.apiKeyHelp'))} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></p>
-      <label>${esc(t('settings.model'))}
-        <div class="inline"><input id="model" list="models" ${inputAttrs} value="${esc(s.model)}">
-        <button class="btn small" id="loadmodels">${esc(t('settings.loadModels'))}</button></div>
-        <datalist id="models"></datalist>
-      </label>
       <button class="btn" id="test">${esc(t('settings.test'))}</button>
       <div id="testres"></div>
     </section>
+    <nav class="list">
+      <a href="#/settings/advanced"><span>${esc(t('settings.advanced'))}</span><span class="val"><span class="ellipsis">${esc(s.model)}</span>${icon('chevron', 18)}</span></a>
+    </nav>
+    <div class="group-label">${esc(t('settings.groupApp'))}</div>
     <section class="card form">
-      <label>${esc(t('settings.newPerDay'))}<input id="npd" type="number" min="0" max="50" inputmode="numeric" value="${esc(s.newPerDay)}"></label>
-    </section>
-    <section class="card form">
-      <b>${esc(t('settings.backup'))}</b>
-      <p class="muted small" id="backuphelp"></p>
-      <div class="actions left">
-        <button class="btn" id="export">${esc(t('settings.export'))}</button>
-        <label class="btn" for="importfile">${esc(t('settings.import'))}</label>
-        <input id="importfile" type="file" accept="application/json,.json" class="hidden">
+      <div class="row-label"><span>${esc(t('settings.language'))}</span>
+        <div class="seg" id="lang" style="min-width:180px">
+          <button data-lang="de" class="${s.lang !== 'en' ? 'on' : ''}">Deutsch</button>
+          <button data-lang="en" class="${s.lang === 'en' ? 'on' : ''}">English</button>
+        </div>
       </div>
-      <button class="btn danger wide" id="reset">${esc(t('settings.reset'))}</button>
     </section>
-    <p class="muted small center">${esc(t('settings.install'))}</p>
+    <nav class="list">
+      <a href="#/settings/backup"><span>${esc(t('settings.backup'))}</span><span class="val">${icon('chevron', 18)}</span></a>
+    </nav>
+    ${standalone() ? '' : `<p class="muted small center">${esc(t('settings.install'))}</p>`}
     <p class="muted small center">Language Trainer v2</p>`;
 
   bindLearnCard(viewSettings);
@@ -1065,26 +1151,68 @@ function viewSettings() {
     k.type = k.type === 'password' ? 'text' : 'password';
     e.target.textContent = k.type === 'password' ? t('settings.show') : t('settings.hide');
   });
+  bindTest();
+  const step = (d) => {
+    const n = Math.min(50, Math.max(0, (store.getSettings().newPerDay || 0) + d));
+    store.setSettings({ newPerDay: n });
+    $('#npd').textContent = n;
+  };
+  $('#npdminus').addEventListener('click', () => step(-1));
+  $('#npdplus').addEventListener('click', () => step(1));
+  renderSync();
+}
+
+function bindTest() {
+  $('#test').addEventListener('click', async () => {
+    if ($('#key')) store.setApiKey($('#key').value);
+    $('#testres').innerHTML = `<div class="loading">…</div>`;
+    try {
+      const r = await gemini.testKey();
+      if ($('#model')) $('#model').value = r.model;
+      $('#testres').innerHTML = `<div class="notice ok">${esc(t('settings.testOk', { m: r.model }))}</div>`;
+    } catch (e) { $('#testres').innerHTML = errorBox(e); }
+  });
+}
+
+// Settings › Advanced: which Gemini model to use.
+function viewAdvanced() {
+  titleEl.textContent = t('settings.advanced');
+  const s = store.getSettings();
+  main.innerHTML = `
+    <section class="card form">
+      <label>${esc(t('settings.model'))}
+        <div class="inline"><input id="model" list="models" ${inputAttrs} value="${esc(s.model)}">
+        <button class="btn small" id="loadmodels">${esc(t('settings.loadModels'))}</button></div>
+        <datalist id="models"></datalist>
+      </label>
+      <p class="muted small">${esc(t('settings.advancedHelp'))}</p>
+      <button class="btn" id="test">${esc(t('settings.test'))}</button>
+      <div id="testres"></div>
+    </section>`;
   $('#model').addEventListener('change', (e) => { store.setSettings({ model: e.target.value.trim() || 'gemini-flash-latest' }); toast(t('settings.saved')); });
   $('#loadmodels').addEventListener('click', async () => {
-    store.setApiKey($('#key').value);
     try {
       const names = await gemini.listModels();
       $('#models').innerHTML = names.map((n) => `<option value="${esc(n)}">`).join('');
       $('#testres').innerHTML = `<p class="muted small">${esc(names.join(', '))}</p>`;
     } catch (e) { $('#testres').innerHTML = errorBox(e); }
   });
-  $('#test').addEventListener('click', async () => {
-    store.setApiKey($('#key').value);
-    $('#testres').innerHTML = `<div class="loading">…</div>`;
-    try {
-      const r = await gemini.testKey();
-      $('#model').value = r.model;
-      $('#testres').innerHTML = `<div class="notice ok">${esc(t('settings.testOk', { m: r.model }))}</div>`;
-    } catch (e) { $('#testres').innerHTML = errorBox(e); }
-  });
-  renderSync();
-  $('#npd').addEventListener('change', (e) => store.setSettings({ newPerDay: Math.max(0, parseInt(e.target.value, 10) || 0) }));
+  bindTest();
+}
+
+// Settings › Backup: export, import and deleting everything.
+function viewBackup() {
+  titleEl.textContent = t('settings.backup');
+  main.innerHTML = `
+    <section class="card form">
+      <p class="muted small">${esc(t(accountSynced() ? 'settings.backupHelpSynced' : 'settings.backupHelp'))}</p>
+      <div class="actions">
+        <button class="btn" id="export">${esc(t('settings.export'))}</button>
+        <label class="btn" for="importfile">${esc(t('settings.import'))}</label>
+        <input id="importfile" type="file" accept="application/json,.json" class="hidden">
+      </div>
+    </section>
+    <button class="btn danger" id="reset">${esc(t('settings.reset'))}</button>`;
   $('#export').addEventListener('click', exportBackup);
   $('#importfile').addEventListener('change', async (e) => {
     const f = e.target.files[0];
@@ -1137,8 +1265,7 @@ function renderSync() {
   if (!el) return;
   const st = sync.getState();
   shownSync = syncShape(st);
-  $('#backuphelp').textContent = t(accountSynced() ? 'settings.backupHelpSynced' : 'settings.backupHelp');
-  const head = `<b>${esc(t('sync.title'))}</b>`;
+  const head = '';
   const res = '<div id="syncres"></div>';
   const signOutBtn = `<button class="btn" id="ssignout">${esc(t('sync.signOut'))}</button>`;
   if (st.status === 'off') {
@@ -1228,6 +1355,8 @@ window.addEventListener('hashchange', route);
 window.addEventListener('online', () => { if (!session) route(); });
 window.addEventListener('offline', () => { if (!session) route(); });
 $('#gear').addEventListener('click', () => go('settings'));
+$('#back').addEventListener('click', () => go($('#back').dataset.to || 'today'));
+$('#langpill').addEventListener('click', openLangSheet);
 navigator.storage?.persist?.().catch(() => {});
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

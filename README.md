@@ -14,7 +14,7 @@ Gemini sets up any other language you add.
     <td><img src="docs/screenshots/lookup.png" width="200" alt="Looking up a word"></td>
     <td><img src="docs/screenshots/correct.png" width="200" alt="A corrected text with labelled mistakes"></td>
     <td><img src="docs/screenshots/session-feedback.png" width="200" alt="Fixing a past sentence in the daily session"></td>
-    <td><img src="docs/screenshots/profile.png" width="200" alt="The mistake profile"></td>
+    <td><img src="docs/screenshots/today.png" width="200" alt="Today with your weak spots"></td>
   </tr>
   <tr>
     <td align="center">Look up</td>
@@ -58,7 +58,7 @@ and you can change it any time in Settings.
 - **Any other language:** choose **+ Andere Sprache …** and type its name, for example *Spanish*. Gemini sets
   it up once (articles, readings, and the 8–10 grammar areas learners of that language get wrong most).
 - You can learn several languages. Words, mistakes and progress are kept separate for each one; switch in
-  Settings. Your levels sync with your account; which language is active is chosen on each device.
+  Settings or with the language pill (for example **DE · B2**) at the top. Your levels sync with your account; which language is active is chosen on each device.
 
 **Japanese:** type with the iPhone Japanese keyboard. Words are saved with their kana reading, and in recall
 the kanji form is correct while typing only the reading counts as *almost*. Lookups also accept romaji.
@@ -72,13 +72,13 @@ the kanji form is correct while typing only the reading counts as *almost*. Look
 
 ## What each screen does
 
-### 🔍 Nachschlagen (Look up)
+### 🔍 Suchen (Look up)
 
 Type a word in the language you're learning, or an English word to find it. Gemini gives you the meaning,
 article, plural or key forms (the reading for Japanese), a note on register, and an example sentence.
 
 - **Every lookup is saved to your word list automatically.** There's no extra step.
-- Tap **+ Satz hinzufügen** to add the sentence where you found the word. The app picks the right meaning for
+- Tap **+ Kontext** to add the sentence where you found the word. The app picks the right meaning for
   that sentence, and later turns the sentence into a gap-fill exercise.
 
 **Whole sentences.** Switch to **Satz** to translate a sentence (typed in English or in the language you're
@@ -93,7 +93,7 @@ learning) and pick a tone:
 You get the translation, a one-line note on what makes it sound that way, and the useful words in it. Tap
 a word to save it too. The sentence is saved automatically and joins your daily practice.
 
-### ✏️ Korrigieren (Correct)
+### ✏️ Schreiben (Correct)
 
 Paste or write anything in the language you're learning: an email, a chat message, a practice paragraph.
 You get back:
@@ -108,9 +108,13 @@ word goes into your word list too. Tap **Kopieren** to copy the corrected text.
 If your text is correct but could sound more natural, you also see **Natürlicher klingt es so** with a better
 phrasing and why. That's a suggestion, not a mistake. Tap **Zum Üben speichern** to add it to your sentences.
 
+After a correction the result comes first and your text folds into one line; tap it to edit and correct again,
+or tap **Neuer Text** to start over.
+
 ### ✅ Heute (Today)
 
-Your daily session mixes vocabulary and grammar. The app decides what's due using spaced repetition: things
+Shows what's due today and your three weakest grammar areas (tap **Ganzes Fehlerprofil** for the full
+profile, see below). Your daily session mixes vocabulary and grammar. The app decides what's due using spaced repetition: things
 you get right come back after longer and longer gaps, and things you get wrong come back tomorrow.
 
 **Vocabulary.** Every exercise asks you to *produce* the language, not just recognise it. Each word moves through
@@ -148,11 +152,11 @@ Tips:
 ### 📖 Wörter (Words)
 
 All your saved words and sentences, with a filter to show only one kind. Search them, tap one to edit any field, or delete words you don't want to practise.
-Tap **＋** to add a word by hand.
+Tap **+** to add a word by hand. Rarely needed fields (register, example, gap sentence) are under **Mehr Felder**.
 
-### 📊 Profil (Profile)
+### 📊 Fehlerprofil (Profile)
 
-See which grammar areas trip you up most. For each category you see:
+Open it from **Heute** → **Ganzes Fehlerprofil**. See which grammar areas trip you up most. For each category you see:
 
 - how often it came up in the **last 14 days**,
 - whether it is **improving** (wird besser) or coming up **more often** (häufiger),
@@ -170,7 +174,7 @@ Tap the ⚙️ gear (top right).
 | Sprache der App | Switch the app's own buttons and explanations between German and English |
 | Konto & Synchronisierung | Sign in to keep your data the same on all your devices (invite only, see below) |
 | Gemini-API-Schlüssel | Your API key (see step 2 above) |
-| Gemini-Modell | Which Gemini model to use. The default works, and **Modelle laden** shows the others |
+| Erweitert → Gemini-Modell | Which Gemini model to use. The default works, and **Modelle laden** shows the others |
 | Neue Wörter pro Tag | How many new words join your session each day |
 | Sicherung | Export your data to a file, or import it again |
 
@@ -190,8 +194,8 @@ exercises that need Gemini wait until you're back online.
 
 **Something not working?**
 - *"Bitte zuerst den Gemini-Schlüssel eintragen"*: add your key in Settings.
-- *"Gemini-Fehler: …"*: tap **Schlüssel testen** in Settings. If the model isn't found, tap
-  **Modelle laden** and pick a "flash" model.
+- *"Gemini-Fehler: …"*: tap **Schlüssel testen** in Settings. If the model isn't found, open **Erweitert**,
+  tap **Modelle laden** and pick a "flash" model.
 - *The app looks out of date*: close it and open it again. Updates load in the background.
 
 ---
