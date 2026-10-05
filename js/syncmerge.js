@@ -6,7 +6,7 @@
 // - an id in `synced` that is gone locally was deleted here and gets a tombstone;
 // - a remote record wins when it is newer than the local one ("latest wins").
 
-export const COLLECTIONS = ['words', 'mistakes', 'reviewItems', 'reviews'];
+export const COLLECTIONS = ['words', 'mistakes', 'reviewItems', 'reviews', 'languages'];
 
 // Records written before sync existed have no updatedAt; fall back to their creation time.
 export function stamp(r) {

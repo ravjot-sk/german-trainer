@@ -1,10 +1,11 @@
-# German Trainer 🇩🇪
+# Language Trainer 🇩🇪 🇯🇵
 
-**Turn the words you look up and the mistakes you make into daily German practice.**
+**Turn the words you look up and the mistakes you make into daily practice, in German, Japanese or any other language.**
 
-German Trainer is for learners who understand German well but find it hard to *produce* it. It is a
+Language Trainer is for learners who understand a language better than they can *produce* it. It is a
 dictionary, a writing corrector and a daily trainer in one. Every word you look up and every mistake you make
-comes back as an exercise until you can produce it correctly yourself.
+comes back as an exercise until you can produce it correctly yourself. German and Japanese are built in, and
+Gemini sets up any other language you add.
 
 👉 **Open the app: [ravjot-sk.github.io/german-trainer](https://ravjot-sk.github.io/german-trainer/)**
 
@@ -47,9 +48,24 @@ free tier is enough for personal use.
 
 Your key is stored only on your device and is sent only to Google.
 
-### 3. Use it every day
+### 3. Choose your language and level
 
-- **During the day:** look up words when you meet them, and paste in German you've written.
+The first time you open the app, pick the language you're learning and your level (A1–C2, or JLPT N5–N1
+for Japanese). Nothing is preset: every exercise, example and explanation is pitched at the level you choose,
+and you can change it any time in Settings.
+
+- **German and Japanese** are built in, each with its own hand-written list of grammar categories.
+- **Any other language:** choose **+ Andere Sprache …** and type its name, for example *Spanish*. Gemini sets
+  it up once (articles, readings, and the 8–10 grammar areas learners of that language get wrong most).
+- You can learn several languages. Words, mistakes and progress are kept separate for each one; switch in
+  Settings. Your levels sync with your account; which language is active is chosen on each device.
+
+**Japanese:** type with the iPhone Japanese keyboard. Words are saved with their kana reading, and in recall
+the kanji form is correct while typing only the reading counts as *almost*. Lookups also accept romaji.
+
+### 4. Use it every day
+
+- **During the day:** look up words when you meet them, and paste in text you've written.
 - **Once a day:** open **Heute** and do your session. It takes about 10 minutes.
 
 ---
@@ -58,8 +74,8 @@ Your key is stored only on your device and is sent only to Google.
 
 ### 🔍 Nachschlagen (Look up)
 
-Type a German word, or an English word to find the German one. Gemini gives you the meaning, article,
-plural or verb forms, a note on register, and an example sentence.
+Type a word in the language you're learning, or an English word to find it. Gemini gives you the meaning,
+article, plural or key forms (the reading for Japanese), a note on register, and an example sentence.
 
 - **Every lookup is saved to your word list automatically.** There's no extra step.
 - Tap **+ Satz hinzufügen** to add the sentence where you found the word. The app picks the right meaning for
@@ -67,11 +83,12 @@ plural or verb forms, a note on register, and an example sentence.
 
 ### ✏️ Korrigieren (Correct)
 
-Paste or write any German: an email, a chat message, a practice paragraph. You get back:
+Paste or write anything in the language you're learning: an email, a chat message, a practice paragraph.
+You get back:
 
 - the corrected text, with every change highlighted,
-- each mistake with a short explanation and a grammar category, such as *Adjektivendungen* or
-  *Perfekt mit haben oder sein*.
+- each mistake with a short explanation and a grammar category, such as *Adjektivendungen* in German or
+  *Particles* in Japanese.
 
 Every mistake is saved to your profile and scheduled for practice. If you picked the wrong word, the right
 word goes into your word list too. Tap **Kopieren** to copy the corrected text.
@@ -81,12 +98,12 @@ word goes into your word list too. Tap **Kopieren** to copy the corrected text.
 Your daily session mixes vocabulary and grammar. The app decides what's due using spaced repetition: things
 you get right come back after longer and longer gaps, and things you get wrong come back tomorrow.
 
-**Vocabulary.** Every exercise asks you to *produce* German, not just recognise it. Each word moves through
+**Vocabulary.** Every exercise asks you to *produce* the language, not just recognise it. Each word moves through
 three stages:
 
 | Stage | What you do |
 |---|---|
-| Recall | See the meaning, type the German word, including the article and plural for nouns |
+| Recall | See the meaning and type the word: for German nouns with article and plural, for Japanese in kanji |
 | Gap fill | Fill the word into the sentence where you found it |
 | Write | Write your own sentence with the word, and Gemini checks it |
 
@@ -124,7 +141,8 @@ Tap the ⚙️ gear (top right).
 
 | Setting | What it does |
 |---|---|
-| Sprache der App | Switch the app between German and English |
+| Ich lerne / Mein Niveau | The language you're practising and your level in it; add another language here |
+| Sprache der App | Switch the app's own buttons and explanations between German and English |
 | Konto & Synchronisierung | Sign in to keep your data the same on all your devices (invite only, see below) |
 | Gemini-API-Schlüssel | Your API key (see step 2 above) |
 | Gemini-Modell | Which Gemini model to use. The default works, and **Modelle laden** shows the others |
@@ -179,7 +197,8 @@ Sync uses a free Firebase project. Until it's set up, the account card says acco
 3. **Build → Firestore Database → Create database**: pick a location near you (for example
    `europe-west3`, Frankfurt) and start in **production mode**.
 4. In Firestore, open the **Rules** tab, replace everything with the contents of
-   [`firestore.rules`](firestore.rules), and tap **Publish**.
+   [`firestore.rules`](firestore.rules), and tap **Publish**. Do this again whenever `firestore.rules`
+   changes (it did when languages were added).
 5. **Project settings (⚙️) → General → Your apps → Web (`</>`)**: register an app called German Trainer
    (no Firebase Hosting). Copy the `firebaseConfig` values it shows into
    [`js/firebase-config.js`](js/firebase-config.js) in place of `null`, and push that to `main`. These
@@ -202,7 +221,7 @@ loaded from Google's CDN only when sync is configured.
 
 ```sh
 npm start   # serve locally at http://localhost:8080
-npm test    # unit tests: scheduler, answer checking, session building, sync merging
+npm test    # unit tests: scheduler, answer checking, languages, session building, sync merging
 ```
 
 | File | What's in it |
@@ -212,8 +231,9 @@ npm test    # unit tests: scheduler, answer checking, session building, sync mer
 | `js/session.js` | Builds the daily mixed session |
 | `js/srs.js` | Spaced-repetition scheduler (SM-2 variant) |
 | `js/check.js` | Local answer checking and the correction diff |
-| `js/categories.js` | The fixed list of grammar categories |
-| `js/store.js` | Local storage: `words`, `mistakes`, `reviewItems`, `reviews` |
+| `js/languages.js` | Built-in languages (German, Japanese), levels, and per-language helpers |
+| `js/categories.js` | The fixed grammar categories for each language |
+| `js/store.js` | Local storage: `words`, `mistakes`, `reviewItems`, `reviews`, `languages` |
 | `js/sync.js` | Accounts and sync: mirrors local data to Firestore `users/{uid}/…` and merges other devices' changes |
 | `js/syncmerge.js` | Merge rules: per-record "latest edit wins", deletes as tombstones |
 | `js/firebase-config.js` | Firebase project config (`null` turns accounts off) |

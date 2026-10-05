@@ -169,6 +169,7 @@ ins { color: var(--ok); text-decoration: none; font-weight: 600; background: var
 .word-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .word-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
 .forms { font-weight: 500; }
+.reading { color: var(--muted); font-size: 14px; }
 .meaning { font-size: 18px; }
 .saved-note { color: var(--ok); font-size: 14px; }
 .rows { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: var(--radius); overflow: hidden; }

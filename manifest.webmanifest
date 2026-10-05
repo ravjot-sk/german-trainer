@@ -1,6 +1,6 @@
 {
-  "name": "German Trainer",
-  "short_name": "Deutsch",
+  "name": "Language Trainer",
+  "short_name": "Trainer",
   "description": "Wörter nachschlagen, Texte korrigieren und täglich aktiv üben.",
   "start_url": "./#/today",
   "scope": "./",
