@@ -1,6 +1,6 @@
 // Offline support: cache the app shell so the daily session opens without a connection.
 // Gemini and Firebase requests go to other origins and are never cached.
-const VERSION = 'gt-v7';
+const VERSION = 'gt-v8';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/i18n.js', './js/gemini.js', './js/srs.js',
