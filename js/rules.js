@@ -9,7 +9,7 @@
 //   passes  free-writing passes on different days; two make the rule mastered
 //   pool    unused generated exercises, per kind
 // Pure functions only, so they can be unit-tested in Node.
-import { dayStart } from './srs.js';
+import { dayStart, DAY } from './srs.js';
 import { catKey, parseCatKey, recLang } from './languages.js';
 import { hasRules, migrateCategory } from './categories.js';
 
@@ -135,7 +135,7 @@ export function valid(kind, ex) {
 
 // Rules due within `days` whose current exercise is missing, most urgent first.
 export function topUpList(items, { now, days = 3, skip = new Set(), max = 6 } = {}) {
-  const limit = dayStart(now) + days * 864e5;
+  const limit = dayStart(now) + days * DAY;
   return items.filter((r) => isRule(r) && !skip.has(r.id) && (r.due ?? 0) < limit && !nextExercise(r))
     .sort((a, b) => (a.due ?? 0) - (b.due ?? 0))
     .slice(0, max);
