@@ -42,6 +42,14 @@ export function compareAny(answer, expectedList) {
   return best;
 }
 
+// German nouns are typed in separate article and word boxes. A word typed with its article
+// already in the word box is taken as it is.
+export function joinArticle(article, word) {
+  const a = (article || '').trim();
+  const w = (word || '').trim();
+  return !a || /^(der|die|das)\s/i.test(w) ? w : `${a} ${w}`;
+}
+
 export function stripArticle(s) {
   return (s || '').trim().replace(/^(der|die|das)\s+/i, '');
 }
@@ -62,12 +70,6 @@ export function checkRecall(word, answer, pluralAnswer) {
     return { grade: main, main, plural: null, target, pluralTarget: '', byReading };
   }
   const target = word.pos === 'noun' && word.article ? `${word.article} ${lemma}` : lemma;
-  if (word.article && needsPlural(word) && compare(answer, word.article) === 'correct'
-      && compare(pluralAnswer, lemma) !== 'wrong') {
-    // Article in the first box and the word in the plural box: the word was known, but the
-    // plural was never given, so it counts as almost.
-    return { grade: 'almost', main: 'correct', plural: null, target, pluralTarget: stripArticle(word.plural), splitArticle: true };
-  }
   let main = compare(answer, target);
   if (main === 'wrong' && word.pos !== 'noun') {
     // Accept "sich erinnern" when the stored form is "erinnern" and vice versa.
