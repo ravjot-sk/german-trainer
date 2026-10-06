@@ -295,7 +295,14 @@ npm test    # unit tests: scheduler, answer checking, languages, session buildin
 
 | File | What's in it |
 |---|---|
-| `js/app.js` | Screens and navigation |
+| `js/app.js` | Starts the app: registers the screens and page-wide listeners |
+| `js/router.js` | Hash routing, the tab bar and the language pill |
+| `js/views/` | One file per screen: Today, Look up, Words, Write (`correct.js`), Profile, Settings, the account card, word editor and suggestions |
+| `js/practice/` | The session: `runtime.js` (tasks and what happens after an answer), `render.js` (the session screen), `grade.js` (checking answers) |
+| `js/ui/` | Shared helpers: DOM (`dom.js`), active language and screen state (`context.js`), shared HTML (`text.js`), bottom sheets (`sheet.js`) |
+| `js/answer.js` | Grading rule exercises, and what is saved and requeued after an answer (pure, tested) |
+| `js/stats.js` | The mistake profile's numbers (pure, tested) |
+| `js/background.js` | Gemini work done in the background: furigana, rule exercise sets, gap sentences |
 | `js/gemini.js` | All Gemini prompts and their JSON response schemas |
 | `js/session.js` | Builds the daily mixed session |
 | `js/srs.js` | Spaced-repetition scheduler (SM-2 variant) |

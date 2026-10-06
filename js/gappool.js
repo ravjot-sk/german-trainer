@@ -8,6 +8,7 @@
 // word.gapCurrent: the sentence to show again after a wrong answer, or null.
 import { gapFor, normalize } from './check.js';
 import { isSentence } from './languages.js';
+import { DAY } from './srs.js';
 
 export const MAX_POOL = 12;
 // A word whose pool has this many fresh sentences or fewer at its level is topped up.
@@ -107,7 +108,7 @@ export function needsRefill(word, reps = 0) {
 // Sorted soonest first, at most `max`, each with the level to write at.
 export function refillList({ items, words, now = Date.now(), days = 3, max = 10, skip = new Set() }) {
   const wordById = new Map(words.map((w) => [w.id, w]));
-  const horizon = now + days * 864e5;
+  const horizon = now + days * DAY;
   return items
     .filter((r) => r.itemType === 'word' && wordById.has(r.itemId) && !skip.has(r.itemId))
     .filter((r) => !r.introducedAt || r.due <= horizon)

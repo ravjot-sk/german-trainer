@@ -1,5 +1,5 @@
 // Builds the daily mixed session: due vocabulary exercises interleaved with grammar drills.
-import { isDue, isNew, dayStart } from './srs.js';
+import { isDue, isNew, dayStart, DAY } from './srs.js';
 import { gapFor } from './check.js';
 import { pickGap } from './gappool.js';
 import { DRILLABLE } from './categories.js';
@@ -48,7 +48,7 @@ export function sentenceExercise(item, sentence, gemini, { chunks = true } = {})
 
 // Category weakness: recent mistakes in new writing, weighted toward the last two weeks.
 export function weakness(category, mistakes, now) {
-  const d14 = now - 14 * 864e5, d60 = now - 60 * 864e5;
+  const d14 = now - 14 * DAY, d60 = now - 60 * DAY;
   let score = 0;
   for (const m of mistakes) {
     if (m.category !== category || m.source === 'drill') continue;
@@ -168,7 +168,7 @@ export function summarizeDue(args) {
 
 export const PRACTICE_FOCUS = ['mix', 'words', 'sentences', 'grammar', 'weak'];
 const COOLDOWN = 8;
-const WEEK = 7 * 864e5;
+const WEEK = 7 * DAY;
 
 // How strongly an item should come up next. lastReview: its latest review, if any.
 export function practiceWeight(item, lastReview, now) {

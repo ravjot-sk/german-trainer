@@ -1,7 +1,8 @@
 // Spaced repetition (SM-2 variant). One scheduler for words, past mistakes and grammar
 // categories. Pure functions so they can be unit-tested in Node.
 
-const DAY = 24 * 60 * 60 * 1000;
+// One day in milliseconds, for windows measured in days.
+export const DAY = 24 * 60 * 60 * 1000;
 
 export function dayStart(ts) {
   const d = new Date(ts);
@@ -61,4 +62,3 @@ export function schedulePractice(item, grade, now = Date.now()) {
   return item;
 }
 
-export const _DAY = DAY;

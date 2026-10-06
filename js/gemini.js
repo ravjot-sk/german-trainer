@@ -4,7 +4,7 @@ import { getApiKey, getSettings, setSettings, activeLanguage, reviewItems } from
 import { categoriesFor, categoryGuide, categoryLabel, finishCategories, NO_RULES, SKELETON } from './categories.js';
 import { knownRules, KINDS } from './rules.js';
 import { seedGuide } from './ruleseeds.js';
-import { lemmaOf, cleanExamples, MORE_EXAMPLES } from './languages.js';
+import { lemmaOf, wordTitle, cleanExamples, MORE_EXAMPLES } from './languages.js';
 import { parse as parseFurigana } from './furigana.js';
 import { t, lang } from './i18n.js';
 
@@ -256,8 +256,6 @@ function cleanMistakes(r) {
   return r;
 }
 
-const target = (word) => (word.article ? `${word.article} ${lemmaOf(word)}` : lemmaOf(word));
-
 // ---------- features ----------
 export async function lookup(query, context) {
   const L = learner();
@@ -386,7 +384,7 @@ Separately, if a correct answer would sound clearly more natural phrased differe
 // "Write a sentence" exercise: correct it and judge whether the target word is used well.
 export async function gradeWordSentence(word, sentence) {
   const L = learner();
-  const prompt = `A ${L.english} learner at ${levelText(L)} had to write an original sentence using "${target(word)}" (${word.meaning}).
+  const prompt = `A ${L.english} learner at ${levelText(L)} had to write an original sentence using "${wordTitle(word)}" (${word.meaning}).
 Their sentence: """${sentence}"""
 Judge whether the word is used correctly and naturally, and correct the sentence.
 
@@ -414,7 +412,7 @@ export const GAP_LEVELS = {
 export async function gapSentences(list, n = 3) {
   const L = learner();
   const name = L.english;
-  const lines = list.map((x, i) => `${i + 1}. "${target(x.word)}" (${x.word.meaning}). Difficulty: ${GAP_LEVELS[x.level] || GAP_LEVELS[1]}.${x.existing.length
+  const lines = list.map((x, i) => `${i + 1}. "${wordTitle(x.word)}" (${x.word.meaning}). Difficulty: ${GAP_LEVELS[x.level] || GAP_LEVELS[1]}.${x.existing.length
     ? ` Already used, so write different ones: ${x.existing.map((s) => `"${s}"`).join('; ')}` : ''}`).join('\n');
   const prompt = `Write gap-fill exercises for a ${name} learner at ${levelText(L)}. For each word below write ${n} new, natural ${name} sentences, each showing the word in a different situation, then replace the exact form of the word in the sentence with "___".${isGerman(L) ? ' For separable verbs gap only the verb stem part.' : ''}
 Return one entry per word, in the same order.
@@ -446,7 +444,7 @@ export async function generateDrill(category, kind, { examples = [], word = null
     transform: isGerman(L)
       ? 'A transformation task: give one or two German sentences in prompt and an instruction such as combining with "weil", moving to the Perfekt, or switching to indirect speech, so that the result tests this category. answer is the model result sentence.'
       : `A transformation task: give one or two ${name} sentences in prompt and an instruction such as combining them, changing the tense, or changing the politeness level, so that the result tests this category. answer is the model result sentence.`,
-    constraint: `A free-writing task: the instruction asks the learner to write one sentence that must use a specific structure from this category${word ? ` and the word "${target(word)}"` : ''}. prompt may be empty. answer is one model sentence.`,
+    constraint: `A free-writing task: the instruction asks the learner to write one sentence that must use a specific structure from this category${word ? ` and the word "${wordTitle(word)}"` : ''}. prompt may be empty. answer is one model sentence.`,
   };
   const prompt = `Create one ${name} grammar exercise for a learner at ${levelText(L)}.
 Category: ${label}${hint ? ` (${hint})` : ''}
