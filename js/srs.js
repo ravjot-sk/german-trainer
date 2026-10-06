@@ -54,11 +54,11 @@ export function schedule(item, grade, now = Date.now()) {
 }
 
 // Practice answers: a miss always counts (the item comes back tomorrow), and new or due items
-// are scheduled as in the daily session. A right answer on an item that is not due yet leaves
-// its schedule alone, so practising early never pushes a word further out. Returns the item
-// unchanged in that case.
+// are scheduled as in the daily session. A right answer on an item that is not due yet counts
+// as a success, one more rep, so its exercises get harder, but its due date, interval and ease
+// stay as they are: practising early never pushes a word further out.
 export function schedulePractice(item, grade, now = Date.now()) {
   if (grade === 'wrong' || isNew(item) || isDue(item, now)) return schedule(item, grade, now);
-  return item;
+  return { ...item, reps: (item.reps || 0) + 1, lastReviewedAt: now };
 }
 

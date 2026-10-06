@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { practicePool, nextPracticeTask, practiceWeight } from '../js/session.js';
+import { practicePool, nextPracticeTask, practiceQueue, practiceWeight, newInPool, newFor, wordExercise } from '../js/session.js';
+import { gapLevel } from '../js/gappool.js';
 import { dayStart, addDays, schedulePractice } from '../js/srs.js';
 
 const NOW = new Date('2026-10-05T10:00:00').getTime();
@@ -77,10 +78,16 @@ test('the mix puts grammar after two vocabulary tasks', () => {
   assert.ok(nextPracticeTask(pool, ['word:a', 'rule:verb_complex/perfekt_sein']).word);
 });
 
-test('practice reschedules misses, new and due items, but not early successes', () => {
+test('practice reschedules misses, new and due items; early successes only count', () => {
   const early = item('word', 'a');
-  assert.equal(schedulePractice(early, 'correct', NOW), early);
-  assert.equal(schedulePractice(early, 'almost', NOW), early);
+  for (const grade of ['correct', 'almost']) {
+    const r = schedulePractice(early, grade, NOW);
+    assert.equal(r.reps, early.reps + 1);
+    assert.deepEqual([r.due, r.interval, r.ease, r.lapses], [early.due, early.interval, early.ease, early.lapses]);
+    assert.equal(r.lastReviewedAt, NOW);
+  }
+  // Every right answer counts, also twice on one day.
+  assert.equal(schedulePractice(schedulePractice(early, 'correct', NOW), 'correct', NOW + 60e3).reps, early.reps + 2);
   const missed = schedulePractice(early, 'wrong', NOW);
   assert.equal(missed.due, TOMORROW);
   assert.equal(missed.lapses, 1);
@@ -88,4 +95,91 @@ test('practice reschedules misses, new and due items, but not early successes', 
   assert.equal(fresh.introducedAt, NOW);
   const due = schedulePractice(item('word', 'd', { due: dayStart(NOW) }), 'correct', NOW);
   assert.ok(due.due > TOMORROW);
+});
+
+// Runs practice rounds the way runtime.js does: answer each task (right unless answer()
+// says otherwise), save it with schedulePractice, requeue a miss once, and start the next
+// round (optionally with new words) when the queue runs dry. Returns the item ids shown per round.
+function practise({ words, items, rounds = 2, withNew = () => false, answer = () => 'correct', newLimit = 8 }) {
+  let its = items;
+  const tasks = [];
+  const requeued = new Set();
+  const shown = [];
+  let idx = 0, roundStart = 0, round = 0;
+  const pool = () => practicePool(args({ words, items: its }));
+  let newIds = newFor(pool(), { withNew: false, limit: newLimit });
+  while (round < rounds) {
+    tasks.push(...practiceQueue(pool(), { tasks, idx, roundStart, newIds }));
+    if (idx >= tasks.length) {
+      round++;
+      roundStart = tasks.length;
+      newIds = newFor(pool(), { withNew: withNew(round), limit: newLimit });
+      continue;
+    }
+    const task = tasks[idx];
+    (shown[round] ||= []).push(task.item.itemId);
+    const grade = answer(task, requeued.has(task));
+    if (!requeued.has(task)) {
+      const cur = its.find((x) => x.id === task.item.id);
+      its = its.map((x) => (x === cur ? schedulePractice(cur, grade, NOW) : x));
+      if (grade === 'wrong') { requeued.add(task); tasks.splice(Math.min(idx + 4, tasks.length), 0, task); }
+    }
+    idx++;
+  }
+  return { shown, items: its };
+}
+
+test('a practice round shows each item once, then the next round shows them again', () => {
+  const words = ['a', 'b', 'c', 'd'].map((id) => word(id));
+  const { shown } = practise({ words, items: words.map((w) => item('word', w.id)), rounds: 3 });
+  assert.equal(shown.length, 3);
+  for (const r of shown) assert.deepEqual([...r].sort(), ['a', 'b', 'c', 'd']);
+});
+
+test('the reported bug: one word answered right is not served again within the round', () => {
+  const words = [word('taberu', { lang: 'ja' })];
+  const { shown, items } = practise({ words, items: [item('word', 'taberu', { reps: 1 })], rounds: 3 });
+  assert.deepEqual(shown, [['taberu'], ['taberu'], ['taberu']]);
+  assert.equal(items[0].reps, 4); // each right answer made its exercises harder
+});
+
+test('a miss comes back once in its round', () => {
+  const words = [word('a'), word('b')];
+  const { shown } = practise({ words, items: words.map((w) => item('word', w.id)), rounds: 1,
+    answer: (task, again) => (task.item.itemId === 'a' && !again ? 'wrong' : 'correct') });
+  assert.equal(shown[0].filter((x) => x === 'a').length, 2);
+  assert.ok(shown[0].includes('b'));
+});
+
+test('words not started yet wait until the learner mixes them in', () => {
+  const words = [word('a'), word('b'), word('n1'), word('n2'), word('n3')];
+  const items = words.map((w) => item('word', w.id, w.id.startsWith('n') ? { reps: 0, introducedAt: null, due: TOMORROW } : {}));
+  const { shown } = practise({ words, items, rounds: 3, newLimit: 2, withNew: (round) => round === 1 });
+  assert.deepEqual([...shown[0]].sort(), ['a', 'b']);
+  assert.equal(shown[1].filter((x) => x.startsWith('n')).length, 2);
+  assert.equal(shown[1].length, 4);
+  // Mixed-in words are started now and stay; the one left waits for the next offer.
+  assert.deepEqual([...shown[2]].sort(), [...shown[1]].sort());
+  // With nothing started yet, the new words are the practice.
+  const fresh = practise({ words: [word('n1')], items: [items[2]], rounds: 1 });
+  assert.deepEqual(fresh.shown, [['n1']]);
+});
+
+test('right practice answers move a word up the exercise ladder and gap levels', () => {
+  let it = item('word', 'a', { reps: 0, introducedAt: NOW - 864e5, due: addDays(TOMORROW, 5) });
+  const w = word('a', { gapSentence: 'Ich ___ gern.', gapAnswer: 'a' });
+  const kinds = [];
+  for (let i = 0; i < 7; i++) {
+    kinds.push(wordExercise(it, w, true));
+    it = schedulePractice(it, 'correct', NOW);
+  }
+  assert.deepEqual(kinds, ['recall', 'gap', 'recall', 'write', 'gap', 'recall', 'write']);
+  assert.deepEqual([0, 3, 6].map(gapLevel), [1, 2, 3]);
+});
+
+test('practice skips items it is told to skip, and has nothing left when all are skipped', () => {
+  const pool = practicePool(args());
+  for (let i = 0; i < 10; i++) assert.equal(nextPracticeTask(pool, [], { skip: new Set(['word:a', 'word:b']) }).item.id, 'word:c');
+  assert.equal(nextPracticeTask(pool, [], { skip: new Set(['word:a', 'word:b', 'word:c']) }), null);
+  assert.equal(newInPool(practicePool(args())), 0);
 });

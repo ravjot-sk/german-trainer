@@ -170,14 +170,16 @@ Tips:
 - Words and old sentences you get wrong come back once more at the end of the session.
 
 **Freies Üben (Free practice).** Below the daily session on **Heute**, tap **Üben** to practise as long as you
-like, even when nothing is due. It never runs out: it keeps picking from everything you've saved, and words
-and grammar you got wrong recently, have missed often or haven't seen for a while come up more. Choose a focus
-first if you want: **Gemischt** (mix), **Wörter**, **Sätze**, **Grammatik** or **Schwächen** (weak spots).
-The top shows how many you got right; tap ✕ to stop.
+like, even when nothing is due. It goes in rounds: each round brings up everything in your focus once, and
+words and grammar you got wrong recently, have missed often or haven't seen for a while tend to come earlier.
+Choose a focus first if you want: **Gemischt** (mix), **Wörter**, **Sätze**, **Grammatik** or
+**Schwächen** (weak spots). The top shows how many you got right; tap ✕ to stop.
 
-- Practice never lets a word skip ahead: a right answer on a word that isn't due yet leaves its date alone.
-- A wrong answer counts, though: that word comes back in tomorrow's session.
-- Saved words you haven't started yet can come up in practice, beyond the daily limit for new words.
+- A right answer counts as a success: the word's next exercises get harder (recall, gap, writing, and harder
+  gap sentences), but its date for the daily session stays where it is.
+- A wrong answer counts too: the word comes back a few tasks later and in tomorrow's session.
+- After each round you can mix in saved words you haven't started yet (beyond the daily limit, up to that many
+  per round), get suggested words, or go round again.
 
 ### 📖 Wörter (Words)
 

@@ -11,13 +11,14 @@ import { openSheet, sheetHead } from '../ui/sheet.js';
 
 // Gemini proposes words at the learner's level; they are shown ticked, and the learner
 // unticks any they don't want before adding them.
-export function bindSuggest(root) {
-  $$('[data-suggest]', root).forEach((b) => b.addEventListener('click', openSuggest));
+// onAdded(n) runs after the learner added n suggested words.
+export function bindSuggest(root, onAdded) {
+  $$('[data-suggest]', root).forEach((b) => b.addEventListener('click', () => openSuggest(onAdded)));
 }
 
 const SUGGEST_COUNT = 8;
 
-function openSuggest() {
+function openSuggest(onAdded) {
   const c = code();
   let found = [];
   openSheet(`
@@ -33,6 +34,7 @@ function openSuggest() {
       let added = 0;
       for (const w of picked) if (store.addWord({ ...w, lang: c, source: 'suggested' }).created) added++;
       toast(t('suggest.added', { n: added }));
+      onAdded?.(added);
     },
   });
   const sheet = $('.sheet');

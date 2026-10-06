@@ -50,6 +50,7 @@ export function openEditor(id) {
       fd.moreExamples = examplesFromText(fd.moreExamples);
       if (id && !isSentence(w) && 'gapSentence' in fd && (fd.gapSentence !== (w.gapSentence || '') || fd.gapAnswer !== (w.gapAnswer || ''))) {
         fd.gapPool = replaceInPool(poolOf(w), w.gapSentence, { sentence: fd.gapSentence, answer: fd.gapAnswer });
+        fd.gapAcceptable = [];
         fd.gapCurrent = null;
       }
       if (id) store.updateWord(id, fd); else store.addWord({ ...fd, lang: Lw.code, source: 'manual' });

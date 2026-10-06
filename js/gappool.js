@@ -3,10 +3,10 @@
 // sentence shown; a wrong one shows that same sentence again at the next review. Sentences get
 // harder as the word matures. Pure functions only, so they can be unit-tested in Node.
 //
-// word.gapPool: [{ sentence, answer, translation, level, source, seen, seenAt, retired }]
-//   sentence holds "___" where answer goes; level is 1-3; source is lookup | context | own | gemini | edit.
+// word.gapPool: [{ sentence, answer, acceptable, translation, level, source, seen, seenAt, retired }]
+//   sentence holds "___" where answer goes; acceptable lists other forms that are also right there; level is 1-3; source is lookup | context | own | gemini | edit.
 // word.gapCurrent: the sentence to show again after a wrong answer, or null.
-import { gapFor, normalize } from './check.js';
+import { gapFor, gapMark, normalize } from './check.js';
 import { isSentence } from './languages.js';
 import { DAY } from './srs.js';
 
@@ -20,13 +20,26 @@ export const gapLevel = (reps = 0) => (reps >= 6 ? 3 : reps >= 3 ? 2 : 1);
 const validEntry = (e) => !!e && typeof e.sentence === 'string' && e.sentence.includes('___') && !!e.answer;
 const keyOf = (s) => normalize(s).toLowerCase();
 
+// Other right fillings for a gap, as Gemini listed them: trimmed, no repeats, not the answer itself.
+export function cleanAcceptable(list, answer = '') {
+  const seen = new Set([keyOf(String(answer))]);
+  const out = [];
+  for (const x of Array.isArray(list) ? list : []) {
+    const v = String(x || '').trim();
+    if (!v || seen.has(keyOf(v))) continue;
+    seen.add(keyOf(v));
+    out.push(v);
+  }
+  return out.slice(0, 4);
+}
+
 // The word's pool. Words saved before pools existed get one built from their single gap
 // sentence (not stored until something changes).
 export function poolOf(word) {
   if (!word || isSentence(word)) return [];
   if (Array.isArray(word.gapPool) && word.gapPool.some(validEntry)) return word.gapPool;
   const g = gapFor(word);
-  return g ? [{ sentence: g.sentence, answer: g.answer, translation: '', level: 1, source: 'lookup', seen: 0, seenAt: 0, retired: false }] : [];
+  return g ? [{ sentence: g.sentence, answer: g.answer, acceptable: g.acceptable || [], translation: '', level: 1, source: 'lookup', seen: 0, seenAt: 0, retired: false }] : [];
 }
 
 // Adds sentences to a pool, skipping broken ones and ones already in it. When it grows past
@@ -35,7 +48,8 @@ export function addToPool(pool, entries, { level = 1, source = 'gemini' } = {}) 
   const out = pool.slice();
   const keys = new Set(out.map((e) => keyOf(e.sentence)));
   for (const e of entries || []) {
-    const entry = { sentence: String(e?.sentence || '').trim(), answer: String(e?.answer || '').trim(), translation: String(e?.translation || '').trim() };
+    const entry = { sentence: gapMark(e?.sentence).trim(), answer: String(e?.answer || '').trim(), translation: String(e?.translation || '').trim(),
+      acceptable: cleanAcceptable(e?.acceptable, e?.answer) };
     if (!validEntry(entry) || keys.has(keyOf(entry.sentence))) continue;
     keys.add(keyOf(entry.sentence));
     out.push({ ...entry, level: e.level || level, source: e.source || source, seen: 0, seenAt: 0, retired: false });
@@ -52,9 +66,9 @@ export function addToPool(pool, entries, { level = 1, source = 'gemini' } = {}) 
 // there was one) and the extra examples that came back gapped (moreGaps).
 export function poolFromLookup(r, hasContext = false) {
   const entries = [];
-  if (r.gapSentence) entries.push({ sentence: r.gapSentence, answer: r.gapAnswer, translation: hasContext ? '' : r.exampleTranslation, level: 1, source: hasContext ? 'context' : 'lookup' });
+  if (r.gapSentence) entries.push({ sentence: r.gapSentence, answer: r.gapAnswer, acceptable: r.gapAcceptable, translation: hasContext ? '' : r.exampleTranslation, level: 1, source: hasContext ? 'context' : 'lookup' });
   for (const e of r.moreGaps || []) {
-    if (e.gapSentence) entries.push({ sentence: e.gapSentence, answer: e.gapAnswer, translation: e.translation, level: 2, source: 'lookup' });
+    if (e.gapSentence) entries.push({ sentence: e.gapSentence, answer: e.gapAnswer, acceptable: e.gapAcceptable, translation: e.translation, level: 2, source: 'lookup' });
   }
   return addToPool([], entries);
 }
@@ -62,11 +76,11 @@ export function poolFromLookup(r, hasContext = false) {
 // The sentence to show for a word whose review item has `reps` right answers in a row:
 // the one answered wrong last time, else a fresh one closest to the word's level (lower
 // levels first on a tie, least shown first), else the one seen longest ago. Null when the
-// word has no gap sentence at all. Returns { sentence, answer, translation }.
+// word has no gap sentence at all. Returns { sentence, answer, acceptable, translation }.
 export function pickGap(word, reps = 0) {
   const pool = poolOf(word).filter(validEntry);
   if (!pool.length) return null;
-  const at = (e) => ({ sentence: e.sentence, answer: e.answer, translation: e.translation || '' });
+  const at = (e) => ({ sentence: e.sentence, answer: e.answer, acceptable: e.acceptable || [], translation: e.translation || '' });
   const cur = word.gapCurrent && pool.find((e) => e.sentence === word.gapCurrent);
   if (cur) return at(cur);
   const want = gapLevel(reps);
