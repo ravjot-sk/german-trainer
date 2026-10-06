@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { practicePool, nextPracticeTask, practiceWeight } from '../js/session.js';
+import { practicePool, nextPracticeTask, practiceQueue, practiceWeight } from '../js/session.js';
 import { dayStart, addDays, schedulePractice } from '../js/srs.js';
 
 const NOW = new Date('2026-10-05T10:00:00').getTime();
@@ -88,4 +88,42 @@ test('practice reschedules misses, new and due items, but not early successes', 
   assert.equal(fresh.introducedAt, NOW);
   const due = schedulePractice(item('word', 'd', { due: dayStart(NOW) }), 'correct', NOW);
   assert.ok(due.due > TOMORROW);
+});
+
+// The reported bug: a learner's only Japanese word, answered right every time, came back as
+// the same gap sentence again and again. Runs a practice session the way runtime.js does.
+function practise(words, answerRight = () => true, max = 40) {
+  const a = args({ words, items: words.map((w) => item('word', w.id, { reps: 1 })) });
+  const tasks = [];
+  const practised = new Set();
+  let idx = 0;
+  const requeued = new Set();
+  for (; idx < max; idx++) {
+    tasks.push(...practiceQueue(practicePool(a), { tasks, idx, practised }));
+    if (idx >= tasks.length) break;
+    const task = tasks[idx];
+    const right = answerRight(task, requeued.has(task));
+    if (right) practised.add(task.item.id);
+    else if (!requeued.has(task)) { requeued.add(task); tasks.splice(Math.min(idx + 4, tasks.length), 0, task); }
+  }
+  return tasks.slice(0, idx).map((x) => x.item.itemId);
+}
+
+test('practice does not serve a word again after a right answer', () => {
+  assert.deepEqual(practise([word('taberu', { lang: 'ja' })]), ['taberu']);
+  const shown = practise(['a', 'b', 'c', 'd'].map((id) => word(id)));
+  assert.deepEqual([...shown].sort(), ['a', 'b', 'c', 'd']);
+});
+
+test('a word answered wrong in practice comes back until it is right', () => {
+  let misses = 0;
+  const shown = practise([word('a'), word('b')], (task, again) => task.item.itemId !== 'a' || again || misses++ > 0);
+  assert.deepEqual(shown.filter((x) => x === 'a').length, 2);
+  assert.ok(shown.includes('b'));
+});
+
+test('practice skips items it is told to skip, and has nothing left when all are skipped', () => {
+  const pool = practicePool(args());
+  for (let i = 0; i < 10; i++) assert.equal(nextPracticeTask(pool, [], { skip: new Set(['word:a', 'word:b']) }).item.id, 'word:c');
+  assert.equal(nextPracticeTask(pool, [], { skip: new Set(['word:a', 'word:b', 'word:c']) }), null);
 });

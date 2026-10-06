@@ -123,10 +123,16 @@ export function needsPlural(word) {
   return !!p && !/^(-|–|—|kein|no plural|nur singular|ohne plural)/i.test(p);
 }
 
+// The gap written the way exercises expect it ("___"). Japanese text from Gemini may mark it
+// with full-width ＿ or a longer run of underscores, which would otherwise make the sentence
+// unusable and leave a word with a single sentence to repeat.
+export const gapMark = (s) => String(s || '').replace(/＿+|_{3,}/g, '___');
+
 // Gap sentence for a word: the stored one, or a best-effort local guess.
 export function gapFor(word) {
-  if (word.gapSentence && word.gapSentence.includes('___') && word.gapAnswer) {
-    return { sentence: word.gapSentence, answer: word.gapAnswer, acceptable: word.gapAcceptable || [] };
+  const stored = gapMark(word.gapSentence);
+  if (stored.includes('___') && word.gapAnswer) {
+    return { sentence: stored, answer: word.gapAnswer, acceptable: word.gapAcceptable || [] };
   }
   if (isSentence(word)) return null; // no single word to guess a gap from
   const source = word.contextSentence || word.example;

@@ -5,7 +5,7 @@ import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { logMistakes } from '../actions.js';
 import { t } from '../i18n.js';
-import { buildSession, practicePool, nextPracticeTask, ruleTask } from '../session.js';
+import { buildSession, practicePool, practiceQueue, ruleTask } from '../session.js';
 import { nextExercise, kindOf } from '../rules.js';
 import { isSentence } from '../languages.js';
 import { afterGap } from '../gappool.js';
@@ -28,6 +28,7 @@ function prepare(task) {
 // A new session in the active language; free practice adds { practice: true, focus }.
 const newSession = (tasks, extra = {}) => ({
   ...extra, tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set(),
+  practised: new Set(),
 });
 
 export function startSession() {
@@ -101,17 +102,13 @@ export function startPractice(focus) {
 export function topUpPractice() {
   const s = ui.session;
   if (s.ended) return;
-  const want = s.idx + PRACTICE_AHEAD;
-  if (s.tasks.length >= want) return;
+  if (s.tasks.length >= s.idx + PRACTICE_AHEAD) return;
   // Built from current data each time, so answers already given change what comes next.
   const pool = practicePool({ ...sessionArgs(), focus: s.focus });
-  const added = [];
-  while (s.tasks.length < want) {
-    const task = nextPracticeTask(pool, s.tasks.map((x) => x.item.id), { focus: s.focus });
-    if (!task) break;
+  const added = practiceQueue(pool, { tasks: s.tasks, idx: s.idx, practised: s.practised, ahead: PRACTICE_AHEAD, focus: s.focus });
+  for (const task of added) {
     prepare(task);
     s.tasks.push(task);
-    added.push(task);
   }
   if (code() === 'ja') fillFurigana(added.map((x) => x.word).filter(Boolean));
 }
@@ -140,5 +137,7 @@ export function advance(task) {
       ui.session.tasks.splice(at, 0, task);
     }
   }
+  // In practice an item answered right (now or when it comes back) is done for this session.
+  if (grade !== 'wrong') ui.session.practised.add(task.item.id);
   ui.session.idx++;
 }

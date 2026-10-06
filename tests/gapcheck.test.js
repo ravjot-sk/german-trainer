@@ -101,3 +101,10 @@ test('a wrong answer still brings the same sentence back until it is right', () 
   const counts = run(() => '飲みます');
   assert.deepEqual(Object.keys(counts), ['毎朝パンを___。']);
 });
+
+test('full-width or long gap marks count as the gap', () => {
+  const p = poolFromLookup({ gapSentence: '毎朝パンを＿＿＿。', gapAnswer: '食べます',
+    moreGaps: [{ gapSentence: '昨日すしを_____。', gapAnswer: '食べました' }, { gapSentence: '一緒に＿食べませんか。', gapAnswer: '昼ご飯を' }] });
+  assert.deepEqual(p.map((e) => e.sentence), ['毎朝パンを___。', '昨日すしを___。', '一緒に___食べませんか。']);
+  assert.equal(pickGap({ ...taberu, gapSentence: '毎朝パンを＿＿＿。', gapPool: undefined }).sentence, '毎朝パンを___。');
+});

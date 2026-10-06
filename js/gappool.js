@@ -6,7 +6,7 @@
 // word.gapPool: [{ sentence, answer, acceptable, translation, level, source, seen, seenAt, retired }]
 //   sentence holds "___" where answer goes; acceptable lists other forms that are also right there; level is 1-3; source is lookup | context | own | gemini | edit.
 // word.gapCurrent: the sentence to show again after a wrong answer, or null.
-import { gapFor, normalize } from './check.js';
+import { gapFor, gapMark, normalize } from './check.js';
 import { isSentence } from './languages.js';
 import { DAY } from './srs.js';
 
@@ -48,7 +48,7 @@ export function addToPool(pool, entries, { level = 1, source = 'gemini' } = {}) 
   const out = pool.slice();
   const keys = new Set(out.map((e) => keyOf(e.sentence)));
   for (const e of entries || []) {
-    const entry = { sentence: String(e?.sentence || '').trim(), answer: String(e?.answer || '').trim(), translation: String(e?.translation || '').trim(),
+    const entry = { sentence: gapMark(e?.sentence).trim(), answer: String(e?.answer || '').trim(), translation: String(e?.translation || '').trim(),
       acceptable: cleanAcceptable(e?.acceptable, e?.answer) };
     if (!validEntry(entry) || keys.has(keyOf(entry.sentence))) continue;
     keys.add(keyOf(entry.sentence));

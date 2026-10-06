@@ -244,14 +244,18 @@ export function practicePool({ items, words, mistakes, reviews, gemini, drillabl
   return pool;
 }
 
-// The next task for a practice session, or null when there is nothing to practise.
-// recent: the review item ids of the latest tasks, newest last. In the mix, about one task
-// in three is grammar when there is any.
-export function nextPracticeTask(pool, recent = [], { focus = 'mix', random = Math.random } = {}) {
-  if (!pool.length) return null;
-  const cooldown = new Set(recent.slice(-Math.min(COOLDOWN, pool.length - 1)));
-  let fresh = pool.filter((x) => !cooldown.has(x.item.id));
-  if (!fresh.length) fresh = pool;
+// The next task for a practice session, or null when there is nothing (left) to practise.
+// recent: the review item ids of the latest tasks, newest last. skip: item ids that must not
+// come up now: ones already queued and not yet answered, and ones answered right this
+// session (a right answer on an item that isn't due changes nothing, so without this a short
+// list served the same word over and over). In the mix, about one task in three is grammar
+// when there is any.
+export function nextPracticeTask(pool, recent = [], { focus = 'mix', random = Math.random, skip = new Set() } = {}) {
+  const open = pool.filter((x) => !skip.has(x.item.id));
+  if (!open.length) return null;
+  const cooldown = new Set(recent.slice(-Math.min(COOLDOWN, open.length - 1)));
+  let fresh = open.filter((x) => !cooldown.has(x.item.id));
+  if (!fresh.length) fresh = open;
   if (focus === 'mix') {
     const groups = recent.slice(-2).map((id) => pool.find((x) => x.item.id === id)?.group);
     const want = groups.length === 2 && groups.every((g) => g === 'vocab') ? 'grammar' : 'vocab';
@@ -259,4 +263,20 @@ export function nextPracticeTask(pool, recent = [], { focus = 'mix', random = Ma
     if (preferred.length) fresh = preferred;
   }
   return weightedPick(fresh, random).make();
+}
+
+// The tasks to add to a practice session so `ahead` tasks wait after the current one (idx).
+// practised: item ids answered right this session. Neither those nor an item already waiting
+// are queued again, so the session ends once everything has been answered right.
+export function practiceQueue(pool, { tasks, idx, practised = new Set(), ahead = 3, focus = 'mix', random = Math.random }) {
+  const all = tasks.slice();
+  const added = [];
+  while (all.length < idx + ahead) {
+    const skip = new Set([...practised, ...all.slice(idx).map((x) => x.item.id)]);
+    const task = nextPracticeTask(pool, all.map((x) => x.item.id), { focus, skip, random });
+    if (!task) break;
+    all.push(task);
+    added.push(task);
+  }
+  return added;
 }

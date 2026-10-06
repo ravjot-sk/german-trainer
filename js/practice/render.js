@@ -44,16 +44,19 @@ export function viewSession() {
 
 function renderSessionEnd() {
   const s = ui.session;
-  // Practice only ends by itself when there is nothing saved to practise.
+  // Practice ends by itself when there is nothing saved to practise, or when everything has
+  // been answered right this session.
   const empty = s.practice && !s.tasks.length;
+  const allDone = s.practice && !empty && !s.ended;
   main.innerHTML = `
     <section class="card hero end">
       <div class="hero-num">${empty ? '📭' : '🎉'}</div>
-      <h2>${esc(t(empty ? 'practice.empty' : s.practice ? 'practice.done' : 'session.done'))}</h2>
+      <h2>${esc(t(empty ? 'practice.empty' : allDone ? 'practice.allDone' : s.practice ? 'practice.done' : 'session.done'))}</h2>
       ${empty ? `<p class="muted">${esc(t('practice.emptyHelp'))}</p>`
         : `<p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>`}
+      ${allDone ? `<p class="muted">${esc(t('practice.allDoneHelp'))}</p>` : ''}
       ${s.mistakesLogged ? `<p class="muted small">${esc(t('session.mistakesLogged', { n: s.mistakesLogged }))}</p>` : ''}
-      ${empty && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
+      ${(empty || allDone) && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
       <button class="btn primary big" id="home">${esc(t('session.backHome'))}</button>
     </section>`;
   $('#home').addEventListener('click', () => { ui.session = null; go('today'); });
