@@ -100,3 +100,10 @@ test('noun recall joins the article and word boxes', () => {
   assert.equal(checkRecall(w, joinArticle('die', 'Zaun'), 'Zäune').grade, 'wrong');
   assert.equal(checkRecall(w, joinArticle('der', 'Zaun'), 'Zaune').grade, 'wrong');
 });
+
+test('a space after the final full stop does not make a sentence wrong', () => {
+  const s = 'Der kleine Junge ist sofort eingeschlafen.';
+  assert.equal(compare(`${s} `, s), 'correct');
+  assert.equal(compare(`${s}\n`, s), 'correct');
+  assert.equal(compare('Der kleine Junge ist sofort eingeschlafen .', s), 'correct');
+});

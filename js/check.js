@@ -14,7 +14,10 @@ export function normalize(s) {
     .replace(/[„“”"«»‚‘’'「」『』]/g, '')
     .replace(/\s+/g, ' ')
     .replace(/\s*([,;:、])\s*/g, '$1 ')
-    .replace(/[.!?…。]+$/g, '')
+    // Trimmed first, so a space after the final full stop (iPhone types ". " on a double
+    // space) doesn't keep the stop in the answer.
+    .trim()
+    .replace(/\s*[.!?…。]+$/g, '')
     .trim();
 }
 

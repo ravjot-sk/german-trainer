@@ -115,11 +115,25 @@ async function checkRule(task, a1, fb) {
   } else if (task.ruleKind === 'transform') {
     const answers = e.items.map((_, i) => $(i ? `#t${i}` : '#a1').value);
     const grades = e.items.map((x, i) => ruleCompare(rule, answers[i], [x.answer, ...(x.acceptable || [])]));
+    // An answer that doesn't match the model or the listed alternatives may still be right
+    // (another word order, another correct form): Gemini gets a second look at it.
+    const notes = [];
+    const unsure = grades.map((g, i) => (g === 'wrong' && answers[i].trim() ? i : -1)).filter((i) => i >= 0);
+    if (unsure.length && gem()) {
+      fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
+      await Promise.all(unsure.map(async (i) => {
+        const x = e.items[i];
+        const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: x.prompt, model: x.answer, answer: answers[i], category: rule.category, rule })
+          .catch(() => null);
+        if (r?.correct) grades[i] = 'correct';
+        else if (r?.feedback) notes[i] = r.feedback;
+      }));
+    }
     grade = transformGrade(grades);
     canOverride = grade !== 'correct';
     task.answerText = answers.join(' / ');
     html = `<div class="reveal">${e.items.map((x, i) => `<div class="tf-result ${grades[i] === 'correct' ? 'ok' : 'bad'}">
-      ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${jt(x.answer, e)}</span></div>`).join('')}${why(e.explanation)}</div>`;
+      ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${jt(x.answer, e)}</span></div>${notes[i] ? why(notes[i]) : ''}`).join('')}${why(e.explanation)}</div>`;
   } else if (task.ruleKind === 'spot') {
     grade = isExact(rule) ? compareExact(a1, e.corrected) : compare(a1, e.corrected);
     if (grade !== 'correct' && gem()) {
