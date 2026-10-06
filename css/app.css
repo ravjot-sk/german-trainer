@@ -367,3 +367,26 @@ rt { font-size: 0.5em; font-weight: 400; color: var(--muted); letter-spacing: 0;
 .sheet .suggest label { flex-direction: row; align-items: flex-start; gap: 12px; padding: 10px 0; color: var(--text); font-size: var(--fs-body); cursor: pointer; }
 .suggest input[type=checkbox] { width: 20px; height: 20px; padding: 0; margin-top: 2px; flex: none; accent-color: var(--accent); }
 .suggest label > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* Grammar rules: exercises and the profile list */
+.rule-name { font-size: var(--fs-sm); color: var(--muted); margin-top: -4px; }
+.choices { display: flex; flex-direction: column; gap: 8px; }
+.choice {
+  text-align: left; font: inherit; font-size: var(--fs-input, 17px); color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; cursor: pointer;
+}
+.choice.picked { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: -1px; }
+.tf-item { display: flex; flex-direction: column; gap: 6px; }
+.tf-result { display: flex; gap: 6px; align-items: baseline; }
+.tf-result.ok .ico, .tf-result.ok svg { color: var(--ok); }
+.tf-result.bad .ico, .tf-result.bad svg { color: var(--bad); }
+.rules { list-style: none; margin: 10px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.rules summary { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; list-style: none; }
+.rules summary::-webkit-details-marker { display: none; }
+.rules details > :not(summary) { margin: 4px 0 0; }
+.rule-title { font-size: 15px; min-width: 0; }
+.status { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.status.new { background: var(--accent-soft); color: var(--accent); }
+.status.shaky { background: var(--warn-soft); color: var(--warn); }
+.status.solid { background: var(--ok-soft); color: var(--ok); }
+.gen-note { margin: 0 4px; }

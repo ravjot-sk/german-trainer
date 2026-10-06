@@ -5,6 +5,8 @@
 // which copy is newer.
 import { dayStart, addDays } from './srs.js';
 import { describe, recLang, lemmaOf, catKey } from './languages.js';
+import { migrateCategory, hasRules } from './categories.js';
+import { migrateData, ruleFrom, ruleItemId, newRuleItem, afterMistake } from './rules.js';
 
 const DATA_KEY = 'gt.data.v1';
 const KEY_KEY = 'gt.apiKey';
@@ -14,6 +16,8 @@ const DEFAULT_SETTINGS = { lang: 'de', model: 'gemini-flash-latest', newPerDay: 
 
 let data = load();
 let settings = loadSettings();
+// Older data moves onto the current grammar categories once.
+if (migrateData(data, touch)) save();
 const listeners = new Set();
 
 function emptyData() {
@@ -36,8 +40,12 @@ function loadSettings() {
 
 // remote: the change came from the server, so the sync layer has nothing to upload.
 function persist({ remote = false } = {}) {
-  localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  save();
   listeners.forEach((fn) => fn({ remote }));
+}
+
+function save() {
+  try { localStorage.setItem(DATA_KEY, JSON.stringify(data)); } catch (e) { console.warn('save failed', e); }
 }
 
 // A strictly increasing edit time, so an edit always counts as newer than the last sync.
@@ -172,28 +180,79 @@ export function deleteWord(id) {
 export function mistakes(code) { return code ? data.mistakes.filter((m) => recLang(m) === code) : data.mistakes; }
 export function getMistake(id) { return data.mistakes.find((m) => m.id === id); }
 
+// source: 'correction' and 'exercise' are the learner's own writing and count in the
+// profile. 'drill' is a mistake against the very rule (or category) a drill was practising:
+// it only counts toward that drill's accuracy, so drills don't feed themselves.
 export function addMistakes(list, source, code = 'de', now = Date.now()) {
   const added = [];
   for (const m of list) {
+    const category = migrateCategory(code, m.category || 'other');
+    const rule = ruleFrom({ ...m, category }, code);
     const mistake = {
       id: uid(), lang: code, original: m.original || '', corrected: m.corrected || '',
-      explanation: m.explanation || '', category: m.category || 'other',
+      explanation: m.explanation || '', category,
       fullSentence: m.sentence || '', correctedSentence: m.correctedSentence || '',
+      rule: rule ? rule.key : '', ruleChecked: true,
       source, createdAt: now, updatedAt: now,
     };
     data.mistakes.unshift(mistake);
-    // Each mistake becomes a "fix your past sentence" drill, and its category gets a
-    // drill slot of its own the first time it shows up.
-    // Mistakes made inside drills only count toward drill accuracy, so drills don't
-    // spawn more drills.
-    if (source !== 'drill' && mistake.fullSentence && mistake.correctedSentence) {
-      ensureReviewItem('mistake', mistake.id, now);
-    }
-    if (mistake.category !== 'other') ensureReviewItem('category', catKey(code, mistake.category), now);
+    // The rule gets practised; a category without rules (register) keeps a drill slot of
+    // its own.
+    if (rule) ensureRule(rule, now, { fresh: source !== 'drill' });
+    if (category !== 'other') ensureReviewItem('category', catKey(code, category), now);
     added.push(mistake);
   }
   persist();
   return added;
+}
+
+// Mistakes saved before rules existed, still waiting for Gemini to name their rule.
+export function mistakesWithoutRule(code) {
+  return mistakes(code).filter((m) => !m.ruleChecked && hasRules(m.category));
+}
+
+// Applies Gemini's classification (gemini.classifyMistakes) to an older mistake.
+export function setMistakeRule(id, r, now = Date.now()) {
+  const m = getMistake(id);
+  if (!m) return;
+  const code = recLang(m);
+  if (r?.category) m.category = migrateCategory(code, r.category);
+  const rule = r ? ruleFrom({ ...r, category: m.category }, code) : null;
+  m.rule = rule ? rule.key : '';
+  m.ruleChecked = true;
+  touch(m, now);
+  // An old mistake creates its rule but does not set back one that is being practised.
+  if (rule) ensureRule(rule, now, { fresh: false });
+  if (m.category !== 'other') ensureReviewItem('category', catKey(code, m.category), now);
+  persist();
+}
+
+// Creates the rule's review item, or, for a fresh mistake, moves an existing one back down
+// the ladder (rules.afterMistake).
+function ensureRule(rule, now, { fresh }) {
+  const itemId = ruleItemId(rule.lang, rule.category, rule.key);
+  const idx = data.reviewItems.findIndex((r) => r.itemType === 'rule' && r.itemId === itemId);
+  if (idx < 0) {
+    data.reviewItems.push(newRuleItem(rule, now));
+    return;
+  }
+  const cur = data.reviewItems[idx];
+  // Keep the first name and statement, so the profile doesn't relabel a rule every time.
+  const merged = { ...cur, rule: { ...rule, ...Object.fromEntries(Object.entries(cur.rule || {}).filter(([, v]) => v)) } };
+  if (!fresh && JSON.stringify(merged.rule) === JSON.stringify(cur.rule)) return;
+  data.reviewItems[idx] = fresh ? afterMistake(merged, now) : merged;
+  touch(data.reviewItems[idx], now);
+}
+
+export const ruleItems = (code) => data.reviewItems.filter((r) => r.itemType === 'rule' && r.rule?.lang === code);
+
+// Saves a changed review item (for example a rule's exercise pool) without a review.
+export function updateReviewItem(item) {
+  const idx = data.reviewItems.findIndex((r) => r.id === item.id);
+  if (idx < 0) return;
+  touch(item);
+  data.reviewItems[idx] = item;
+  persist();
 }
 
 // ---- review items and reviews ----
@@ -237,7 +296,9 @@ export function importData(json) {
     reviewItems: parsed.reviewItems || [], reviews: parsed.reviews || [], languages: parsed.languages || [] };
   // An imported backup replaces what is here, so it must also win over the synced copies.
   const now = Date.now();
-  for (const list of Object.values(data)) list.forEach((r) => touch(r, now));
+  for (const list of Object.values(data)) if (Array.isArray(list)) list.forEach((r) => touch(r, now));
+  data.version = parsed.version >= 2 ? parsed.version : 1;
+  migrateData(data, (r) => touch(r, now));
   persist();
   return { words: data.words.length, mistakes: data.mistakes.length };
 }

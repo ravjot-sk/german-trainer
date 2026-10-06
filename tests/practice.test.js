@@ -49,26 +49,32 @@ test('weak, recently missed and due items weigh more', () => {
   assert.ok(missed > calm && due > calm && lapsed > calm);
 });
 
+const rule = { lang: 'de', category: 'verb_complex', key: 'perfekt_sein', name: 'Perfekt mit sein', statement: '', level: 'A2' };
+
 test('focus filters the pool', () => {
   const words = [word('w'), word('s', { kind: 'sentence', chunks: ['Ich', 'gehe.'] })];
-  const mistakes = [{ id: 'm1', lang: 'de', category: 'case', fullSentence: 'x', correctedSentence: 'y', createdAt: NOW, source: 'correction' }];
-  const items = [...words.map((w) => item('word', w.id)), item('mistake', 'm1'), item('category', 'de:case')];
-  const pool = (focus, gemini = true) => practicePool(args({ words, items, mistakes, gemini, focus })).map((x) => x.item.id).sort();
+  const mistakes = [{ id: 'm1', lang: 'de', category: 'case', createdAt: NOW, source: 'correction' }];
+  const items = [...words.map((w) => item('word', w.id)), item('rule', 'verb_complex/perfekt_sein', { rule, rung: 2 }),
+    item('category', 'de:case'), item('category', 'de:verb_complex')];
+  const pool = (focus, gemini = true) => practicePool(args({ words, items, mistakes, gemini, focus,
+    drillable: ['de:case', 'de:verb_complex'] })).map((x) => x.item.id).sort();
   assert.deepEqual(pool('words'), ['word:w']);
   assert.deepEqual(pool('sentences'), ['word:s']);
-  assert.deepEqual(pool('grammar'), ['category:de:case', 'mistake:m1']);
-  assert.deepEqual(pool('grammar', false), ['mistake:m1']);
-  // Only the category with mistakes is weak; the words were never missed.
+  // A category with rules is practised through them, not as a whole.
+  assert.deepEqual(pool('grammar'), ['category:de:case', 'rule:verb_complex/perfekt_sein']);
+  assert.deepEqual(pool('grammar', false), []);
+  // Only the category with mistakes is weak; the words and the rule were never missed.
   assert.deepEqual(pool('weak'), ['category:de:case']);
 });
 
 test('the mix puts grammar after two vocabulary tasks', () => {
   const words = [word('a'), word('b'), word('c')];
-  const mistakes = [{ id: 'm1', lang: 'de', category: 'case', fullSentence: 'x', correctedSentence: 'y', createdAt: NOW, source: 'correction' }];
-  const items = [...words.map((w) => item('word', w.id)), item('mistake', 'm1')];
-  const pool = practicePool(args({ words, items, mistakes }));
-  assert.equal(nextPracticeTask(pool, ['word:a', 'word:b']).kind, 'fix');
-  assert.ok(nextPracticeTask(pool, ['word:a', 'mistake:m1']).word);
+  const items = [...words.map((w) => item('word', w.id)), item('rule', 'verb_complex/perfekt_sein', { rule, rung: 3 })];
+  const pool = practicePool(args({ words, items, gemini: true }));
+  const task = nextPracticeTask(pool, ['word:a', 'word:b']);
+  assert.equal(task.kind, 'rule');
+  assert.equal(task.ruleKind, 'transform');
+  assert.ok(nextPracticeTask(pool, ['word:a', 'rule:verb_complex/perfekt_sein']).word);
 });
 
 test('practice reschedules misses, new and due items, but not early successes', () => {

@@ -3,10 +3,11 @@ import { t, lang } from './i18n.js';
 import * as gemini from './gemini.js';
 import * as sync from './sync.js';
 import { logMistakes } from './actions.js';
-import { buildSession, summarizeDue, practicePool, nextPracticeTask, PRACTICE_FOCUS } from './session.js';
+import { buildSession, summarizeDue, practicePool, nextPracticeTask, PRACTICE_FOCUS, ruleTask } from './session.js';
 import { schedule, schedulePractice, isNew, dayStart } from './srs.js';
-import { compare, compareAny, checkRecall, joinArticle, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
-import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
+import { compare, compareAny, compareExact, compareAnyExact, checkRecall, joinArticle, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
+import { categoriesFor, categoryLabel, drillableIds, isCurated, migrateCategory } from './categories.js';
+import { nextExercise, kindOf, addSet, useExercise, afterAnswer, topUpList, status as ruleStatus, ruleItemId, KINDS } from './rules.js';
 import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence, examplesToText, examplesFromText } from './languages.js';
 import { icon } from './icons.js';
 import { pickGap, afterGap, poolOf, addToPool, poolFromLookup, replaceInPool, refillList, gapLevel } from './gappool.js';
@@ -32,6 +33,14 @@ function fmtDate(ts) {
   const days = Math.round((dayStart(ts) - dayStart(Date.now())) / 864e5);
   if (days <= 0) return lang() === 'en' ? 'today' : 'heute';
   if (days === 1) return lang() === 'en' ? 'tomorrow' : 'morgen';
+  return new Date(ts).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'de-DE', { day: 'numeric', month: 'short' });
+}
+
+// A past date: "today", "yesterday", or the date.
+function fmtPast(ts) {
+  const days = Math.round((dayStart(Date.now()) - dayStart(ts)) / 864e5);
+  if (days <= 0) return lang() === 'en' ? 'today' : 'heute';
+  if (days === 1) return lang() === 'en' ? 'yesterday' : 'gestern';
   return new Date(ts).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'de-DE', { day: 'numeric', month: 'short' });
 }
 
@@ -107,7 +116,7 @@ function diffHtml(a, b) {
 function mistakeList(list, c = code()) {
   return `<ul class="mistakes">${list.map((m) => `
     <li>
-      <span class="chip">${esc(categoryLabel(m.category, lang(), cats(store.language(m.lang || c))))}</span>
+      <span class="chip">${esc(categoryLabel(migrateCategory(m.lang || c, m.category), lang(), cats(store.language(m.lang || c))))}</span>
       <div class="fix" ${tl(m.lang || c)}><del>${esc(m.original)}</del> → <ins>${esc(m.corrected)}</ins></div>
       <div class="muted">${esc(m.explanation)}</div>
     </li>`).join('')}</ul>`;
@@ -151,9 +160,8 @@ function sessionArgs() {
   const words = store.words(c);
   const mistakes = store.mistakes(c);
   const wordIds = new Set(words.map((w) => w.id));
-  const mistakeIds = new Set(mistakes.map((m) => m.id));
   const items = store.reviewItems().filter((r) => (r.itemType === 'word' ? wordIds.has(r.itemId)
-    : r.itemType === 'mistake' ? mistakeIds.has(r.itemId) : parseCatKey(r.itemId).lang === c));
+    : r.itemType === 'mistake' ? false : parseCatKey(r.itemId).lang === c));
   return {
     items, words, mistakes, reviews: store.reviews(c), settings: store.getSettings(),
     gemini: gem() && !!L()?.level, drillable: drillableIds(cats()).map((id) => catKey(c, id)),
@@ -186,6 +194,7 @@ function learnCard() {
       <button class="btn small" id="addbtn">${esc(t('settings.add'))}</button></div>
       <p class="muted small">${esc(t('settings.addHelp'))}</p>
     </div>
+    ${cur && !isCurated(cur.code) ? `<p class="muted small gen-note">${esc(t('profile.generatedNote', { l: langName(cur) }))}</p>` : ''}
     ${cur ? `<label>${esc(t('settings.level'))}<select id="level">${cur.level ? '' : `<option value="" selected disabled>${esc(t('settings.chooseLevel'))}</option>`}${levels}</select></label>` : ''}
     <div id="learnres"></div>`;
 }
@@ -401,6 +410,7 @@ let session = null;
 
 // Starts generating a drill as soon as its task is queued, so it is ready when it comes up.
 function prepare(task) {
+  if (task.kind === 'rule') return prepareRule(task);
   if (task.kind !== 'drill') return;
   const examples = store.mistakes(code()).filter((m) => m.category === task.category).slice(0, 4);
   const words = store.words(code()).filter((w) => !isSentence(w));
@@ -413,9 +423,128 @@ function prepare(task) {
 function startSession() {
   const tasks = buildSession(sessionArgs());
   tasks.forEach(prepare);
-  session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0 };
+  session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
   if (code() === 'ja') fillFurigana(tasks.map((x) => x.word).filter(Boolean));
   refillGaps();
+  topUpRules();
+  classifyOldMistakes();
+}
+
+// ---- grammar rules ----
+const latestItem = (item) => store.reviewItems().find((r) => r.id === item.id) || item;
+
+// A rule task takes the exercise for the rule's rung from its pool, or has one generated.
+function prepareRule(task) {
+  task.item = latestItem(task.item);
+  const ready = nextExercise(task.item);
+  if (ready) {
+    task.ruleKind = ready.kind;
+    task.ex = ready.ex;
+    return;
+  }
+  task.ruleKind = kindOf(task.item);
+  task.exPromise = generateRuleSets([task.item])
+    .then(() => {
+      task.item = latestItem(task.item);
+      const r = nextExercise(task.item);
+      if (!r) throw new Error(t('session.genFailed'));
+      task.ruleKind = r.kind;
+      task.ex = r.ex;
+    })
+    .catch((e) => { task.exError = e; });
+}
+
+// Generates one exercise set per rule in one Gemini call and adds it to each rule's pool.
+// A rule already being generated for shares that call.
+const generating = new Map();
+function generateRuleSets(items) {
+  const todo = items.filter((it) => !generating.has(it.id));
+  const waits = items.filter((it) => generating.has(it.id)).map((it) => generating.get(it.id));
+  if (todo.length) {
+    const lang = code();
+    const run = (async () => {
+      const sets = await gemini.ruleExercises(todo.map((it) => ({
+        rule: it.rule,
+        examples: store.mistakes(lang).filter((m) => m.rule === it.rule.key && m.category === it.rule.category).slice(0, 3),
+      })));
+      if (lang === 'ja' && furiMode() !== 'off') await addFurigana(sets);
+      todo.forEach((it, i) => {
+        const cur = latestItem(it);
+        if (sets[i]) store.updateReviewItem(addSet(cur, sets[i]));
+      });
+    })();
+    todo.forEach((it) => generating.set(it.id, run));
+    run.finally(() => todo.forEach((it) => generating.delete(it.id))).catch(() => {});
+    waits.push(run);
+  }
+  return Promise.all(waits);
+}
+
+// Japanese exercises get furigana for all their texts in one extra call; each exercise keeps
+// the markup list, which jt() reads.
+async function addFurigana(sets) {
+  const texts = [];
+  for (const set of sets) {
+    for (const ex of Object.values(set || {})) {
+      if (!ex || typeof ex !== 'object') continue;
+      texts.push(ex.correct, ex.wrong, ex.sentence, ex.sentence && ex.answer ? ex.sentence.replace('___', ex.answer) : '',
+        ex.text, ex.corrected, ex.model, ...(ex.items || []).flatMap((x) => [x.prompt, x.answer]));
+    }
+  }
+  try {
+    const marked = await gemini.annotate([...new Set(texts.filter((x) => x && /[\u3400-\u9fff]/.test(x)))].slice(0, 60));
+    for (const set of sets) for (const ex of Object.values(set || {})) if (ex && typeof ex === 'object') ex.furigana = marked;
+  } catch (e) {
+    console.warn('furigana', e);
+  }
+}
+
+// Rules coming up soon without an exercise for their rung get one, in the background.
+const topUpAsked = new Set();
+function topUpRules() {
+  if (!gem() || !L()?.level) return;
+  const list = topUpList(store.ruleItems(code()), { now: Date.now(), skip: topUpAsked });
+  if (!list.length) return;
+  list.forEach((it) => topUpAsked.add(it.id));
+  generateRuleSets(list).catch((e) => console.warn('rule exercises', e));
+}
+
+// Mistakes saved before rules existed get their category checked and their rule named, a
+// batch at a time in the background. Each is asked about at most once per app start.
+const classifyAsked = new Set();
+let classifying = false;
+async function classifyOldMistakes(redraw) {
+  if (classifying || !gem() || !L()?.level) return;
+  const list = store.mistakesWithoutRule(code()).filter((m) => !classifyAsked.has(m.id)).slice(0, 30);
+  if (!list.length) return;
+  list.forEach((m) => classifyAsked.add(m.id));
+  classifying = true;
+  try {
+    const got = await gemini.classifyMistakes(list);
+    list.forEach((m, i) => store.setMistakeRule(m.id, got[i]));
+    if (redraw) redraw();
+  } catch (e) {
+    console.warn('classify mistakes', e);
+  } finally {
+    classifying = false;
+  }
+}
+
+// A rule the learner just broke in their own writing comes up a few tasks later, once.
+function followUp(mistakes) {
+  const s = session;
+  if (!s || !gem()) return;
+  for (const m of mistakes) {
+    if (!m.rule || m.source === 'drill') continue;
+    const id = `rule:${ruleItemId(m.lang, m.category, m.rule)}`;
+    if (s.followed.has(id) || s.tasks.slice(s.idx + 1).some((x) => x.item.id === id)) continue;
+    const item = store.reviewItems().find((r) => r.id === id);
+    if (!item) continue;
+    s.followed.add(id);
+    const task = ruleTask(item);
+    prepare(task);
+    s.tasks.splice(Math.min(s.idx + 3, s.tasks.length), 0, task);
+  }
 }
 
 // Words coming up soon that are running out of gap sentences get new ones, in one Gemini call
@@ -450,9 +579,11 @@ async function refillGaps() {
 const PRACTICE_AHEAD = 3;
 
 function startPractice(focus) {
-  session = { practice: true, focus, tasks: [], lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0 };
+  session = { practice: true, focus, tasks: [], lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
   topUpPractice();
   refillGaps();
+  topUpRules();
+  classifyOldMistakes();
 }
 
 function topUpPractice() {
@@ -560,13 +691,20 @@ async function renderTask(task) {
       <div class="prompt" ${tl()}>${jt(wordTitle(w), w)}</div>${readingLine(w)}
       <div class="muted small">${esc(w.meaning)}</div>
       <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
-  } else if (task.kind === 'fix') {
-    const m = task.mistake;
-    body = `
-      <div class="ex-label">${esc(t('ex.fix'))}</div>
-      <div class="prompt sentence" ${tl()}>${esc(m.fullSentence)}</div>
-      <div class="muted small">${esc(t('ex.fixHint', { c: categoryLabel(m.category, lang(), cats()) }))}</div>
-      <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()}>${esc(m.fullSentence)}</textarea>`;
+  } else if (task.kind === 'rule') {
+    if (!task.ex && !task.exError) {
+      ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
+      $('#dock').innerHTML = '';
+      await task.exPromise;
+      if (session?.tasks[session.idx] !== task) return; // user moved on
+    }
+    if (task.exError || !task.ex) {
+      ex.innerHTML = `${errorBox(task.exError || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
+      $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
+      $('#next').addEventListener('click', () => { session.idx++; viewSession(); });
+      return;
+    }
+    body = ruleBody(task);
   } else if (task.kind === 'drill') {
     if (!task.drill && !task.drillError) {
       ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
@@ -598,7 +736,17 @@ async function renderTask(task) {
 
   $('#ex input.answer, #ex textarea.answer')?.focus({ preventScroll: true });
   if (task.kind === 'order') bindOrder(task);
-  $('#check').addEventListener('click', () => onCheck(task));
+  if (task.ruleKind === 'pair' && task.kind === 'rule') {
+    // Picking a sentence is the answer.
+    $('#check').style.display = 'none';
+    $$('#ex .choice').forEach((b) => b.addEventListener('click', () => {
+      if (task.state.phase !== 'answer') return;
+      $('#a1').value = b.dataset.v;
+      $$('#ex .choice').forEach((x) => x.classList.toggle('picked', x === b));
+      onCheck(task);
+    }));
+  }
+  $('#check')?.addEventListener('click', () => onCheck(task));
   $('#skip').addEventListener('click', () => { session.idx++; viewSession(); });
   $$('input.answer', ex).forEach((el) => el.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -610,6 +758,39 @@ async function renderTask(task) {
     else (task.state.phase === 'answer' ? onCheck(task) : next(task));
   }));
 }
+
+// The exercise for a rule at its rung. Every rung shows which rule is being practised.
+function ruleBody(task) {
+  const { rule, ex: e } = task;
+  const head = `<div class="ex-label">${esc(t('ex.rule', { c: categoryLabel(rule.category, lang(), cats()) }))} · ${esc(t('rule.rung', { n: task.item.rung || 2 }))}</div>
+    <div class="rule-name">${esc(rule.name)}</div>`;
+  switch (task.ruleKind) {
+    case 'pair': {
+      task.order ||= Math.random() < 0.5 ? [e.correct, e.wrong] : [e.wrong, e.correct];
+      return `${head}<div class="instruction">${esc(t('ex.pair'))}</div>
+        <div class="choices">${task.order.map((x) => `<button type="button" class="choice" data-v="${esc(x)}" ${tl()}>${jt(x, e)}</button>`).join('')}</div>
+        <input type="hidden" id="a1">`;
+    }
+    case 'gap':
+      return `${head}<div class="instruction">${esc(t('ex.ruleGap'))}</div>
+        <div class="prompt sentence" ${tl()}>${jt(e.sentence, e).replace('___', '<span class="gap">___</span>')}</div>
+        <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}">`;
+    case 'transform':
+      return `${head}<div class="instruction">${esc(e.instruction)}</div>
+        ${e.items.map((x, i) => `<div class="tf-item"><div class="sentence" ${tl()}>${jt(x.prompt, e)}</div>
+          <input class="answer" id="${i ? `t${i}` : 'a1'}" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></div>`).join('')}`;
+    case 'spot':
+      return `${head}<div class="instruction">${esc(t('ex.spot'))}</div>
+        <textarea class="answer" id="a1" rows="5" ${inputAttrs} ${tl()}>${esc(e.text)}</textarea>`;
+    default:
+      return `${head}<div class="instruction">${esc(e.instruction)}</div>
+        <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
+  }
+}
+
+// Capitalisation, punctuation and spelling are exactly what the usual lenient check ignores.
+const exactCats = ['capitalisation', 'punctuation', 'spelling'];
+const ruleCompare = (rule, answer, list) => (exactCats.includes(rule.category) ? compareAnyExact(answer, list) : compareAny(answer, list));
 
 // Word-order exercise: tap pieces to build the sentence, tap a placed piece to put it back.
 function bindOrder(task) {
@@ -704,20 +885,8 @@ async function onCheck(task) {
       canOverride = grade !== 'correct';
       html = `<div class="reveal" ${tl()}><b>${esc(task.gap.answer)}</b><div class="sentence">${jt(task.gap.sentence.replace('___', task.gap.answer), task.word)}</div>
         ${task.gap.translation ? `<div class="muted small" lang="en">${esc(task.gap.translation)}</div>` : ''}</div>`;
-    } else if (task.kind === 'fix') {
-      const m = task.mistake;
-      grade = compare(a1, m.correctedSentence);
-      if (grade === 'wrong' && gem()) {
-        fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
-        const r = await gemini.gradeAnswer({ instruction: 'Correct the mistakes in this sentence.', prompt: m.fullSentence,
-          model: m.correctedSentence, answer: a1, category: m.category });
-        grade = r.correct ? 'correct' : 'wrong';
-        mistakes = r.mistakes || [];
-        html = `<p>${esc(r.feedback)}</p>`;
-      }
-      canOverride = grade === 'wrong' && !gem();
-      html += `<div class="reveal"><div class="sentence" ${tl()}>${diffHtml(m.fullSentence, m.correctedSentence)}</div>
-        <div class="muted small">${esc(m.explanation)}</div></div>`;
+    } else if (task.kind === 'rule') {
+      ({ grade, html, canOverride, mistakes } = await checkRule(task, a1, fb));
     } else if (task.kind === 'write') {
       fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
       const r = await gemini.gradeWordSentence(task.word, a1);
@@ -758,13 +927,68 @@ async function onCheck(task) {
   }
 
   if (mistakes.length) {
-    // Sentences written in exercises count as new writing; drill answers only feed drill accuracy.
-    const source = ['write', 'say'].includes(task.kind) ? 'exercise' : 'drill';
-    session.mistakesLogged += logMistakes(mistakes, source, session.lang).mistakes.length;
+    // Anything written freely counts as new writing, whatever the exercise was about. Only a
+    // mistake against the very rule or category being drilled stays out of the profile (it
+    // counts toward that drill's accuracy), so drills don't feed themselves.
+    const own = (m) => (task.kind === 'rule' ? m.category === task.rule.category && m.rule === task.rule.key
+      : task.kind === 'drill' && m.category === task.category);
+    const logged = [
+      ...logMistakes(mistakes.filter((m) => !own(m)), 'exercise', session.lang).mistakes,
+      ...logMistakes(mistakes.filter(own), 'drill', session.lang).mistakes,
+    ];
+    session.mistakesLogged += logged.filter((m) => m.source !== 'drill').length;
+    followUp(logged);
   }
 
   task.state = { phase: 'feedback', grade, almostKey, answer: a1 + (a2 ? ` / ${a2}` : ''), feedback: html };
   showFeedback(task, canOverride);
+}
+
+// Checks a rule exercise. Choices, gaps and transformations are checked here; a corrected
+// text that differs from the model and a free sentence go to Gemini.
+async function checkRule(task, a1, fb) {
+  const { rule, ex: e } = task;
+  const why = (x) => (x ? `<div class="muted small">${esc(x)}</div>` : '');
+  const ruleLine = rule.statement ? `<div class="tip"><b>${esc(rule.name)}</b> ${esc(rule.statement)}</div>` : '';
+  let grade = 'wrong', html = '', canOverride = false, mistakes = [];
+  if (task.ruleKind === 'pair') {
+    grade = a1 === e.correct ? 'correct' : 'wrong';
+    html = `<div class="reveal"><div class="sentence" ${tl()}>${jt(e.correct, e)}</div>${why(e.explanation)}</div>`;
+  } else if (task.ruleKind === 'gap') {
+    grade = ruleCompare(rule, a1, [e.answer, ...(e.acceptable || [])]);
+    canOverride = grade !== 'correct';
+    html = `<div class="reveal"><b ${tl()}>${esc(e.answer)}</b><div class="sentence" ${tl()}>${jt(e.sentence.replace('___', e.answer), e)}</div>${why(e.explanation)}</div>`;
+  } else if (task.ruleKind === 'transform') {
+    const answers = e.items.map((_, i) => $(i ? `#t${i}` : '#a1').value);
+    const grades = e.items.map((x, i) => ruleCompare(rule, answers[i], [x.answer, ...(x.acceptable || [])]));
+    grade = grades.every((g) => g === 'correct') ? 'correct' : grades.every((g) => g !== 'wrong') ? 'almost' : 'wrong';
+    canOverride = grade !== 'correct';
+    task.answerText = answers.join(' / ');
+    html = `<div class="reveal">${e.items.map((x, i) => `<div class="tf-result ${grades[i] === 'correct' ? 'ok' : 'bad'}">
+      ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${jt(x.answer, e)}</span></div>`).join('')}${why(e.explanation)}</div>`;
+  } else if (task.ruleKind === 'spot') {
+    grade = exactCats.includes(rule.category) ? compareExact(a1, e.corrected) : compare(a1, e.corrected);
+    if (grade !== 'correct' && gem()) {
+      fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
+      const r = await gemini.gradeAnswer({ instruction: 'Find and correct the mistakes against the rule in this text. Change nothing else.',
+        prompt: e.text, model: e.corrected, answer: a1, category: rule.category, rule });
+      grade = r.correct ? 'correct' : 'wrong';
+      html = `<p>${esc(r.feedback)}</p>`;
+    }
+    canOverride = grade !== 'correct' && !gem();
+    html += `<div class="reveal"><div class="sentence" ${tl()}>${diffHtml(e.text, e.corrected)}</div>${why(e.explanation)}</div>`;
+  } else {
+    fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
+    const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: '', model: e.model, answer: a1, category: rule.category, rule });
+    mistakes = r.mistakes || [];
+    grade = r.correct ? 'correct' : 'wrong';
+    html = `<p>${esc(r.feedback)}</p>
+      ${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
+      <div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${jt(e.model, e)}</div>${why(e.explanation)}</div>`;
+  }
+  // A near miss on a rule that is about case is a miss.
+  if (grade === 'almost' && exactCats.includes(rule.category)) grade = 'wrong';
+  return { grade, html: html + (grade === 'correct' ? '' : ruleLine), canOverride, mistakes };
 }
 
 function sentenceReveal(w) {
@@ -815,12 +1039,18 @@ function next(task) {
       if (task.word) updated.exerciseType = task.kind;
       if (task.kind === 'drill') updated.exerciseType = task.drillKind;
     }
-    store.saveReview(updated, {
+    let saved = updated;
+    // A rule climbs or drops a rung, and the exercise is used up.
+    if (task.kind === 'rule') {
+      saved = useExercise(afterAnswer({ ...updated, pool: latestItem(task.item).pool }, grade, now), task.ruleKind, task.ex);
+      saved.exerciseType = task.ruleKind;
+    }
+    store.saveReview(saved, {
       reviewItemId: task.item.id, itemType: task.item.itemType, itemId: task.item.itemId,
-      lang: session.lang, category: task.category || task.mistake?.category || null, exerciseType: task.drillKind || task.kind,
-      answer, correct: grade !== 'wrong', grade, reviewedAt: now, ...(session.practice ? { mode: 'practice' } : {}),
+      lang: session.lang, category: task.category || null, exerciseType: task.drillKind || task.ruleKind || task.kind,
+      answer: task.answerText || answer, correct: grade !== 'wrong', grade, reviewedAt: now, ...(session.practice ? { mode: 'practice' } : {}),
     });
-    task.item = updated;
+    task.item = saved;
     // Right: that sentence is retired. Wrong: it comes back at the word's next gap fill.
     if (task.kind === 'gap' && !isSentence(task.word) && task.gap) {
       const w = store.getWord(task.word.id);
@@ -830,7 +1060,7 @@ function next(task) {
     if (grade !== 'wrong') session.correct++;
     // Locally checked items answered wrong come back once: at the end of the daily session,
     // a few tasks later in practice.
-    if (grade === 'wrong' && ['recall', 'gap', 'fix', 'order'].includes(task.kind)) {
+    if (grade === 'wrong' && ['recall', 'gap', 'order'].includes(task.kind)) {
       session.requeued.add(task);
       if (session.practice) session.tasks.splice(session.idx + 4, 0, task);
       else session.tasks.push(task);
@@ -1341,7 +1571,8 @@ export function categoryStats(now = Date.now()) {
   const writing = store.mistakes(code()).filter((m) => m.source !== 'drill');
   const reviews = store.reviews(code());
   return cats().map((c) => {
-    const mine = writing.filter((m) => m.category === c.id);
+    // Mistakes synced from a device that still runs an older version keep old category ids.
+    const mine = writing.filter((m) => migrateCategory(code(), m.category) === c.id);
     const recent = mine.filter((m) => m.createdAt >= d14).length;
     const prev = mine.filter((m) => m.createdAt >= d28 && m.createdAt < d14).length;
     const drills = reviews.filter((r) => r.category === c.id).slice(-10);
@@ -1355,7 +1586,8 @@ export function categoryStats(now = Date.now()) {
 
 const sortedStats = () => categoryStats().sort((a, b) => b.recent - a.recent || b.total - a.total);
 
-function catList(stats) {
+// withRules: list each category's rules under it (the full profile; Today shows only the top).
+function catList(stats, { withRules = false } = {}) {
   const max = Math.max(...stats.map((s) => s.recent), 1);
   const trendLabel = { improving: `↘ ${t('profile.improving')}`, worse: `↗ ${t('profile.worse')}`, steady: `→ ${t('profile.steady')}` };
   return `<ul class="cats">${stats.map((s) => `
@@ -1364,19 +1596,43 @@ function catList(stats) {
       <div class="bar"><div style="width:${Math.round((s.recent / max) * 100)}%"></div></div>
       <div class="muted small">${s.recent} · ${esc(t('profile.last14'))} &nbsp;|&nbsp; ${s.total} ${esc(t('profile.total'))}
         ${s.drills ? ` &nbsp;|&nbsp; ${esc(t('profile.drills'))}: ${esc(t('profile.accuracy', { p: Math.round(s.acc * 100) }))}` : ''}</div>
+      ${withRules ? ruleList(s.id) : ''}
     </li>`).join('')}</ul>`;
 }
 
+// The rules of one category: what still goes wrong first, mastered ones last.
+function ruleList(category) {
+  const writing = store.mistakes(code()).filter((m) => m.source !== 'drill' && m.category === category);
+  const order = { shaky: 0, new: 1, solid: 2 };
+  const rules = store.ruleItems(code()).filter((r) => r.rule.category === category).map((item) => {
+    const ms = writing.filter((m) => m.rule === item.rule.key);
+    return { item, ms, st: ruleStatus(item), last: ms[0]?.createdAt || 0 };
+  }).sort((a, b) => order[a.st] - order[b.st] || b.last - a.last);
+  if (!rules.length) return '';
+  return `<ul class="rules">${rules.map(({ item, ms, st, last }) => `
+    <li><details>
+      <summary><span class="rule-title">${esc(item.rule.name)}</span><span class="status ${st}">${esc(t(`rule.${st}`))}</span></summary>
+      <div class="muted small">${esc(t('rule.meta', { n: ms.length, d: last ? fmtPast(last) : '–' }))}${item.rule.level ? ` · ${esc(item.rule.level)}` : ''}</div>
+      ${item.rule.statement ? `<p class="small">${esc(item.rule.statement)}</p>` : ''}
+      ${ms.slice(0, 3).map((m) => `<div class="fix small" ${tl()}><del>${esc(m.original)}</del> → <ins>${esc(m.corrected)}</ins></div>`).join('')}
+    </details></li>`).join('')}</ul>`;
+}
+
+// Languages without a hand-made category list say so wherever the categories show.
+const generatedNote = () => (L() && !isCurated(code()) ? `<p class="muted small gen-note">${esc(t('profile.generatedNote', { l: langName() }))}</p>` : '');
+
 function viewProfile() {
   titleEl.textContent = t('profile.title');
+  // Older mistakes get their rules in the background; the profile redraws when they arrive.
+  classifyOldMistakes(() => { if (routeName() === 'profile') viewProfile(); });
   const stats = sortedStats();
   if (!stats.length) {
-    main.innerHTML = `<p class="muted center">${esc(t('profile.empty'))}</p>`;
+    main.innerHTML = `${generatedNote()}<p class="muted center">${esc(t('profile.empty'))}</p>`;
     return;
   }
   const recentMistakes = store.mistakes(code()).filter((m) => m.source !== 'drill').slice(0, 10);
-  main.innerHTML = `
-    <section class="card">${catList(stats)}</section>
+  main.innerHTML = `${generatedNote()}
+    <section class="card">${catList(stats, { withRules: true })}</section>
     ${recentMistakes.length ? `<div class="group-label">${esc(t('profile.recent'))}</div><section class="card">${mistakeList(recentMistakes)}</section>` : ''}`;
 }
 

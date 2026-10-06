@@ -173,3 +173,14 @@ export function wordDiff(a, b) {
   while (j < m) push('add', y[j++]);
   return out;
 }
+
+// For rules where case and punctuation are the point (capitalisation, commas, spelling):
+// only spacing and quote styles may differ.
+export function compareExact(answer, expected) {
+  const n = (s) => String(s || '').normalize('NFKC').replace(/[„“”«»]/g, '"').replace(/[‚‘’]/g, "'").replace(/\s+/g, ' ').trim();
+  return n(answer) && n(answer) === n(expected) ? 'correct' : 'wrong';
+}
+
+export function compareAnyExact(answer, expectedList) {
+  return expectedList.filter(Boolean).some((e) => compareExact(answer, e) === 'correct') ? 'correct' : 'wrong';
+}
