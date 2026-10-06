@@ -42,6 +42,14 @@ export function compareAny(answer, expectedList) {
   return best;
 }
 
+// German nouns are typed in separate article and word boxes. A word typed with its article
+// already in the word box is taken as it is.
+export function joinArticle(article, word) {
+  const a = (article || '').trim();
+  const w = (word || '').trim();
+  return !a || /^(der|die|das)\s/i.test(w) ? w : `${a} ${w}`;
+}
+
 export function stripArticle(s) {
   return (s || '').trim().replace(/^(der|die|das)\s+/i, '');
 }

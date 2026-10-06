@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { schedule, isDue, dayStart, addDays } from '../js/srs.js';
-import { compare, checkRecall, gapFor, wordDiff, needsPlural } from '../js/check.js';
+import { compare, checkRecall, joinArticle, gapFor, wordDiff, needsPlural } from '../js/check.js';
 import { buildSession, interleave, wordExercise } from '../js/session.js';
 
 const NOW = new Date('2026-10-03T10:00:00').getTime();
@@ -88,4 +88,14 @@ test('daily session caps new words and needs Gemini for drills', () => {
   assert.equal(withGemini.filter((t) => t.kind === 'drill').length, 1);
   const offline = buildSession({ ...args, gemini: false });
   assert.equal(offline.filter((t) => t.kind === 'drill').length, 0);
+});
+
+test('noun recall joins the article and word boxes', () => {
+  const w = { lemma: 'Zaun', article: 'der', pos: 'noun', plural: 'Zäune' };
+  assert.equal(joinArticle('der', 'Zaun'), 'der Zaun');
+  assert.equal(joinArticle('', 'der Zaun'), 'der Zaun');
+  assert.equal(joinArticle('der', 'der Zaun'), 'der Zaun');
+  assert.equal(checkRecall(w, joinArticle('der', 'Zaun'), 'Zäune').grade, 'correct');
+  assert.equal(checkRecall(w, joinArticle('die', 'Zaun'), 'Zäune').grade, 'wrong');
+  assert.equal(checkRecall(w, joinArticle('der', 'Zaun'), 'Zaune').grade, 'wrong');
 });

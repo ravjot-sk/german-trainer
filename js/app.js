@@ -5,7 +5,7 @@ import * as sync from './sync.js';
 import { logMistakes } from './actions.js';
 import { buildSession, summarizeDue, practicePool, nextPracticeTask, PRACTICE_FOCUS } from './session.js';
 import { schedule, schedulePractice, isNew, dayStart } from './srs.js';
-import { compare, compareAny, checkRecall, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
+import { compare, compareAny, checkRecall, joinArticle, needsPlural, gapFor, wordDiff, chunksFor, joinChunks, shuffled } from './check.js';
 import { categoriesFor, categoryLabel, drillableIds } from './categories.js';
 import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence, examplesToText, examplesFromText } from './languages.js';
 import { icon } from './icons.js';
@@ -526,9 +526,8 @@ async function renderTask(task) {
     body = `
       <div class="ex-label">${esc(t('ex.recall', { l: langName() }))}</div>
       <div class="prompt">${esc(w.meaning)}</div>
-      <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${w.register ? ` · ${esc(w.register)}` : ''}</div>
-      <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(recallHint(w))}">
-      ${needsPlural(w) ? `<input class="answer" id="a2" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.plural'))}">` : ''}`;
+      <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${styleNote(w)}</div>
+      ${recallBoxes(w)}`;
   } else if (task.kind === 'say') {
     body = `
       <div class="ex-label">${esc(t('ex.say', { l: langName() }))}</div>
@@ -597,15 +596,17 @@ async function renderTask(task) {
     <button class="btn primary" id="check">${esc(t('session.check'))}</button>
     <button class="btn text" id="skip">${esc(t('session.skip'))}</button>`;
 
-  const a1 = $('#a1');
-  a1.focus({ preventScroll: true });
+  $('#ex input.answer, #ex textarea.answer')?.focus({ preventScroll: true });
   if (task.kind === 'order') bindOrder(task);
   $('#check').addEventListener('click', () => onCheck(task));
   $('#skip').addEventListener('click', () => { session.idx++; viewSession(); });
   $$('input.answer', ex).forEach((el) => el.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (el.id === 'a1' && $('#a2') && !$('#a2').value) $('#a2').focus();
+    // Enter moves on to the next empty box, and checks from the last one.
+    const boxes = $$('input.answer', ex);
+    const empty = boxes.slice(boxes.indexOf(el) + 1).find((x) => !x.value.trim());
+    if (task.state.phase === 'answer' && empty) empty.focus();
     else (task.state.phase === 'answer' ? onCheck(task) : next(task));
   }));
 }
@@ -634,6 +635,22 @@ function bindOrder(task) {
   draw();
 }
 
+// The register note, except "neutral", which next to "Nomen" reads like a grammatical gender.
+function styleNote(w) {
+  const r = (w.register || '').trim();
+  return r && !/^neutral\b/i.test(r) ? ` · ${esc(t('edit.register'))}: ${esc(r)}` : '';
+}
+
+// German nouns get labelled boxes for the article, the word and the plural. The labels stay
+// visible while typing, unlike placeholders.
+function recallBoxes(w) {
+  const input = (id, hint) => `<input class="answer" id="${id}" ${inputAttrs} ${tl()} placeholder="${esc(hint)}">`;
+  if (w.pos !== 'noun' || recLang(w) !== 'de' || !w.article) return input('a1', recallHint(w));
+  const box = (label, html) => `<label class="answer-field"><span class="field-label">${esc(label)}</span>${html}</label>`;
+  return `<div class="row2">${box(t('edit.article'), input('art', 'der/die/das'))}${box(t('ex.word'), input('a1', t('ex.word')))}</div>`
+    + (needsPlural(w) ? box(t('ex.plural'), input('a2', t('ex.plural'))) : '');
+}
+
 // What to type in recall: German nouns with article, other languages' nouns with article
 // when the language has them.
 function recallHint(w) {
@@ -644,7 +661,7 @@ function recallHint(w) {
 
 async function onCheck(task) {
   if (task.state.phase !== 'answer') return;
-  const a1 = $('#a1').value;
+  const a1 = $('#art') ? joinArticle($('#art').value, $('#a1').value) : $('#a1').value;
   const a2 = $('#a2')?.value || '';
   if (!a1.trim()) return;
   task.state.phase = 'checking';
