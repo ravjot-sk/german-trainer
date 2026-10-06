@@ -17,6 +17,8 @@ import { gem, L, code, langName, cats, noGemini, sessionArgs, ui, resetViews, fo
 import { tl, furiMode, jt, furiShown, readingLine, toneLabel, fmtDate, fmtPast, diffHtml, mistakeList, correctionHtml, naturalBlock, bindNatural } from './ui/text.js';
 import { wordTitle } from './languages.js';
 import { fillFurigana, latestItem, generateRuleSets, topUpRules, classifyOldMistakes, refillGaps } from './background.js';
+import { categoryStats, byRecent, writingMistakes } from './stats.js';
+import { ruleCompare, transformGrade, strictGrade, isExact, ownMistake, followUpIds, answerRecord, requeueAt } from './answer.js';
 import { registerRoutes, route, routeName, go } from './router.js';
 import { mountSheet, openSheet, sheetHead, moreFields } from './ui/sheet.js';
 
@@ -238,10 +240,7 @@ function prepareRule(task) {
 function followUp(mistakes) {
   const s = ui.session;
   if (!s || !gem()) return;
-  for (const m of mistakes) {
-    if (!m.rule || m.source === 'drill') continue;
-    const id = `rule:${ruleItemId(m.lang, m.category, m.rule)}`;
-    if (s.followed.has(id) || s.tasks.slice(s.idx + 1).some((x) => x.item.id === id)) continue;
+  for (const id of followUpIds(mistakes, s)) {
     const item = store.reviewItems().find((r) => r.id === id);
     if (!item) continue;
     s.followed.add(id);
@@ -464,10 +463,6 @@ function ruleBody(task) {
   }
 }
 
-// Capitalisation, punctuation and spelling are exactly what the usual lenient check ignores.
-const exactCats = ['capitalisation', 'punctuation', 'spelling'];
-const ruleCompare = (rule, answer, list) => (exactCats.includes(rule.category) ? compareAnyExact(answer, list) : compareAny(answer, list));
-
 // Word-order exercise: tap pieces to build the sentence, tap a placed piece to put it back.
 function bindOrder(task) {
   const draw = () => {
@@ -603,11 +598,7 @@ async function onCheck(task) {
   }
 
   if (mistakes.length) {
-    // Anything written freely counts as new writing, whatever the exercise was about. Only a
-    // mistake against the very rule or category being drilled stays out of the profile (it
-    // counts toward that drill's accuracy), so drills don't feed themselves.
-    const own = (m) => (task.kind === 'rule' ? m.category === task.rule.category && m.rule === task.rule.key
-      : task.kind === 'drill' && m.category === task.category);
+    const own = (m) => ownMistake(task, m);
     const logged = [
       ...logMistakes(mistakes.filter((m) => !own(m)), 'exercise', ui.session.lang).mistakes,
       ...logMistakes(mistakes.filter(own), 'drill', ui.session.lang).mistakes,
@@ -637,13 +628,13 @@ async function checkRule(task, a1, fb) {
   } else if (task.ruleKind === 'transform') {
     const answers = e.items.map((_, i) => $(i ? `#t${i}` : '#a1').value);
     const grades = e.items.map((x, i) => ruleCompare(rule, answers[i], [x.answer, ...(x.acceptable || [])]));
-    grade = grades.every((g) => g === 'correct') ? 'correct' : grades.every((g) => g !== 'wrong') ? 'almost' : 'wrong';
+    grade = transformGrade(grades);
     canOverride = grade !== 'correct';
     task.answerText = answers.join(' / ');
     html = `<div class="reveal">${e.items.map((x, i) => `<div class="tf-result ${grades[i] === 'correct' ? 'ok' : 'bad'}">
       ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${jt(x.answer, e)}</span></div>`).join('')}${why(e.explanation)}</div>`;
   } else if (task.ruleKind === 'spot') {
-    grade = exactCats.includes(rule.category) ? compareExact(a1, e.corrected) : compare(a1, e.corrected);
+    grade = isExact(rule) ? compareExact(a1, e.corrected) : compare(a1, e.corrected);
     if (grade !== 'correct' && gem()) {
       fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
       const r = await gemini.gradeAnswer({ instruction: 'Find and correct the mistakes against the rule in this text. Change nothing else.',
@@ -662,8 +653,7 @@ async function checkRule(task, a1, fb) {
       ${correctionHtml(a1, r.correctedText, mistakes)}
       <div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${jt(e.model, e)}</div>${why(e.explanation)}</div>`;
   }
-  // A near miss on a rule that is about case is a miss.
-  if (grade === 'almost' && exactCats.includes(rule.category)) grade = 'wrong';
+  grade = strictGrade(rule, grade);
   return { grade, html: html + (grade === 'correct' ? '' : ruleLine), canOverride, mistakes };
 }
 
@@ -707,25 +697,9 @@ function next(task) {
   if (firstTry) {
     const now = Date.now();
     // The latest copy: in practice the same item can come up again before an earlier answer was saved.
-    task.item = store.reviewItems().find((r) => r.id === task.item.id) || task.item;
-    // Practice only moves the schedule for misses and for new or due items.
-    const scheduled = ui.session.practice ? schedulePractice(task.item, grade, now) : schedule(task.item, grade, now);
-    const updated = scheduled === task.item ? { ...task.item } : scheduled;
-    if (scheduled !== task.item) {
-      if (task.word) updated.exerciseType = task.kind;
-      if (task.kind === 'drill') updated.exerciseType = task.drillKind;
-    }
-    let saved = updated;
-    // A rule climbs or drops a rung, and the exercise is used up.
-    if (task.kind === 'rule') {
-      saved = useExercise(afterAnswer({ ...updated, pool: latestItem(task.item).pool }, grade, now), task.ruleKind, task.ex);
-      saved.exerciseType = task.ruleKind;
-    }
-    store.saveReview(saved, {
-      reviewItemId: task.item.id, itemType: task.item.itemType, itemId: task.item.itemId,
-      lang: ui.session.lang, category: task.category || null, exerciseType: task.drillKind || task.ruleKind || task.kind,
-      answer: task.answerText || answer, correct: grade !== 'wrong', grade, reviewedAt: now, ...(ui.session.practice ? { mode: 'practice' } : {}),
-    });
+    task.item = latestItem(task.item);
+    const { saved, review } = answerRecord(task, task.item, { grade, answer, practice: ui.session.practice, lang: ui.session.lang, now });
+    store.saveReview(saved, review);
     task.item = saved;
     // Right: that sentence is retired. Wrong: it comes back at the word's next gap fill.
     if (task.kind === 'gap' && !isSentence(task.word) && task.gap) {
@@ -734,12 +708,10 @@ function next(task) {
     }
     ui.session.answered++;
     if (grade !== 'wrong') ui.session.correct++;
-    // Locally checked items answered wrong come back once: at the end of the daily session,
-    // a few tasks later in practice.
-    if (grade === 'wrong' && ['recall', 'gap', 'order'].includes(task.kind)) {
+    const at = requeueAt(task, grade, { practice: ui.session.practice, idx: ui.session.idx, length: ui.session.tasks.length });
+    if (at >= 0) {
       ui.session.requeued.add(task);
-      if (ui.session.practice) ui.session.tasks.splice(ui.session.idx + 4, 0, task);
-      else ui.session.tasks.push(task);
+      ui.session.tasks.splice(at, 0, task);
     }
   }
   ui.session.idx++;
@@ -1200,25 +1172,7 @@ function bindCopy() {
 }
 
 // ---------- Profile ----------
-export function categoryStats(now = Date.now()) {
-  const d14 = now - 14 * 864e5, d28 = now - 28 * 864e5;
-  const writing = store.mistakes(code()).filter((m) => m.source !== 'drill');
-  const reviews = store.reviews(code());
-  return cats().map((c) => {
-    // Mistakes synced from a device that still runs an older version keep old category ids.
-    const mine = writing.filter((m) => migrateCategory(code(), m.category) === c.id);
-    const recent = mine.filter((m) => m.createdAt >= d14).length;
-    const prev = mine.filter((m) => m.createdAt >= d28 && m.createdAt < d14).length;
-    const drills = reviews.filter((r) => r.category === c.id).slice(-10);
-    const acc = drills.length ? drills.filter((r) => r.correct).length / drills.length : null;
-    let trend = 'steady';
-    if (prev > 0 && recent > prev) trend = 'worse';
-    else if (recent < prev && drills.length >= 3 && acc >= 0.7) trend = 'improving';
-    return { ...c, total: mine.length, recent, prev, drills: drills.length, acc, trend };
-  }).filter((s) => s.total || s.drills);
-}
-
-const sortedStats = () => categoryStats().sort((a, b) => b.recent - a.recent || b.total - a.total);
+const sortedStats = () => categoryStats({ mistakes: store.mistakes(code()), reviews: store.reviews(code()), cats: cats(), lang: code() }).sort(byRecent);
 
 // withRules: list each category's rules under it (the full profile; Today shows only the top).
 function catList(stats, { withRules = false } = {}) {
@@ -1236,7 +1190,7 @@ function catList(stats, { withRules = false } = {}) {
 
 // The rules of one category: what still goes wrong first, mastered ones last.
 function ruleList(category) {
-  const writing = store.mistakes(code()).filter((m) => m.source !== 'drill' && m.category === category);
+  const writing = writingMistakes(store.mistakes(code())).filter((m) => m.category === category);
   const order = { shaky: 0, new: 1, solid: 2 };
   const rules = store.ruleItems(code()).filter((r) => r.rule.category === category).map((item) => {
     const ms = writing.filter((m) => m.rule === item.rule.key);
@@ -1264,7 +1218,7 @@ function viewProfile() {
     main.innerHTML = `${generatedNote()}<p class="muted center">${esc(t('profile.empty'))}</p>`;
     return;
   }
-  const recentMistakes = store.mistakes(code()).filter((m) => m.source !== 'drill').slice(0, 10);
+  const recentMistakes = writingMistakes(store.mistakes(code())).slice(0, 10);
   main.innerHTML = `${generatedNote()}
     <section class="card">${catList(stats, { withRules: true })}</section>
     ${recentMistakes.length ? `<div class="group-label">${esc(t('profile.recent'))}</div><section class="card">${mistakeList(recentMistakes)}</section>` : ''}`;
