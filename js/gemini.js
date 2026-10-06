@@ -1,7 +1,9 @@
 // Gemini calls. Every call asks for structured JSON so lookups and mistakes can be stored
 // and counted. The API key comes from this device's settings and is sent only to Google.
-import { getApiKey, getSettings, setSettings, activeLanguage } from './store.js';
-import { categoriesFor, categoryGuide, categoryLabel, finishCategories } from './categories.js';
+import { getApiKey, getSettings, setSettings, activeLanguage, reviewItems } from './store.js';
+import { categoriesFor, categoryGuide, categoryLabel, finishCategories, NO_RULES, SKELETON } from './categories.js';
+import { knownRules, KINDS } from './rules.js';
+import { seedGuide } from './ruleseeds.js';
 import { lemmaOf, cleanExamples, MORE_EXAMPLES } from './languages.js';
 import { parse as parseFurigana } from './furigana.js';
 import { t, lang } from './i18n.js';
@@ -174,8 +176,31 @@ function mistakeSchema(L) {
     category: { type: 'STRING', enum: categoriesFor(L).map((c) => c.id) },
     sentence: { type: 'STRING', description: 'The full original sentence containing the mistake, verbatim.' },
     correctedSentence: { type: 'STRING', description: 'That sentence fully corrected.' },
+    ...ruleProps(L),
     wordToLearn: S(toLearn, ['lemma', 'pos', 'meaning']),
-  }, ['original', 'corrected', 'explanation', 'category', 'sentence', 'correctedSentence']);
+  }, ['original', 'corrected', 'explanation', 'category', 'sentence', 'correctedSentence', 'rule', 'ruleName', 'ruleStatement', 'ruleLevel']);
+}
+
+// The grammar rule a mistake breaks. Shared by mistake records and classifyMistakes.
+function ruleProps(L) {
+  return {
+    rule: { type: 'STRING', description: `snake_case English key of the one grammar rule this mistake breaks (see "Rules for rule keys"). Empty for ${NO_RULES.join(', ')}.` },
+    ruleName: { type: 'STRING', description: `Short name of that rule in ${explainLang(L)}, at most 6 words, e.g. "${isGerman(L) ? 'Perfekt mit sein bei Zustandswechsel' : 'は und が'}". Empty if rule is empty.` },
+    ruleStatement: { type: 'STRING', description: `The rule itself in one short sentence in ${explainLang(L)}, general enough to apply to other sentences. Empty if rule is empty.` },
+    ruleLevel: { type: 'STRING', description: `The level at which the rule is usually taught (${L.code === 'ja' ? 'JLPT N5 to N1, e.g. "N4"' : 'CEFR A1 to C2, e.g. "B1"'}). Empty if rule is empty.` },
+  };
+}
+
+// How Gemini names rules: reuse a key the learner already has, else one of the starting
+// rules, else a new one of the same grain.
+function ruleRules(L) {
+  const mine = knownRules(reviewItems(), L.code);
+  const seeds = seedGuide(L.code);
+  return `Rules for rule keys:
+- A rule is one specific, teachable grammar point (narrower than the category), e.g. "perfekt_sein_movement_change", not "verbs".
+- Two mistakes that break the same rule must get the same key, even in different sentences.
+${mine.length ? `- The learner already has these rules. Reuse the key when the mistake is the same rule:\n${mine.map((r) => `  - ${r.category}/${r.key}: ${r.name}`).join('\n')}\n` : ''}${seeds ? `- Otherwise prefer one of these standard rules when it fits:\n${seeds}\n` : ''}- Only when none fits, make a new key of the same grain.
+- The rule's category must be the mistake's category. For ${NO_RULES.join(', ')} leave rule, ruleName, ruleStatement and ruleLevel empty.`;
 }
 
 // The three tones a sentence can be translated into. Shared with the app (labels) and tests.
@@ -215,7 +240,9 @@ function correctionRules(L) {
 - Pick exactly one category from this fixed list:
 ${categoryGuide(categoriesFor(L))}
 - For word_choice mistakes, fill wordToLearn with the right word to learn (dictionary form). Leave wordToLearn out otherwise.
-- Write explanations in ${explainLang(L)}.`;
+- Write explanations in ${explainLang(L)}.
+
+${ruleRules(L)}`;
 }
 
 // The schema uses "none" because empty enum values are not allowed.
@@ -444,6 +471,63 @@ Write the instruction in ${explainLang(L)}. Keep sentences natural and everyday 
   return r;
 }
 
+// One set of exercises per rule, one for each rung of the ladder (see rules.js). Each set
+// trains the rule itself: new sentences every time, the learner's own mistakes only as a hint
+// of what goes wrong. list: [{ rule, examples: [mistake] }]. Returns one set per rule, in order.
+export async function ruleExercises(list) {
+  if (!list.length) return [];
+  const L = learner();
+  const name = L.english;
+  const lines = list.map(({ rule, examples = [] }, i) => `${i + 1}. ${rule.name}${rule.statement ? `: ${rule.statement}` : ''} (category ${categoryLabel(rule.category, 'en', categoriesFor(L))}${rule.level ? `, level ${rule.level}` : ''})${examples.length
+    ? `\n   The learner got it wrong like this: ${examples.slice(0, 3).map((m) => `"${m.original}" instead of "${m.corrected}"`).join('; ')}` : ''}`).join('\n');
+  const prompt = `Write grammar exercises for a ${name} learner at ${levelText(L)}. Each exercise must train exactly the rule named, in fresh everyday sentences (work, travel, friends, home, news) with vocabulary that suits the learner's level. Never reuse the learner's own sentences.
+For each rule below, write one exercise of each kind:
+- pair: two versions of the same ${name} sentence that differ only where the rule decides. correct follows the rule, wrong breaks it the way learners do.
+- gap: one sentence with "___" exactly where the rule decides (e.g. the auxiliary, the ending, the particle, the comma). answer is the exact text for the gap; acceptable lists other fully correct fillings. If the gap needs a base form to be fair, put it in brackets after the gap, e.g. "___ (passieren)".
+- transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (into another tense, into a subordinate clause, into a noun phrase …) so that the result needs the rule. Use different verbs or nouns in each item. answer is the model result, acceptable other correct results.
+- spot: a short text of 2 or 3 ${name} sentences with 1 or 2 mistakes against this rule and no other mistakes. corrected is the same text with only those mistakes fixed.
+- produce: an instruction to write one new sentence that needs the rule, in a situation the learner has not seen (give the situation and, if useful, a word to use). model is one model sentence.
+Write instructions and explanations in ${explainLang(L)}. Give each kind a one-line explanation of the rule as it applies there.
+
+Rules:
+${lines}`;
+  const alt = { type: 'ARRAY', items: STR };
+  const r = await generate(prompt, S({
+    sets: { type: 'ARRAY', items: S({
+      pair: S({ correct: STR, wrong: STR, explanation: STR }),
+      gap: S({ sentence: { type: 'STRING', description: 'Contains ___ once.' }, answer: STR, acceptable: alt, explanation: STR }),
+      transform: S({ instruction: STR, items: { type: 'ARRAY', items: S({ prompt: STR, answer: STR, acceptable: alt }) }, explanation: STR }),
+      spot: S({ text: STR, corrected: STR, explanation: STR }),
+      produce: S({ instruction: STR, model: STR, explanation: STR }),
+    }) },
+  }), { temperature: 0.9 });
+  return list.map((_, i) => {
+    const set = r.sets?.[i] || {};
+    for (const k of KINDS) if (set[k]) set[k].id = `${Date.now().toString(36)}${i}${k}`;
+    return set;
+  });
+}
+
+// Sorts older mistakes into the current categories and gives each its rule. list: mistakes.
+// Returns one { category, rule, ruleName, ruleStatement, ruleLevel } per mistake, in order.
+export async function classifyMistakes(list) {
+  if (!list.length) return [];
+  const L = learner();
+  const cats = categoriesFor(L);
+  const prompt = `These are mistakes a ${L.english} learner at ${levelText(L)} made in writing, with their corrections.
+For each one, pick its category from this fixed list and name the grammar rule it breaks.
+${categoryGuide(cats)}
+
+${ruleRules(L)}
+
+Mistakes:
+${list.map((m, i) => `${i + 1}. wrote "${m.original}" instead of "${m.corrected}"${m.fullSentence ? ` in "${m.fullSentence}"` : ''}${m.explanation ? ` (${m.explanation})` : ''}`).join('\n')}`;
+  const r = await generate(prompt, S({
+    mistakes: { type: 'ARRAY', items: S({ category: { type: 'STRING', enum: cats.map((c) => c.id) }, ...ruleProps(L) }) },
+  }));
+  return list.map((_, i) => r.mistakes?.[i] || null);
+}
+
 // Furigana for Japanese texts saved before Gemini added it. Returns the markup for each text
 // that came back valid.
 export async function annotate(texts) {
@@ -455,9 +539,9 @@ ${texts.map((x, i) => `${i + 1}. ${x}`).join('\n')}`;
 }
 
 // Grades a free answer to a drill (transform, constraint or "fix your sentence").
-export async function gradeAnswer({ instruction, prompt: shown, model, answer, category }) {
+export async function gradeAnswer({ instruction, prompt: shown, model, answer, category, rule = null }) {
   const L = learner();
-  const prompt = `A ${L.english} learner at ${levelText(L)} is doing a grammar exercise (focus: ${categoryLabel(category, 'en', categoriesFor(L))}).
+  const prompt = `A ${L.english} learner at ${levelText(L)} is doing a grammar exercise (focus: ${categoryLabel(category, 'en', categoriesFor(L))}${rule ? `, rule: ${rule.name}${rule.statement ? ` (${rule.statement})` : ''}` : ''}).
 Instruction: ${instruction}
 ${shown ? `Given: """${shown}"""` : ''}
 A model answer: """${model}"""
@@ -478,7 +562,16 @@ ${correctionRules(L)}`;
 export async function setupLanguage(name) {
   const prompt = `A learner wants to practise this language in a vocabulary and writing app: "${name}".
 Describe it for the app. Explanations in the app are in English or German.
-If this is not a real language with a written standard, set found to false.`;
+If this is not a real language with a written standard, set found to false.
+
+For categories, go through this checklist of grammar areas, which comes from research on
+learner errors. For each area that exists in this language, give one category named the way
+it is taught for this language (split an area in two when learners of this language treat
+the halves as separate topics, e.g. particles vs postpositions). Leave out areas the language
+does not have (e.g. articles in a language without them). Then add any area that is central
+for learners of this language but missing from the list (e.g. tones, aspect pairs, counters).
+Aim for 8 to 16 categories in total.
+${SKELETON.map((x) => `- ${x}`).join('\n')}`;
   const r = await generate(prompt, S({
     found: { type: 'BOOLEAN' },
     code: { type: 'STRING', description: 'ISO 639-1 code, or ISO 639-3 if there is none. Lowercase.' },
@@ -488,7 +581,7 @@ If this is not a real language with a written standard, set found to false.`;
     romanized: { type: 'STRING', description: 'If the language is not written in Latin script, the romanisation learners commonly type, e.g. "pinyin". Otherwise empty.' },
     categories: {
       type: 'ARRAY',
-      description: '8 to 10 grammar areas where learners of this language most often make mistakes in writing, specific to this language. Do not include word choice, register, spelling or "other": the app adds those.',
+      description: 'The grammar areas where learners of this language make mistakes in writing (see the checklist in the prompt), named for this language. Do not include word choice, register, spelling or "other": the app adds those.',
       items: S({
         id: { type: 'STRING', description: 'Short snake_case English id.' },
         en: { type: 'STRING', description: 'Short English label.' },

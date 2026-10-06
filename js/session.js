@@ -4,10 +4,11 @@ import { gapFor } from './check.js';
 import { pickGap } from './gappool.js';
 import { DRILLABLE } from './categories.js';
 import { parseCatKey, isSentence } from './languages.js';
+import { kindOf } from './rules.js';
 
 const MAX_WORD_REVIEWS = 15;
 const MAX_SENTENCE_REVIEWS = 6;
-const MAX_MISTAKES = 4;
+const MAX_RULES = 5;
 const MAX_CATEGORIES = 3;
 const DRILL_KINDS = ['gapfill', 'transform', 'constraint'];
 
@@ -64,7 +65,6 @@ export function buildSession({ items, words, mistakes, reviews, settings, gemini
   const wordById = new Map(words.map((w) => [w.id, w]));
   const sentenceIds = new Set(words.filter(isSentence).map((w) => w.id));
   const isSent = (r) => sentenceIds.has(r.itemId);
-  const mistakeById = new Map(mistakes.map((m) => [m.id, m]));
   const due = items.filter((r) => isDue(r, now)).sort((a, b) => a.due - b.due);
 
   // Vocabulary: reviews first, then new words up to the daily cap.
@@ -89,19 +89,24 @@ export function buildSession({ items, words, mistakes, reviews, settings, gemini
     return { item, word, kind: sentenceExercise(item, word, gemini, { chunks: hasChunks(word) }) };
   });
 
-  // Past sentences to fix.
-  const mistakeItems = due.filter((r) => r.itemType === 'mistake' && mistakeById.has(r.itemId));
-  const newMistakeCap = Math.max(0, (settings.newMistakesPerDay ?? 4) - introducedToday(items, 'mistake', now));
-  const fixTasks = [
-    ...mistakeItems.filter((r) => !isNew(r)),
-    ...mistakeItems.filter(isNew).slice(0, newMistakeCap),
-  ].slice(0, MAX_MISTAKES).map((item) => ({ item, mistake: mistakeById.get(item.itemId), kind: 'fix' }));
-
-  // Generated drills for the weakest due categories (need Gemini).
+  // Grammar rules from the learner's mistakes, each at its rung of the ladder (need Gemini
+  // for the exercises). Rules in progress first, then new ones up to the daily cap.
+  let ruleTasks = [];
   let drillTasks = [];
   if (gemini) {
+    const ruleDue = due.filter((r) => r.itemType === 'rule' && r.rule);
+    const newRuleCap = Math.max(0, (settings.newMistakesPerDay ?? 4) - introducedToday(items, 'rule', now));
+    ruleTasks = [
+      ...ruleDue.filter((r) => !isNew(r)),
+      ...ruleDue.filter(isNew).sort((a, b) => weakness(b.rule.category, mistakes, now) - weakness(a.rule.category, mistakes, now))
+        .slice(0, newRuleCap),
+    ].slice(0, MAX_RULES).map(ruleTask);
+
+    // Generated drills for the weakest due categories that have no rules yet.
+    const withRules = categoriesWithRules(items);
+    const used = categoriesWithMistakes(mistakes);
     drillTasks = due
-      .filter((r) => r.itemType === 'category' && drillable.includes(r.itemId))
+      .filter((r) => r.itemType === 'category' && drillable.includes(r.itemId) && !withRules.has(r.itemId) && used.has(r.itemId))
       .sort((a, b) => weakness(parseCatKey(b.itemId).id, mistakes, now) - weakness(parseCatKey(a.itemId).id, mistakes, now))
       .slice(0, MAX_CATEGORIES)
       .map((item) => {
@@ -110,7 +115,24 @@ export function buildSession({ items, words, mistakes, reviews, settings, gemini
       });
   }
 
-  return interleave(interleave(wordTasks, sentenceTasks), [...fixTasks, ...drillTasks]);
+  return interleave(interleave(wordTasks, sentenceTasks), [...ruleTasks, ...drillTasks]);
+}
+
+export const ruleTask = (item) => ({ item, rule: item.rule, category: item.rule.category, kind: 'rule', ruleKind: kindOf(item) });
+
+// Categories ("lang:id") the learner has mistakes in. A category whose mistakes all moved to
+// another one (when categories were split) has nothing left to drill. has(key) takes a
+// category review item's itemId.
+export function categoriesWithMistakes(mistakes) {
+  const out = new Set(mistakes.map((m) => `${m.lang || 'de'}:${m.category}`));
+  return { has: (key) => { const { lang, id } = parseCatKey(key); return out.has(`${lang}:${id}`); } };
+}
+
+// Categories that have at least one rule. Those are practised through their rules instead
+// of whole-category drills.
+export function categoriesWithRules(items) {
+  const out = new Set(items.filter((r) => r.itemType === 'rule' && r.rule).map((r) => `${r.rule.lang}:${r.rule.category}`));
+  return { has: (key) => { const { lang, id } = parseCatKey(key); return out.has(`${lang}:${id}`); } };
 }
 
 // Spreads grammar tasks evenly through the vocabulary tasks.
@@ -134,7 +156,7 @@ export function summarizeDue(args) {
     total: tasks.length,
     words: tasks.filter((x) => x.word && !isSentence(x.word)).length,
     sentences: tasks.filter((x) => isSentence(x.word)).length,
-    grammar: tasks.filter((x) => x.kind === 'fix' || x.kind === 'drill').length,
+    grammar: tasks.filter((x) => x.kind === 'rule' || x.kind === 'drill').length,
     newWords: tasks.filter((x) => x.word && !isSentence(x.word) && isNew(x.item)).length,
   };
 }
@@ -180,7 +202,8 @@ function weightedPick(list, random) {
 export function practicePool({ items, words, mistakes, reviews, gemini, drillable = DRILLABLE, now = Date.now(),
   hasChunks = () => true, focus = 'mix' }) {
   const wordById = new Map(words.map((w) => [w.id, w]));
-  const mistakeById = new Map(mistakes.map((m) => [m.id, m]));
+  const withRules = categoriesWithRules(items);
+  const used = categoriesWithMistakes(mistakes);
   const lastReview = new Map();
   const done = new Map();
   for (const v of reviews) {
@@ -199,10 +222,13 @@ export function practicePool({ items, words, mistakes, reviews, gemini, drillabl
       if ((focus === 'words' && sentence) || (focus === 'sentences' && !sentence) || focus === 'grammar') continue;
       entry = { group: 'vocab', make: () => ({ item, word, kind: sentence
         ? sentenceExercise(item, word, gemini, { chunks: hasChunks(word) }) : wordExercise(item, word, gemini) }) };
-    } else if (item.itemType === 'mistake' && mistakeById.has(item.itemId)) {
+    } else if (item.itemType === 'rule' && item.rule && gemini) {
       if (focus === 'words' || focus === 'sentences') continue;
-      entry = { group: 'grammar', make: () => ({ item, mistake: mistakeById.get(item.itemId), kind: 'fix' }) };
-    } else if (item.itemType === 'category' && gemini && drillable.includes(item.itemId)) {
+      const weak = item.mastered ? 0 : weakness(item.rule.category, mistakes, now);
+      if (focus === 'weak' && !isWeak(item, last, weak)) continue;
+      pool.push({ item, group: 'grammar', weight: practiceWeight(item, last, now) + weak * 0.5, make: () => ruleTask(item) });
+      continue;
+    } else if (item.itemType === 'category' && gemini && drillable.includes(item.itemId) && !withRules.has(item.itemId) && used.has(item.itemId)) {
       if (focus === 'words' || focus === 'sentences') continue;
       const category = parseCatKey(item.itemId).id;
       const weak = weakness(category, mistakes, now);

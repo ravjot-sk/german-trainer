@@ -82,7 +82,8 @@ test('daily session caps new words and needs Gemini for drills', () => {
   const items = words.map((w) => item({ itemId: w.id }));
   items.push(item({ itemType: 'category', itemId: 'adjective_endings' }));
   items.push(item({ itemType: 'category', itemId: 'other' }));
-  const args = { items, words, mistakes: [], reviews: [], settings: { newPerDay: 5 }, now: NOW };
+  const mistakes = [{ id: 'm1', category: 'adjective_endings', createdAt: NOW }, { id: 'm2', category: 'other', createdAt: NOW }];
+  const args = { items, words, mistakes, reviews: [], settings: { newPerDay: 5 }, now: NOW };
   const withGemini = buildSession({ ...args, gemini: true });
   assert.equal(withGemini.filter((t) => t.word).length, 5);
   assert.equal(withGemini.filter((t) => t.kind === 'drill').length, 1);

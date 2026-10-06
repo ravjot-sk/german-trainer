@@ -97,7 +97,8 @@ test('a Japanese session drills Japanese categories only', () => {
   const item = (o) => ({ id: Math.random().toString(36), due: dayStart(NOW), interval: 0, ease: 2.5, reps: 0, lapses: 0, ...o });
   const items = [item({ itemType: 'category', itemId: 'ja:particles' }), item({ itemType: 'category', itemId: 'adjective_endings' })];
   const drillable = drillableIds(categoriesFor(describe('ja'))).map((id) => catKey('ja', id));
-  const tasks = buildSession({ items, words: [], mistakes: [], reviews: [], settings: {}, gemini: true, drillable, now: NOW });
+  const mistakes = [{ id: 'm1', lang: 'ja', category: 'particles', createdAt: NOW }, { id: 'm2', category: 'adjective_endings', createdAt: NOW }];
+  const tasks = buildSession({ items, words: [], mistakes, reviews: [], settings: {}, gemini: true, drillable, now: NOW });
   assert.deepEqual(tasks.map((t) => t.category), ['particles']);
 });
 

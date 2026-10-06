@@ -13,7 +13,7 @@ Gemini sets up any other language you add.
   <tr>
     <td><img src="docs/screenshots/lookup.png" width="200" alt="Looking up a word"></td>
     <td><img src="docs/screenshots/correct.png" width="200" alt="A corrected text with labelled mistakes"></td>
-    <td><img src="docs/screenshots/session-feedback.png" width="200" alt="Fixing a past sentence in the daily session"></td>
+    <td><img src="docs/screenshots/session-feedback.png" width="200" alt="Feedback on an exercise in the daily session"></td>
     <td><img src="docs/screenshots/today.png" width="200" alt="Today with your weak spots"></td>
   </tr>
   <tr>
@@ -54,9 +54,11 @@ The first time you open the app, pick the language you're learning and your leve
 for Japanese). Nothing is preset: every exercise, example and explanation is pitched at the level you choose,
 and you can change it any time in Settings.
 
-- **German and Japanese** are built in, each with its own hand-written list of grammar categories.
+- **German and Japanese** are built in, each with a fixed list of grammar categories based on research into
+  learners' mistakes: German on the MERLIN learner corpus, Japanese on the NAIST Goyo Corpus.
 - **Any other language:** choose **+ Andere Sprache …** and type its name, for example *Spanish*. Gemini sets
-  it up once (articles, readings, and the 8–10 grammar areas learners of that language get wrong most).
+  it up once (articles, readings, and its grammar categories, worked out from a fixed checklist of grammar
+  areas). Because that list is generated, the app notes that it may be incomplete.
 - You can learn several languages. Words, mistakes and progress are kept separate for each one; switch in
   Settings or with the language pill (for example **DE · B2**) at the top. Your levels sync with your account; which language is active is chosen on each device.
 
@@ -102,10 +104,10 @@ Paste or write anything in the language you're learning: an email, a chat messag
 You get back:
 
 - the corrected text, with every change highlighted,
-- each mistake with a short explanation and a grammar category, such as *Adjektivendungen* in German or
-  *Particles* in Japanese.
+- each mistake with a short explanation, a grammar category such as *Adjektivendungen* in German or
+  *Particles* in Japanese, and the specific **rule** it breaks, such as *Perfekt mit sein bei Zustandswechsel*.
 
-Every mistake is saved to your profile and scheduled for practice. If you picked the wrong word, the right
+Every mistake is saved to your profile, and its rule is scheduled for practice. If you picked the wrong word, the right
 word goes into your word list too. Tap **Kopieren** to copy the corrected text.
 
 If your text is correct but could sound more natural, you also see **Natürlicher klingt es so** with a better
@@ -145,16 +147,25 @@ in one go, in the background when a session starts.
 
 After "write a sentence" and "say it", you may also see a more natural phrasing that you can save.
 
-**Grammar.** This comes from your own mistakes:
+**Grammar.** This comes from your own mistakes. You practise the **rule** behind a mistake, in new sentences
+each time, never by re-fixing the old sentence. Each rule climbs a ladder of five steps:
 
-| Exercise | What you do |
-|---|---|
-| Fix your sentence | One of your old sentences comes back, and you correct it |
-| Targeted drills | Gemini makes short exercises for your weakest categories: fill in an ending, rewrite a sentence, or write one under a constraint |
+| Step | Exercise | What you do |
+|---|---|---|
+| 1 | Erkennen | Two versions of a sentence: pick the right one |
+| 2 | Wählen | Fill the gap exactly where the rule decides (*Was ___ passiert?*) |
+| 3 | Umformen | Change three short sentences, each with a different verb or noun |
+| 4 | Finden | A short text has mistakes against the rule: correct them |
+| 5 | Schreiben | Write a new sentence that needs the rule |
+
+New rules start at step 2. A right answer moves the rule up a step, a wrong one moves it down. Passing step 5
+on two different days marks it as mastered (*Sitzt*). Making the same mistake again in your writing moves the
+rule back down and brings it up again. A rule you just broke while writing comes up again a few exercises later.
+Mistakes in categories without rules yet get general drills for that category.
 
 Tips:
 - If you were right but typed it slightly differently, tap **Ich lag richtig** to count it as correct.
-- New words and mistakes join your session **the same day** you add them. You get at most 8 new words a day by default,
+- New words and rules join your session **the same day** you add them. You get at most 8 new words a day by default,
   and you can change this in Settings. New sentences have their own limit of 3 a day.
 - Words and old sentences you get wrong come back once more at the end of the session.
 
@@ -184,7 +195,12 @@ Open it from **Heute** → **Ganzes Fehlerprofil**. See which grammar areas trip
 
 - how often it came up in the **last 14 days**,
 - whether it is **improving** (wird besser) or coming up **more often** (häufiger),
-- your score in drills for that category.
+- your score in drills for that category,
+- the **rules** under it, each marked *Neu*, *Wackelig* (being practised) or *Sitzt* (mastered). Tap a rule
+  to see what it says and the mistakes you made against it.
+
+Mistakes saved before rules existed are sorted into the current categories and given their rule in the
+background the first time you open the profile (needs Gemini).
 
 ---
 
@@ -213,7 +229,7 @@ Your Gemini key never leaves the device.
 **Back up now and then.** Use **Einstellungen → Sicherung → Exportieren** to save a backup file. You can
 **import** that file again later. If you're signed in, your account is already a backup.
 
-**Offline?** Recall, gap fill and "fix your sentence" all work without internet. Lookups, corrections and
+**Offline?** Recall, gap fill and word order work without internet. Lookups, corrections and
 exercises that need Gemini wait until you're back online.
 
 **Something not working?**
@@ -285,7 +301,9 @@ npm test    # unit tests: scheduler, answer checking, languages, session buildin
 | `js/srs.js` | Spaced-repetition scheduler (SM-2 variant) |
 | `js/check.js` | Local answer checking and the correction diff |
 | `js/languages.js` | Built-in languages (German, Japanese), levels, and per-language helpers |
-| `js/categories.js` | The fixed grammar categories for each language |
+| `js/categories.js` | The fixed grammar categories for each language, and how old categories map onto them |
+| `js/rules.js` | Grammar rules: the five-step exercise ladder, exercise pool, and data migration |
+| `js/ruleseeds.js` | Starting rules per category (Profile deutsch for German, JLPT lists for Japanese) |
 | `js/store.js` | Local storage: `words`, `mistakes`, `reviewItems`, `reviews`, `languages` |
 | `js/sync.js` | Accounts and sync: mirrors local data to Firestore `users/{uid}/…` and merges other devices' changes |
 | `js/syncmerge.js` | Merge rules: per-record "latest edit wins", deletes as tombstones |

@@ -1,11 +1,12 @@
 // Offline support: cache the app shell so the daily session opens without a connection.
 // Gemini and Firebase requests go to other origins and are never cached.
-const VERSION = 'gt-v10';
+const VERSION = 'gt-v11';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/i18n.js', './js/gemini.js', './js/srs.js',
   './js/check.js', './js/session.js', './js/categories.js', './js/languages.js', './js/actions.js',
   './js/sync.js', './js/syncmerge.js', './js/firebase-config.js', './js/icons.js', './js/furigana.js', './js/gappool.js',
+  './js/rules.js', './js/ruleseeds.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 
