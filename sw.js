@@ -8,6 +8,9 @@ const SHELL = [
   './js/sync.js', './js/syncmerge.js', './js/firebase-config.js', './js/icons.js', './js/furigana.js', './js/gappool.js',
   './js/rules.js', './js/ruleseeds.js',
   './js/ui/dom.js', './js/ui/context.js', './js/ui/text.js', './js/ui/sheet.js', './js/router.js', './js/background.js', './js/stats.js', './js/answer.js',
+  './js/practice/runtime.js', './js/practice/render.js', './js/practice/grade.js',
+  './js/views/learncard.js', './js/views/today.js', './js/views/lookup.js', './js/views/words.js', './js/views/suggest.js',
+  './js/views/editor.js', './js/views/correct.js', './js/views/profile.js', './js/views/settings.js', './js/views/account.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 
