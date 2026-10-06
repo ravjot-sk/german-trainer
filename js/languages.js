@@ -29,6 +29,8 @@ export const isSentence = (w) => !!w && w.kind === 'sentence';
 
 // Words were stored under `german` before other languages existed.
 export const lemmaOf = (w) => (w && (w.lemma ?? w.german)) || '';
+// A word as it is shown and learnt: with its article when it has one.
+export const wordTitle = (w) => (w.article ? `${w.article} ${lemmaOf(w)}` : lemmaOf(w));
 
 // A lookup saves the main example plus up to MORE_EXAMPLES more as moreExamples: [{ text, translation }].
 // Exercises only use the main one.

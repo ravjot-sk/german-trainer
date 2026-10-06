@@ -258,6 +258,9 @@ const STRINGS = {
 
     'err.noKey': 'Bitte zuerst den Gemini-Schlüssel in den Einstellungen eintragen.',
     'err.offline': 'Keine Internetverbindung.',
+    'date.today': 'heute',
+    'date.tomorrow': 'morgen',
+    'date.yesterday': 'gestern',
     'err.api': 'Gemini-Fehler: {m}',
 
     'settings.backupHelpSynced': 'Deine Daten sind in deinem Konto gesichert. Du kannst sie trotzdem als Datei exportieren.',
@@ -551,6 +554,9 @@ const STRINGS = {
 
     'err.noKey': 'Please add your Gemini key in Settings first.',
     'err.offline': 'No internet connection.',
+    'date.today': 'today',
+    'date.tomorrow': 'tomorrow',
+    'date.yesterday': 'yesterday',
     'err.api': 'Gemini error: {m}',
 
     'settings.backupHelpSynced': 'Your data is backed up in your account. You can still export it to a file.',

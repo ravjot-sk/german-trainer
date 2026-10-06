@@ -12,74 +12,10 @@ import { catKey, parseCatKey, recLang, lemmaOf, displayName, isSentence, example
 import { icon } from './icons.js';
 import { pickGap, afterGap, poolOf, addToPool, poolFromLookup, replaceInPool, refillList, gapLevel } from './gappool.js';
 import { segmentsFor, cutChunks, toHtml, missing, strip, poolTexts } from './furigana.js';
-
-const main = document.getElementById('main');
-const titleEl = document.getElementById('title');
-
-// ---------- helpers ----------
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-
-function toast(msg, ms = 2600) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.remove('show'), ms);
-}
-
-function fmtDate(ts) {
-  const days = Math.round((dayStart(ts) - dayStart(Date.now())) / 864e5);
-  if (days <= 0) return lang() === 'en' ? 'today' : 'heute';
-  if (days === 1) return lang() === 'en' ? 'tomorrow' : 'morgen';
-  return new Date(ts).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'de-DE', { day: 'numeric', month: 'short' });
-}
-
-// A past date: "today", "yesterday", or the date.
-function fmtPast(ts) {
-  const days = Math.round((dayStart(Date.now()) - dayStart(ts)) / 864e5);
-  if (days <= 0) return lang() === 'en' ? 'today' : 'heute';
-  if (days === 1) return lang() === 'en' ? 'yesterday' : 'gestern';
-  return new Date(ts).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'de-DE', { day: 'numeric', month: 'short' });
-}
-
-const wordTitle = (w) => (w.article ? `${w.article} ${lemmaOf(w)}` : lemmaOf(w));
-const gem = () => gemini.canUseGemini();
-
-// The language being learnt (null until one is chosen) and its name in the interface language.
-const L = () => store.activeLanguage();
-const code = () => L()?.code || 'de';
-const langName = (x = L()) => displayName(x, lang());
-const cats = (x = L()) => categoriesFor(x);
-// Marks text in the language being learnt, so iOS picks the right glyphs (Japanese kanji,
-// not Chinese) and right-to-left text runs the right way.
-const tl = (c = code()) => `lang="${esc(c)}" dir="auto"`;
-// Furigana over Japanese kanji: 'tap' (shown when the text is tapped), 'always' or 'off'.
-const furiMode = () => store.getSettings().furigana || 'tap';
-// Text in the language being learnt, with furigana when the record has it for exactly this text.
-function jt(text, rec, c = code()) {
-  const segs = c === 'ja' && furiMode() !== 'off' ? segmentsFor(text, rec) : null;
-  return segs ? `<span class="furi">${toHtml(segs)}</span>` : esc(text);
-}
-// The separate reading line is only needed when the word itself shows no furigana.
-const furiShown = (w) => recLang(w) === 'ja' && furiMode() !== 'off' && !!segmentsFor(lemmaOf(w), w);
-const readingLine = (w) => (w.reading && !furiShown(w) ? `<div class="reading" ${tl(recLang(w))}>${esc(w.reading)}</div>` : '');
-const inputAttrs = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
-
-// Small per-device UI preferences (last lookup mode and tone). Storage can be unavailable.
-function pref(key, fallback) {
-  try { return localStorage.getItem(`gt.ui.${key}`) || fallback; } catch { return fallback; }
-}
-function setPref(key, value) {
-  try { localStorage.setItem(`gt.ui.${key}`, value); } catch { /* not kept */ }
-}
-
-const toneLabel = (tone) => t(`tone.${tone || 'everyday'}`);
-
-function errorBox(e) {
-  return `<div class="notice error">${esc(e.message || e)}</div>`;
-}
+import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs, pref, setPref } from './ui/dom.js';
+import { gem, L, code, langName, cats, noGemini, sessionArgs } from './ui/context.js';
+import { tl, furiMode, jt, furiShown, readingLine, toneLabel, fmtDate, fmtPast, diffHtml, mistakeList, correctionHtml, naturalBlock, bindNatural } from './ui/text.js';
+import { wordTitle } from './languages.js';
 
 // Japanese texts saved without furigana get it from Gemini once, in one call for a batch of
 // records; redraw runs when anything was added.
@@ -105,68 +41,6 @@ async function fillFurigana(recs, redraw) {
   } catch (e) {
     console.warn('furigana', e);
   }
-}
-
-function diffHtml(a, b) {
-  return wordDiff(a, b).map((p) =>
-    p.type === 'same' ? esc(p.text) : p.type === 'del' ? `<del>${esc(p.text)}</del>` : `<ins>${esc(p.text)}</ins>`
-  ).join('');
-}
-
-function mistakeList(list, c = code()) {
-  return `<ul class="mistakes">${list.map((m) => `
-    <li>
-      <span class="chip">${esc(categoryLabel(migrateCategory(m.lang || c, m.category), lang(), cats(store.language(m.lang || c))))}</span>
-      <div class="fix" ${tl(m.lang || c)}><del>${esc(m.original)}</del> → <ins>${esc(m.corrected)}</ins></div>
-      <div class="muted">${esc(m.explanation)}</div>
-    </li>`).join('')}</ul>`;
-}
-
-// "More natural" suggestion under a correction, with a button that saves it as a sentence.
-function naturalBlock(text, reason, c = code()) {
-  if (!text) return '';
-  const saved = store.findWord(text, c);
-  return `<div class="natural">
-    <div class="natural-title">${icon('bulb', 18)} ${esc(t('natural.title'))}</div>
-    <div class="natural-text" ${tl(c)}>${esc(text)}</div>
-    ${reason ? `<div class="muted small">${esc(reason)}</div>` : ''}
-    ${saved ? `<div class="saved-note">${icon('check', 16)} ${esc(t('natural.inList'))}</div>`
-      : `<button type="button" class="btn small" data-natural="${esc(text)}" data-lang="${esc(c)}">${icon('plus', 16)} ${esc(t('natural.add'))}</button>`}
-  </div>`;
-}
-
-function bindNatural(root) {
-  $$('[data-natural]', root).forEach((b) => b.addEventListener('click', async () => {
-    const text = b.dataset.natural;
-    const c = b.dataset.lang;
-    b.disabled = true;
-    b.textContent = t('natural.saving');
-    try {
-      // Gemini describes the sentence (English, tone, pieces) so it can be practised.
-      const r = c === code() && gem() ? await gemini.translateSentence(text, null, { keep: true }) : { sentence: text };
-      store.addSentence(r, c, 'suggestion');
-      b.outerHTML = `<div class="saved-note">${icon('check', 16)} ${esc(t('natural.saved'))}</div>`;
-    } catch (e) {
-      b.disabled = false;
-      b.innerHTML = `${icon('plus', 16)} ${esc(t('natural.add'))}`;
-      toast(e.message || String(e));
-    }
-  }));
-}
-
-// Everything the session needs, limited to the active language.
-function sessionArgs() {
-  const c = code();
-  const words = store.words(c);
-  const mistakes = store.mistakes(c);
-  const wordIds = new Set(words.map((w) => w.id));
-  const items = store.reviewItems().filter((r) => (r.itemType === 'word' ? wordIds.has(r.itemId)
-    : r.itemType === 'mistake' ? false : parseCatKey(r.itemId).lang === c));
-  return {
-    items, words, mistakes, reviews: store.reviews(c), settings: store.getSettings(),
-    gemini: gem() && !!L()?.level, drillable: drillableIds(cats()).map((id) => catKey(c, id)),
-    hasChunks: (w) => !!chunksFor(w),
-  };
 }
 
 // Forgets screen state that belongs to the previous language.
@@ -871,7 +745,7 @@ async function onCheck(task) {
         mistakes = r.mistakes || [];
         grade = r.correct && !mistakes.length ? 'correct' : 'wrong';
         html = `<p>${esc(r.feedback)}</p>
-          ${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
+          ${correctionHtml(a1, r.correctedText, mistakes)}
           ${r.toneHint ? `<div class="tip"><b>${esc(t('ex.toneTip', { tone: toneLabel(w.tone) }))}</b> ${esc(r.toneHint)}</div>` : ''}
           ${sentenceReveal(w)}
           ${grade === 'correct' ? naturalBlock(r.natural, r.naturalReason) : ''}`;
@@ -898,7 +772,7 @@ async function onCheck(task) {
         if (w) store.updateWord(w.id, { gapPool: addToPool(poolOf(w), [{ sentence: r.gapSentence, answer: r.gapAnswer }],
           { level: gapLevel(task.item.reps || 0), source: 'own' }) });
       }
-      html = `<p>${esc(r.feedback)}</p>${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
+      html = `<p>${esc(r.feedback)}</p>${correctionHtml(a1, r.correctedText, mistakes)}
         ${naturalBlock(r.natural, r.naturalReason)}`;
     } else if (task.kind === 'drill') {
       const d = task.drill;
@@ -913,7 +787,7 @@ async function onCheck(task) {
         mistakes = r.mistakes || [];
         grade = r.correct ? 'correct' : 'wrong';
         html = `<p>${esc(r.feedback)}</p>
-          ${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
+          ${correctionHtml(a1, r.correctedText, mistakes)}
           <div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${jt(d.answer, d)}</div>
           <div class="muted small">${esc(d.explanation)}</div></div>`;
       }
@@ -983,7 +857,7 @@ async function checkRule(task, a1, fb) {
     mistakes = r.mistakes || [];
     grade = r.correct ? 'correct' : 'wrong';
     html = `<p>${esc(r.feedback)}</p>
-      ${mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(a1, r.correctedText)}</div>${mistakeList(mistakes)}` : ''}
+      ${correctionHtml(a1, r.correctedText, mistakes)}
       <div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${jt(e.model, e)}</div>${why(e.explanation)}</div>`;
   }
   // A near miss on a rule that is about case is a miss.
@@ -1149,7 +1023,7 @@ async function lookupWord(q, ctx) {
     const local = store.findWord(q, code(), L()?.articles)
       || store.words(code()).find((w) => w.reading === q || w.meaning.toLowerCase().includes(q.toLowerCase()));
     if (local) { lastLookup = { word: local, note: t('lookup.offlineHit') }; res.innerHTML = lookupResult(lastLookup); bindWordCard(res); }
-    else res.innerHTML = errorBox(store.getApiKey() ? t('err.offline') : t('err.noKey'));
+    else res.innerHTML = errorBox(noGemini());
     return;
   }
   res.innerHTML = `<div class="card loading">${esc(t('lookup.loading'))}</div>`;
@@ -1166,7 +1040,7 @@ async function lookupWord(q, ctx) {
 
 async function translate(q, tone) {
   const res = $('#lres');
-  if (!gem()) { res.innerHTML = errorBox(store.getApiKey() ? t('err.offline') : t('err.noKey')); return; }
+  if (!gem()) { res.innerHTML = errorBox(noGemini()); return; }
   res.innerHTML = `<div class="card loading">${esc(t('lookup.translating'))}</div>`;
   try {
     const r = await gemini.translateSentence(q, tone);
@@ -1228,7 +1102,7 @@ function bindWordCard(root) {
   // Words from a translated sentence: a full lookup in the sentence's sense, then saved.
   $$('[data-kw]', root).forEach((b) => b.addEventListener('click', async () => {
     const sentence = store.getWord(b.closest('[data-id]').dataset.id);
-    if (!gem()) { toast(store.getApiKey() ? t('err.offline') : t('err.noKey')); return; }
+    if (!gem()) { toast(noGemini()); return; }
     b.disabled = true;
     try {
       const r = await gemini.lookup(b.dataset.kw, lemmaOf(sentence));
