@@ -150,6 +150,7 @@ function wordProps(L) {
   p.exampleTranslation = { type: 'STRING', description: 'English translation of the example.' };
   p.gapSentence = { type: 'STRING', description: `The context sentence if given (else the example) with the exact inflected form of the word replaced by "___".${isGerman(L) ? ' For separable verbs gap only the verb stem part.' : ''}` };
   p.gapAnswer = { type: 'STRING', description: 'The exact text that was replaced by ___.' };
+  p.gapAcceptable = GAP_ACCEPTABLE;
   if (hasFurigana(L)) {
     p.exampleFurigana = furiganaOf('The example');
     p.gapFurigana = furiganaOf('gapSentence');
@@ -157,11 +158,15 @@ function wordProps(L) {
   return p;
 }
 
+// Other right fillings of a word's gap, so a correct answer in another form isn't marked wrong.
+const GAP_ACCEPTABLE = { type: 'ARRAY', items: STR, description: 'Other forms of the word that would be just as correct and natural in the gap (e.g. plain instead of polite, another tense that fits), in normal script. Empty if only the answer fits.' };
+
 // A sentence with the word blanked out, for the gap-fill exercise.
 function gapProps(L, of) {
   return {
     gapSentence: { type: 'STRING', description: `${of} with the exact inflected form of the word replaced by "___".${isGerman(L) ? ' For separable verbs gap only the verb stem part.' : ''}` },
     gapAnswer: { type: 'STRING', description: 'The exact text that was replaced by ___.' },
+    gapAcceptable: GAP_ACCEPTABLE,
   };
 }
 
@@ -276,7 +281,7 @@ If the query is not a real word in either language, set found to false.`;
   const extra = cleanExamples(r.moreExamples, r.example);
   r.moreExamples = extra.map(({ text, translation }) => ({ text, translation }));
   // The gapped extras only seed the word's gap sentences (gappool.poolFromLookup).
-  r.moreGaps = extra.map(({ gapSentence, gapAnswer, translation }) => ({ gapSentence, gapAnswer, translation }));
+  r.moreGaps = extra.map(({ gapSentence, gapAnswer, gapAcceptable, translation }) => ({ gapSentence, gapAnswer, gapAcceptable, translation }));
   if (!hasFurigana(L)) return r;
   collectFurigana(r, [['exampleFurigana', (x) => x.example], ['gapFurigana', (x) => x.gapSentence],
     ['contextFurigana', () => context]]);
@@ -394,6 +399,7 @@ Separately, if the sentence would sound clearly more natural phrased differently
     usesWordCorrectly: { type: 'BOOLEAN' },
     gapSentence: { type: 'STRING', description: 'If the word is used correctly: the corrected sentence with the exact form of the word replaced by "___". Otherwise empty.' },
     gapAnswer: { type: 'STRING', description: 'The exact text replaced by ___, or empty.' },
+    gapAcceptable: GAP_ACCEPTABLE,
     feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(L)}.` },
     ...correctionProps(L),
     ...naturalProps(L),
@@ -422,11 +428,28 @@ ${lines}`;
       sentences: { type: 'ARRAY', items: S({
         sentence: { type: 'STRING', description: 'The sentence with the word replaced by "___".' },
         answer: { type: 'STRING', description: 'The exact text replaced by ___.' },
+        acceptable: GAP_ACCEPTABLE,
         translation: { type: 'STRING', description: 'English translation of the full sentence.' },
       }) },
     }) },
   }), { temperature: 0.8 });
   return list.map((_, i) => r.words?.[i]?.sentences || []);
+}
+
+// A second opinion on a gap answer the local check found wrong: whether it is the word, in a
+// form that is correct and natural in that sentence. Returns { correct, feedback }.
+export async function checkGap(word, gap, answer) {
+  const L = learner();
+  const prompt = `A ${L.english} learner at ${levelText(L)} is filling a gap with a form of "${wordTitle(word)}" (${word.meaning}).
+Sentence: """${gap.sentence}"""
+Expected: """${gap.answer}"""${(gap.acceptable || []).length ? ` (also fine: ${gap.acceptable.map((x) => `"${x}"`).join(', ')})` : ''}
+Learner's answer: """${answer}"""
+correct is true when the learner's answer is a form of this word that makes the sentence grammatical and natural, even if it differs from the expected one (another politeness level or tense${L.reading ? `, or written in ${L.reading} instead of its usual script` : ''}). It is false for another word, a form that doesn't fit the sentence, or a misspelling.`;
+  const r = await generate(prompt, S({
+    correct: { type: 'BOOLEAN' },
+    feedback: { type: 'STRING', description: `One short sentence in ${explainLang(L)}.` },
+  }), { temperature: 0 });
+  return { correct: !!r.correct, feedback: String(r.feedback || '') };
 }
 
 // Grammar drills for a weak category. kind: gapfill | transform | constraint.

@@ -2,8 +2,8 @@
 import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
-import { compare, compareAny, compareExact, checkRecall, needsPlural } from '../check.js';
-import { recLang, lemmaOf, wordTitle } from '../languages.js';
+import { compare, compareAny, compareExact, checkRecall, checkGap, needsPlural } from '../check.js';
+import { recLang, lemmaOf, wordTitle, isSentence } from '../languages.js';
 import { icon } from '../icons.js';
 import { poolOf, addToPool, gapLevel } from '../gappool.js';
 import { esc, $ } from '../ui/dom.js';
@@ -43,9 +43,24 @@ export async function gradeTask(task, a1, a2, fb) {
       html = sentenceReveal(w);
     }
   } else if (task.kind === 'gap') {
-    grade = compare(a1, task.gap.answer);
+    let note = '';
+    if (isSentence(task.word)) grade = compare(a1, task.gap.answer);
+    else {
+      const r = checkGap(task.word, task.gap, a1);
+      grade = r.grade;
+      if (r.byReading) almostKey = 'session.almostReading';
+      if (r.byForm) almostKey = 'session.almostForm';
+      // A wrong answer brings this sentence back next time, so an answer that is right in a
+      // form nobody listed must not count as wrong. Gemini decides when it can.
+      if (grade === 'wrong' && gem()) {
+        fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`;
+        const g = await gemini.checkGap(task.word, task.gap, a1).catch(() => null);
+        if (g?.correct) grade = 'correct';
+        if (g?.feedback) note = `<p>${esc(g.feedback)}</p>`;
+      }
+    }
     canOverride = grade !== 'correct';
-    html = `<div class="reveal" ${tl()}><b>${esc(task.gap.answer)}</b><div class="sentence">${jt(task.gap.sentence.replace('___', task.gap.answer), task.word)}</div>
+    html = `${note}<div class="reveal" ${tl()}><b>${esc(task.gap.answer)}</b><div class="sentence">${jt(task.gap.sentence.replace('___', task.gap.answer), task.word)}</div>
       ${task.gap.translation ? `<div class="muted small" lang="en">${esc(task.gap.translation)}</div>` : ''}</div>`;
   } else if (task.kind === 'rule') {
     ({ grade, html, canOverride, mistakes } = await checkRule(task, a1, fb));
@@ -57,7 +72,7 @@ export async function gradeTask(task, a1, a2, fb) {
     // The learner's own sentence, corrected, becomes one of the word's gap sentences.
     if (r.usesWordCorrectly && r.gapSentence) {
       const w = store.getWord(task.word.id);
-      if (w) store.updateWord(w.id, { gapPool: addToPool(poolOf(w), [{ sentence: r.gapSentence, answer: r.gapAnswer }],
+      if (w) store.updateWord(w.id, { gapPool: addToPool(poolOf(w), [{ sentence: r.gapSentence, answer: r.gapAnswer, acceptable: r.gapAcceptable }],
         { level: gapLevel(task.item.reps || 0), source: 'own' }) });
     }
     html = `<p>${esc(r.feedback)}</p>${correctionHtml(a1, r.correctedText, mistakes)}

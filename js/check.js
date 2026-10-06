@@ -1,5 +1,6 @@
 // Local answer checking and a small word diff for showing corrections.
 import { lemmaOf, recLang, isSentence } from './languages.js';
+import { align, toHira, hasKanji } from './furigana.js';
 
 // Scripts written without spaces between words (Japanese, Chinese, Thai). Answers in them are
 // compared without spaces, and corrections are diffed character by character.
@@ -84,6 +85,38 @@ export function checkRecall(word, answer, pluralAnswer) {
   return { grade, main, plural, target, pluralTarget: needsPlural(word) ? stripArticle(word.plural) : '' };
 }
 
+// Gap fill for a word. gap: { sentence, answer, acceptable } as gappool.pickGap returns it.
+// Besides the expected form and any other forms Gemini listed as correct, two answers that
+// show the learner knows the word count as almost, so the sentence doesn't come back forever:
+// - the form typed in kana (たべます for 食べます), worked out from the word's reading;
+// - in Japanese, the word's dictionary form (食べる), which is often just as grammatical in the
+//   sentence (plain instead of polite) and can't be told apart without its translation.
+// Returns { grade, byReading, byForm }.
+export function checkGap(word, gap, answer) {
+  const accepted = [gap.answer, ...(gap.acceptable || [])].filter(Boolean);
+  const grade = compareAny(answer, accepted);
+  if (grade !== 'wrong') return { grade, byReading: false, byForm: false };
+  const kana = toHira(normalize(answer).replace(/\s+/g, ''));
+  if (kana && accepted.some((a) => kanaForm(a, word) === kana)) return { grade: 'almost', byReading: true, byForm: false };
+  if (isUnspaced(gap.answer)) {
+    const forms = [word.recallAnswer, lemmaOf(word)].filter(Boolean);
+    const dict = compareAny(answer, forms) !== 'wrong' || (!!word.reading && kana === kanaForm(lemmaOf(word), word));
+    if (dict) return { grade: 'almost', byReading: false, byForm: true };
+  }
+  return { grade: 'wrong', byReading: false, byForm: false };
+}
+
+// A form of a word written in kana, using the readings its kanji have in the word's dictionary
+// form (食べます with 食べる/たべる gives たべます). Null when some kanji can't be read that way.
+export function kanaForm(form, word) {
+  const segs = align(lemmaOf(word), word.reading);
+  let out = normalize(form).replace(/\s+/g, '');
+  if (!hasKanji(out)) return toHira(out) || null;
+  if (!segs) return null;
+  for (const s of segs) if (s.rt) out = out.split(s.text).join(s.rt);
+  return hasKanji(out) ? null : toHira(out);
+}
+
 export function needsPlural(word) {
   if (word.pos !== 'noun') return false;
   const p = stripArticle(word.plural || '');
@@ -93,7 +126,7 @@ export function needsPlural(word) {
 // Gap sentence for a word: the stored one, or a best-effort local guess.
 export function gapFor(word) {
   if (word.gapSentence && word.gapSentence.includes('___') && word.gapAnswer) {
-    return { sentence: word.gapSentence, answer: word.gapAnswer };
+    return { sentence: word.gapSentence, answer: word.gapAnswer, acceptable: word.gapAcceptable || [] };
   }
   if (isSentence(word)) return null; // no single word to guess a gap from
   const source = word.contextSentence || word.example;

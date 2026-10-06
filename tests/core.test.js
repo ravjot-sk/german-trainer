@@ -52,7 +52,7 @@ test('gap sentence falls back to finding the word in its sentence', () => {
   assert.equal(g.answer, 'Kollegen');
   assert.ok(g.sentence.includes('___'));
   const stored = gapFor({ german: 'x', gapSentence: 'Er ___ an.', gapAnswer: 'ruft' });
-  assert.deepEqual(stored, { sentence: 'Er ___ an.', answer: 'ruft' });
+  assert.deepEqual(stored, { sentence: 'Er ___ an.', answer: 'ruft', acceptable: [] });
 });
 
 test('word diff marks changed words', () => {
