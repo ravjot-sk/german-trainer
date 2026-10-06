@@ -1,7 +1,7 @@
 // The mistake profile: categories by recent mistakes, and the rules under each.
 import * as store from '../store.js';
 import { t, lang } from '../i18n.js';
-import { isCurated } from '../categories.js';
+import { isCurated, categoryLabel } from '../categories.js';
 import { status as ruleStatus } from '../rules.js';
 import { main, titleEl, esc } from '../ui/dom.js';
 import { L, code, langName, cats } from '../ui/context.js';
@@ -18,7 +18,7 @@ export function catList(stats, { withRules = false } = {}) {
   const trendLabel = { improving: `↘ ${t('profile.improving')}`, worse: `↗ ${t('profile.worse')}`, steady: `→ ${t('profile.steady')}` };
   return `<ul class="cats">${stats.map((s) => `
     <li>
-      <div class="cat-head"><b>${esc(lang() === 'en' ? s.en : s.de)}</b><span class="trend ${s.trend}">${esc(trendLabel[s.trend])}</span></div>
+      <div class="cat-head"><b>${esc(categoryLabel(s.id, lang(), cats()))}</b><span class="trend ${s.trend}">${esc(trendLabel[s.trend])}</span></div>
       <div class="bar"><div style="width:${Math.round((s.recent / max) * 100)}%"></div></div>
       <div class="muted small">${s.recent} · ${esc(t('profile.last14'))} &nbsp;|&nbsp; ${s.total} ${esc(t('profile.total'))}
         ${s.drills ? ` &nbsp;|&nbsp; ${esc(t('profile.drills'))}: ${esc(t('profile.accuracy', { p: Math.round(s.acc * 100) }))}` : ''}</div>

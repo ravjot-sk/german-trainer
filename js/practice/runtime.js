@@ -25,10 +25,15 @@ function prepare(task) {
     .catch((e) => { task.drillError = e; });
 }
 
+// A new session in the active language; free practice adds { practice: true, focus }.
+const newSession = (tasks, extra = {}) => ({
+  ...extra, tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set(),
+});
+
 export function startSession() {
   const tasks = buildSession(sessionArgs());
   tasks.forEach(prepare);
-  ui.session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
+  ui.session = newSession(tasks);
   if (code() === 'ja') fillFurigana(tasks.map((x) => x.word).filter(Boolean));
   refillGaps();
   topUpRules();
@@ -86,7 +91,7 @@ export function logTaskMistakes(task, mistakes) {
 const PRACTICE_AHEAD = 3;
 
 export function startPractice(focus) {
-  ui.session = { practice: true, focus, tasks: [], lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
+  ui.session = newSession([], { practice: true, focus });
   topUpPractice();
   refillGaps();
   topUpRules();

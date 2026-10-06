@@ -44,13 +44,12 @@ export function renderSync() {
   if (!el) return;
   const st = sync.getState();
   shownSync = syncShape(st);
-  const head = '';
   const res = '<div id="syncres"></div>';
   const signOutBtn = `<button class="btn" id="ssignout">${esc(t('sync.signOut'))}</button>`;
   if (st.status === 'off') {
-    el.innerHTML = `${head}<p class="muted small">${esc(t('sync.off'))}</p>`;
+    el.innerHTML = `<p class="muted small">${esc(t('sync.off'))}</p>`;
   } else if (st.status === 'signedOut') {
-    el.innerHTML = `${head}
+    el.innerHTML = `
       <p class="muted small">${esc(t('sync.help'))}</p>
       <label>${esc(t('sync.email'))}<input id="semail" type="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
       <label>${esc(t('sync.password'))}<input id="spass" type="password" autocomplete="current-password"></label>
@@ -74,7 +73,7 @@ export function renderSync() {
       $('#syncres').innerHTML = `<div class="notice ok">${esc(t('sync.resetSent'))}</div>`;
     });
   } else if (st.status === 'unverified') {
-    el.innerHTML = `${head}
+    el.innerHTML = `
       <p class="small">${esc(t('sync.unverified', { e: st.email }))}</p>
       <div class="actions">
         <button class="btn primary" id="sverified">${esc(t('sync.verified'))}</button>
@@ -90,16 +89,16 @@ export function renderSync() {
       $('#syncres').innerHTML = `<div class="notice ok">${esc(t('sync.resent'))}</div>`;
     });
   } else if (st.status === 'notInvited') {
-    el.innerHTML = `${head}
+    el.innerHTML = `
       <div class="notice">${esc(t('sync.notInvited', { e: st.email }))}</div>
       <div class="actions"><button class="btn primary" id="sretry">${esc(t('sync.retry'))}</button>${signOutBtn}</div>
       ${res}`;
     syncAction('sretry', () => sync.recheck());
   } else if (!st.email) {
     // Still connecting, or offline before the account could be loaded.
-    el.innerHTML = `${head}<p class="small">${syncStatusLine(st)}</p>`;
+    el.innerHTML = `<p class="small">${syncStatusLine(st)}</p>`;
   } else {
-    el.innerHTML = `${head}
+    el.innerHTML = `
       <p class="small">${esc(t('sync.signedInAs', { e: st.email }))}<br>${syncStatusLine(st)}</p>
       ${signOutBtn}
       <p class="muted small">${esc(t('sync.signOutHelp'))}</p>

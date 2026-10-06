@@ -1,5 +1,4 @@
-// Checking an answer: locally where possible, with Gemini for free writing. Returns the
-// grade and the feedback HTML.
+// Checking an answer in a session, and the feedback shown after it.
 import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';

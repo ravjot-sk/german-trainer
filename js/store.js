@@ -3,7 +3,7 @@
 // languages and levels. Words, mistakes and reviews carry a `lang` (none means German). When
 // the user signs in, sync.js mirrors each record to Firestore, using updatedAt to decide
 // which copy is newer.
-import { dayStart, addDays } from './srs.js';
+import { dayStart } from './srs.js';
 import { describe, recLang, lemmaOf, catKey } from './languages.js';
 import { migrateCategory, hasRules } from './categories.js';
 import { migrateData, ruleFrom, ruleItemId, newRuleItem, afterMistake } from './rules.js';

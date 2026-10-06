@@ -103,32 +103,10 @@ async function renderTask(task) {
       <div class="muted small">${esc(w.meaning)}</div>
       <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
   } else if (task.kind === 'rule') {
-    if (!task.ex && !task.exError) {
-      ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
-      $('#dock').innerHTML = '';
-      await task.exPromise;
-      if (ui.session?.tasks[ui.session.idx] !== task) return; // user moved on
-    }
-    if (task.exError || !task.ex) {
-      ex.innerHTML = `${errorBox(task.exError || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
-      $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
-      $('#next').addEventListener('click', () => { ui.session.idx++; viewSession(); });
-      return;
-    }
+    if (!(await generated(task, 'ex'))) return;
     body = ruleBody(task);
   } else if (task.kind === 'drill') {
-    if (!task.drill && !task.drillError) {
-      ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
-      $('#dock').innerHTML = '';
-      await task.drillPromise;
-      if (ui.session?.tasks[ui.session.idx] !== task) return; // user moved on
-    }
-    if (task.drillError || !task.drill) {
-      ex.innerHTML = `${errorBox(task.drillError || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
-      $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
-      $('#next').addEventListener('click', () => { ui.session.idx++; viewSession(); });
-      return;
-    }
+    if (!(await generated(task, 'drill'))) return;
     const d = task.drill;
     const isGap = task.drillKind === 'gapfill';
     body = `
@@ -168,6 +146,27 @@ async function renderTask(task) {
     if (task.state.phase === 'answer' && empty) empty.focus();
     else (task.state.phase === 'answer' ? onCheck(task) : next(task));
   }));
+}
+
+// Waits for the exercise Gemini is generating for a task (task.ex or task.drill, with its
+// Promise and Error next to it). False when there is nothing to show: the learner moved on
+// meanwhile, or generation failed (then only a Next button is shown).
+async function generated(task, key) {
+  const ex = $('#ex');
+  if (!task[key] && !task[`${key}Error`]) {
+    ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
+    $('#dock').innerHTML = '';
+    await task[`${key}Promise`];
+    if (ui.session?.tasks[ui.session.idx] !== task) return false; // user moved on
+  }
+  const error = task[`${key}Error`];
+  if (error || !task[key]) {
+    ex.innerHTML = `${errorBox(error || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
+    $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
+    $('#next').addEventListener('click', () => { ui.session.idx++; viewSession(); });
+    return false;
+  }
+  return true;
 }
 
 // The exercise for a rule at its rung. Every rung shows which rule is being practised.
