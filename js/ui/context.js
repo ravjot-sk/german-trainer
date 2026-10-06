@@ -31,3 +31,34 @@ export function sessionArgs() {
     hasChunks: (w) => !!chunksFor(w),
   };
 }
+
+// Screen state kept while the app is open: the running session, the last lookup and
+// correction, and the word list search.
+export const ui = {
+  session: null,
+  lastLookup: null,
+  lastCorrection: null,
+  // After a correction the result comes first; the text collapses to one line until reopened.
+  correctOpen: false,
+  wordQuery: '',
+};
+
+// Forgets screen state that belongs to the previous language.
+export function resetViews() {
+  ui.session = null;
+  ui.lastLookup = null;
+  ui.lastCorrection = null;
+  ui.correctOpen = false;
+  ui.wordQuery = '';
+}
+
+// After signing out, the last results belonged to the account.
+export function forgetResults() {
+  ui.lastLookup = null;
+  ui.lastCorrection = null;
+}
+
+// A deleted word is no longer shown as the last lookup.
+export function forgetWord(id) {
+  if (ui.lastLookup?.word.id === id) ui.lastLookup = null;
+}

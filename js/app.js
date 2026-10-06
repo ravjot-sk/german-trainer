@@ -13,7 +13,7 @@ import { icon } from './icons.js';
 import { pickGap, afterGap, poolOf, addToPool, poolFromLookup, replaceInPool, refillList, gapLevel } from './gappool.js';
 import { segmentsFor, cutChunks, toHtml, missing, strip, poolTexts } from './furigana.js';
 import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs, pref, setPref } from './ui/dom.js';
-import { gem, L, code, langName, cats, noGemini, sessionArgs } from './ui/context.js';
+import { gem, L, code, langName, cats, noGemini, sessionArgs, ui, resetViews, forgetWord, forgetResults } from './ui/context.js';
 import { tl, furiMode, jt, furiShown, readingLine, toneLabel, fmtDate, fmtPast, diffHtml, mistakeList, correctionHtml, naturalBlock, bindNatural } from './ui/text.js';
 import { wordTitle } from './languages.js';
 import { registerRoutes, route, routeName, go } from './router.js';
@@ -43,15 +43,6 @@ async function fillFurigana(recs, redraw) {
   } catch (e) {
     console.warn('furigana', e);
   }
-}
-
-// Forgets screen state that belongs to the previous language.
-function resetViews() {
-  session = null;
-  lastLookup = null;
-  lastCorrection = null;
-  correctOpen = false;
-  wordQuery = '';
 }
 
 // ---------- language and level (Today and Settings) ----------
@@ -178,7 +169,7 @@ function viewToday() {
     ${notes.join('')}
     ${weakSpots()}
   `;
-  $('#start')?.addEventListener('click', () => { session = null; go('session'); });
+  $('#start')?.addEventListener('click', () => { ui.session = null; go('session'); });
   bindPracticeCard();
 }
 
@@ -225,8 +216,6 @@ function weakSpots() {
 }
 
 // ---------- Session ----------
-let session = null;
-
 // Starts generating a drill as soon as its task is queued, so it is ready when it comes up.
 function prepare(task) {
   if (task.kind === 'rule') return prepareRule(task);
@@ -242,7 +231,7 @@ function prepare(task) {
 function startSession() {
   const tasks = buildSession(sessionArgs());
   tasks.forEach(prepare);
-  session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
+  ui.session = { tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
   if (code() === 'ja') fillFurigana(tasks.map((x) => x.word).filter(Boolean));
   refillGaps();
   topUpRules();
@@ -351,7 +340,7 @@ async function classifyOldMistakes(redraw) {
 
 // A rule the learner just broke in their own writing comes up a few tasks later, once.
 function followUp(mistakes) {
-  const s = session;
+  const s = ui.session;
   if (!s || !gem()) return;
   for (const m of mistakes) {
     if (!m.rule || m.source === 'drill') continue;
@@ -398,7 +387,7 @@ async function refillGaps() {
 const PRACTICE_AHEAD = 3;
 
 function startPractice(focus) {
-  session = { practice: true, focus, tasks: [], lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
+  ui.session = { practice: true, focus, tasks: [], lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set() };
   topUpPractice();
   refillGaps();
   topUpRules();
@@ -406,7 +395,7 @@ function startPractice(focus) {
 }
 
 function topUpPractice() {
-  const s = session;
+  const s = ui.session;
   if (s.ended) return;
   const want = s.idx + PRACTICE_AHEAD;
   if (s.tasks.length >= want) return;
@@ -424,18 +413,18 @@ function topUpPractice() {
 }
 
 function viewSession() {
-  if (!session) startSession();
-  if (session.practice) topUpPractice();
-  titleEl.textContent = t(session.practice ? 'practice.title' : 'today.title');
-  const { tasks, idx } = session;
-  if (session.ended || idx >= tasks.length) return renderSessionEnd();
+  if (!ui.session) startSession();
+  if (ui.session.practice) topUpPractice();
+  titleEl.textContent = t(ui.session.practice ? 'practice.title' : 'today.title');
+  const { tasks, idx } = ui.session;
+  if (ui.session.ended || idx >= tasks.length) return renderSessionEnd();
   const task = tasks[idx];
   task.state = { phase: 'answer' };
 
   // Practice has no end to show progress towards: it counts answers and right ones instead.
-  const top = session.practice
+  const top = ui.session.practice
     ? `<div class="grow"></div>
-      <span class="count" aria-label="${esc(t('practice.score', { c: session.correct, n: session.answered }))}">✓ ${session.correct}/${session.answered}</span>`
+      <span class="count" aria-label="${esc(t('practice.score', { c: ui.session.correct, n: ui.session.answered }))}">✓ ${ui.session.correct}/${ui.session.answered}</span>`
     : `<div class="progress"><div style="width:${Math.round((idx / tasks.length) * 100)}%"></div></div>
       <span class="count" aria-label="${esc(t('session.of', { i: idx + 1, n: tasks.length }))}">${idx + 1}/${tasks.length}</span>`;
   main.innerHTML = `
@@ -446,12 +435,12 @@ function viewSession() {
     <section class="card exercise" id="ex"></section>
     <div class="dock" id="dock"></div>
   `;
-  $('#quit').addEventListener('click', () => { session.ended = true; viewSession(); });
+  $('#quit').addEventListener('click', () => { ui.session.ended = true; viewSession(); });
   renderTask(task);
 }
 
 function renderSessionEnd() {
-  const s = session;
+  const s = ui.session;
   // Practice only ends by itself when there is nothing saved to practise.
   const empty = s.practice && !s.tasks.length;
   main.innerHTML = `
@@ -464,7 +453,7 @@ function renderSessionEnd() {
       ${empty && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
       <button class="btn primary big" id="home">${esc(t('session.backHome'))}</button>
     </section>`;
-  $('#home').addEventListener('click', () => { session = null; go('today'); });
+  $('#home').addEventListener('click', () => { ui.session = null; go('today'); });
   bindSuggest(main);
 }
 
@@ -515,12 +504,12 @@ async function renderTask(task) {
       ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
       $('#dock').innerHTML = '';
       await task.exPromise;
-      if (session?.tasks[session.idx] !== task) return; // user moved on
+      if (ui.session?.tasks[ui.session.idx] !== task) return; // user moved on
     }
     if (task.exError || !task.ex) {
       ex.innerHTML = `${errorBox(task.exError || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
       $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
-      $('#next').addEventListener('click', () => { session.idx++; viewSession(); });
+      $('#next').addEventListener('click', () => { ui.session.idx++; viewSession(); });
       return;
     }
     body = ruleBody(task);
@@ -529,12 +518,12 @@ async function renderTask(task) {
       ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
       $('#dock').innerHTML = '';
       await task.drillPromise;
-      if (session?.tasks[session.idx] !== task) return; // user moved on
+      if (ui.session?.tasks[ui.session.idx] !== task) return; // user moved on
     }
     if (task.drillError || !task.drill) {
       ex.innerHTML = `${errorBox(task.drillError || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
       $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
-      $('#next').addEventListener('click', () => { session.idx++; viewSession(); });
+      $('#next').addEventListener('click', () => { ui.session.idx++; viewSession(); });
       return;
     }
     const d = task.drill;
@@ -566,7 +555,7 @@ async function renderTask(task) {
     }));
   }
   $('#check')?.addEventListener('click', () => onCheck(task));
-  $('#skip').addEventListener('click', () => { session.idx++; viewSession(); });
+  $('#skip').addEventListener('click', () => { ui.session.idx++; viewSession(); });
   $$('input.answer', ex).forEach((el) => el.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -752,10 +741,10 @@ async function onCheck(task) {
     const own = (m) => (task.kind === 'rule' ? m.category === task.rule.category && m.rule === task.rule.key
       : task.kind === 'drill' && m.category === task.category);
     const logged = [
-      ...logMistakes(mistakes.filter((m) => !own(m)), 'exercise', session.lang).mistakes,
-      ...logMistakes(mistakes.filter(own), 'drill', session.lang).mistakes,
+      ...logMistakes(mistakes.filter((m) => !own(m)), 'exercise', ui.session.lang).mistakes,
+      ...logMistakes(mistakes.filter(own), 'drill', ui.session.lang).mistakes,
     ];
-    session.mistakesLogged += logged.filter((m) => m.source !== 'drill').length;
+    ui.session.mistakesLogged += logged.filter((m) => m.source !== 'drill').length;
     followUp(logged);
   }
 
@@ -846,13 +835,13 @@ function showFeedback(task, canOverride) {
 
 function next(task) {
   const { grade, answer } = task.state;
-  const firstTry = !session.requeued.has(task);
+  const firstTry = !ui.session.requeued.has(task);
   if (firstTry) {
     const now = Date.now();
     // The latest copy: in practice the same item can come up again before an earlier answer was saved.
     task.item = store.reviewItems().find((r) => r.id === task.item.id) || task.item;
     // Practice only moves the schedule for misses and for new or due items.
-    const scheduled = session.practice ? schedulePractice(task.item, grade, now) : schedule(task.item, grade, now);
+    const scheduled = ui.session.practice ? schedulePractice(task.item, grade, now) : schedule(task.item, grade, now);
     const updated = scheduled === task.item ? { ...task.item } : scheduled;
     if (scheduled !== task.item) {
       if (task.word) updated.exerciseType = task.kind;
@@ -866,8 +855,8 @@ function next(task) {
     }
     store.saveReview(saved, {
       reviewItemId: task.item.id, itemType: task.item.itemType, itemId: task.item.itemId,
-      lang: session.lang, category: task.category || null, exerciseType: task.drillKind || task.ruleKind || task.kind,
-      answer: task.answerText || answer, correct: grade !== 'wrong', grade, reviewedAt: now, ...(session.practice ? { mode: 'practice' } : {}),
+      lang: ui.session.lang, category: task.category || null, exerciseType: task.drillKind || task.ruleKind || task.kind,
+      answer: task.answerText || answer, correct: grade !== 'wrong', grade, reviewedAt: now, ...(ui.session.practice ? { mode: 'practice' } : {}),
     });
     task.item = saved;
     // Right: that sentence is retired. Wrong: it comes back at the word's next gap fill.
@@ -875,23 +864,21 @@ function next(task) {
       const w = store.getWord(task.word.id);
       if (w) store.updateWord(w.id, afterGap(w, task.gap.sentence, grade, now));
     }
-    session.answered++;
-    if (grade !== 'wrong') session.correct++;
+    ui.session.answered++;
+    if (grade !== 'wrong') ui.session.correct++;
     // Locally checked items answered wrong come back once: at the end of the daily session,
     // a few tasks later in practice.
     if (grade === 'wrong' && ['recall', 'gap', 'order'].includes(task.kind)) {
-      session.requeued.add(task);
-      if (session.practice) session.tasks.splice(session.idx + 4, 0, task);
-      else session.tasks.push(task);
+      ui.session.requeued.add(task);
+      if (ui.session.practice) ui.session.tasks.splice(ui.session.idx + 4, 0, task);
+      else ui.session.tasks.push(task);
     }
   }
-  session.idx++;
+  ui.session.idx++;
   viewSession();
 }
 
 // ---------- Look up ----------
-let lastLookup = null;
-
 function viewLookup() {
   titleEl.textContent = t('lookup.title');
   const all = store.words(code());
@@ -917,7 +904,7 @@ function viewLookup() {
       ${seg('mode', [['word', t('lookup.modeWord')], ['sentence', t('lookup.modeSentence')]], mode)}
       ${form}
     </form>
-    <div id="lres">${lastLookup ? lookupResult(lastLookup) : ''}</div>
+    <div id="lres">${ui.lastLookup ? lookupResult(ui.lastLookup) : ''}</div>
     ${recent.length ? `<div class="group-label">${esc(t('lookup.recent'))}</div>${wordRows(recent)}
       ${all.length > recent.length ? `<a class="more-link" href="#/words">${esc(t('words.all'))} (${all.length})${icon('chevron', 16)}</a>` : ''}` : ''}
   `;
@@ -943,11 +930,11 @@ function viewLookup() {
   });
   bindWordCard($('#lres'));
   bindWordRows(main);
-  if (lastLookup && store.getWord(lastLookup.word.id)) {
-    fillFurigana([store.getWord(lastLookup.word.id)], () => {
+  if (ui.lastLookup && store.getWord(ui.lastLookup.word.id)) {
+    fillFurigana([store.getWord(ui.lastLookup.word.id)], () => {
       const res = $('#lres');
-      if (!res || !lastLookup) return;
-      res.innerHTML = lookupResult(lastLookup);
+      if (!res || !ui.lastLookup) return;
+      res.innerHTML = lookupResult(ui.lastLookup);
       bindWordCard(res);
     });
   }
@@ -967,7 +954,7 @@ async function lookupWord(q, ctx) {
   if (!gem()) {
     const local = store.findWord(q, code(), L()?.articles)
       || store.words(code()).find((w) => w.reading === q || w.meaning.toLowerCase().includes(q.toLowerCase()));
-    if (local) { lastLookup = { word: local, note: t('lookup.offlineHit') }; res.innerHTML = lookupResult(lastLookup); bindWordCard(res); }
+    if (local) { ui.lastLookup = { word: local, note: t('lookup.offlineHit') }; res.innerHTML = lookupResult(ui.lastLookup); bindWordCard(res); }
     else res.innerHTML = errorBox(noGemini());
     return;
   }
@@ -976,7 +963,7 @@ async function lookupWord(q, ctx) {
     const r = await gemini.lookup(q, ctx);
     if (!r.found || !r.lemma) { res.innerHTML = `<div class="notice">${esc(t('lookup.notFound'))}</div>`; return; }
     const { word, created } = saveLookup(r, { lang: code(), contextSentence: ctx, source: 'lookup' });
-    lastLookup = { word, note: created ? t('lookup.saved') : t('lookup.already') };
+    ui.lastLookup = { word, note: created ? t('lookup.saved') : t('lookup.already') };
     viewLookup();
   } catch (err) {
     res.innerHTML = errorBox(err);
@@ -991,7 +978,7 @@ async function translate(q, tone) {
     const r = await gemini.translateSentence(q, tone);
     if (!r.sentence) { res.innerHTML = `<div class="notice">${esc(t('lookup.notTranslated'))}</div>`; return; }
     const { word, created } = store.addSentence({ ...r, query: q }, code());
-    lastLookup = { word, note: created ? t('lookup.sentenceSaved') : t('lookup.sentenceAlready') };
+    ui.lastLookup = { word, note: created ? t('lookup.sentenceSaved') : t('lookup.sentenceAlready') };
     viewLookup();
     $('#q').value = q;
   } catch (err) {
@@ -1083,14 +1070,13 @@ function bindWordRows(root) {
   $$('[data-word]', root).forEach((li) => li.addEventListener('click', () => openEditor(li.dataset.word)));
 }
 
-let wordQuery = '';
 function viewWords() {
   titleEl.textContent = t('words.title');
   const all = store.words(code());
   let show = pref('wordFilter', 'all');
   main.innerHTML = `
     <div class="toolbar">
-      <input id="search" type="search" ${inputAttrs} placeholder="${esc(t('words.search'))}" value="${esc(wordQuery)}">
+      <input id="search" type="search" ${inputAttrs} placeholder="${esc(t('words.search'))}" value="${esc(ui.wordQuery)}">
       ${gem() ? `<button class="btn" data-suggest aria-label="${esc(t('suggest.open'))}">${icon('sparkle', 22)}</button>` : ''}
       <button class="btn" id="add" aria-label="${esc(t('words.add'))}">${icon('plus', 22)}</button>
     </div>
@@ -1098,7 +1084,7 @@ function viewWords() {
       `<button type="button" data-v="${f}" class="${f === show ? 'on' : ''}">${esc(t(`words.filter.${f}`))}</button>`).join('')}</div>` : ''}
     <div id="wlist"></div>`;
   const draw = () => {
-    const q = wordQuery.toLowerCase();
+    const q = ui.wordQuery.toLowerCase();
     const kind = all.some(isSentence) ? show : 'all';
     const list = all
       .filter((w) => kind === 'all' || (kind === 'sentences') === isSentence(w))
@@ -1114,7 +1100,7 @@ function viewWords() {
     $$('#wfilter button').forEach((x) => x.classList.toggle('on', x === b));
     draw();
   }));
-  $('#search').addEventListener('input', (e) => { wordQuery = e.target.value; draw(); });
+  $('#search').addEventListener('input', (e) => { ui.wordQuery = e.target.value; draw(); });
   $('#add').addEventListener('click', () => openEditor(null));
   bindSuggest(main);
   draw();
@@ -1240,7 +1226,7 @@ function openEditor(id) {
     onDelete: () => {
       if (!confirm(t('edit.confirmDelete', { w: wordTitle(w) }))) return false;
       store.deleteWord(id);
-      if (lastLookup?.word.id === id) lastLookup = null;
+      forgetWord(id);
       return true;
     },
   });
@@ -1275,38 +1261,33 @@ function openSentenceEditor(w) {
     onDelete: () => {
       if (!confirm(t('edit.confirmDelete', { w: lemmaOf(w) }))) return false;
       store.deleteWord(w.id);
-      if (lastLookup?.word.id === w.id) lastLookup = null;
+      forgetWord(w.id);
       return true;
     },
   });
 }
 
 // ---------- Correct ----------
-let lastCorrection = null;
-
-// After a correction the result comes first; the text collapses to one line until reopened.
-let correctOpen = false;
-
 function viewCorrect() {
   titleEl.textContent = t('correct.title');
   const draft = sessionStorage.getItem('gt.draft') || '';
-  const collapsed = lastCorrection && !correctOpen;
+  const collapsed = ui.lastCorrection && !ui.correctOpen;
   main.innerHTML = `
     ${collapsed ? `<section class="card draft-row" id="reopen">
-        <div class="grow"><div class="muted small">${esc(t('correct.yourText'))}</div><div class="ellipsis" ${tl(lastCorrection.lang)}>${esc(lastCorrection.text)}</div></div>
+        <div class="grow"><div class="muted small">${esc(t('correct.yourText'))}</div><div class="ellipsis" ${tl(ui.lastCorrection.lang)}>${esc(ui.lastCorrection.text)}</div></div>
         ${icon('down', 18)}
       </section>` : ''}
     <form class="card ${collapsed ? 'hidden' : ''}" id="cf">
       <textarea id="text" rows="6" spellcheck="false" ${tl()} placeholder="${esc(t('correct.placeholder', { l: langName() }))}">${esc(draft)}</textarea>
       <button class="btn primary" type="submit">${esc(t('correct.go'))}</button>
     </form>
-    <div id="cres">${lastCorrection ? correctionResult(lastCorrection) : ''}</div>
-    ${lastCorrection ? `<button class="btn" id="newtext">${icon('plus', 18)} ${esc(t('correct.newText'))}</button>` : ''}`;
-  $('#reopen')?.addEventListener('click', () => { correctOpen = true; viewCorrect(); $('#text').focus(); });
+    <div id="cres">${ui.lastCorrection ? correctionResult(ui.lastCorrection) : ''}</div>
+    ${ui.lastCorrection ? `<button class="btn" id="newtext">${icon('plus', 18)} ${esc(t('correct.newText'))}</button>` : ''}`;
+  $('#reopen')?.addEventListener('click', () => { ui.correctOpen = true; viewCorrect(); $('#text').focus(); });
   $('#newtext')?.addEventListener('click', () => {
     sessionStorage.removeItem('gt.draft');
-    lastCorrection = null;
-    correctOpen = false;
+    ui.lastCorrection = null;
+    ui.correctOpen = false;
     viewCorrect();
     $('#text').focus();
   });
@@ -1321,8 +1302,8 @@ function viewCorrect() {
     try {
       const r = await gemini.correctText(text);
       const logged = logMistakes(r.mistakes, 'correction', code());
-      lastCorrection = { text, lang: code(), ...r, newWords: logged.words.map(wordTitle) };
-      correctOpen = false;
+      ui.lastCorrection = { text, lang: code(), ...r, newWords: logged.words.map(wordTitle) };
+      ui.correctOpen = false;
       if (routeName() === 'correct') { viewCorrect(); window.scrollTo(0, 0); }
     } catch (err) {
       res.innerHTML = errorBox(err);
@@ -1346,7 +1327,7 @@ function correctionResult(c) {
 function bindCopy() {
   bindNatural($('#cres'));
   $('#copy')?.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(lastCorrection.correctedText); toast(t('correct.copied')); } catch { /* ignore */ }
+    try { await navigator.clipboard.writeText(ui.lastCorrection.correctedText); toast(t('correct.copied')); } catch { /* ignore */ }
   });
 }
 
@@ -1663,8 +1644,7 @@ function renderSync() {
       if (!confirm(t('sync.confirmPending', { n: r.pending }))) return;
       r = await sync.signOut({ force: true });
     }
-    lastLookup = null;
-    lastCorrection = null;
+    forgetResults();
   });
 }
 
@@ -1692,8 +1672,8 @@ document.addEventListener('click', (e) => {
   const f = e.target.closest('.furi');
   if (f && document.body.classList.contains('furi-tap') && !e.target.closest('button')) f.classList.toggle('open');
 });
-window.addEventListener('online', () => { if (!session) route(); });
-window.addEventListener('offline', () => { if (!session) route(); });
+window.addEventListener('online', () => { if (!ui.session) route(); });
+window.addEventListener('offline', () => { if (!ui.session) route(); });
 $('#gear').addEventListener('click', () => go('settings'));
 $('#back').addEventListener('click', () => go($('#back').dataset.to || 'today'));
 $('#langpill').addEventListener('click', openLangSheet);
