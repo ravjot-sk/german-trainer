@@ -6,12 +6,13 @@ import { categoryLabel } from '../categories.js';
 import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { pickGap } from '../gappool.js';
+import { practicePool, newInPool } from '../session.js';
 import { segmentsFor, cutChunks, toHtml } from '../furigana.js';
 import { main, titleEl, esc, $, $$, errorBox, inputAttrs } from '../ui/dom.js';
-import { gem, code, langName, cats, ui } from '../ui/context.js';
+import { gem, code, langName, cats, sessionArgs, ui } from '../ui/context.js';
 import { tl, furiMode, jt, readingLine, toneLabel, bindNatural } from '../ui/text.js';
 import { go } from '../router.js';
-import { startSession, logTaskMistakes, topUpPractice, advance } from './runtime.js';
+import { startSession, logTaskMistakes, topUpPractice, advance, nextRound } from './runtime.js';
 import { gradeTask } from './grade.js';
 import { bindSuggest } from '../views/suggest.js';
 
@@ -44,23 +45,47 @@ export function viewSession() {
 
 function renderSessionEnd() {
   const s = ui.session;
-  // Practice ends by itself when there is nothing saved to practise, or when everything has
-  // been answered right this session.
+  // Practice stops by itself when there is nothing saved to practise, and pauses after each
+  // round (everything once) to offer new words.
   const empty = s.practice && !s.tasks.length;
-  const allDone = s.practice && !empty && !s.ended;
+  if (s.practice && !empty && !s.ended) return renderRoundEnd();
   main.innerHTML = `
     <section class="card hero end">
       <div class="hero-num">${empty ? '📭' : '🎉'}</div>
-      <h2>${esc(t(empty ? 'practice.empty' : allDone ? 'practice.allDone' : s.practice ? 'practice.done' : 'session.done'))}</h2>
+      <h2>${esc(t(empty ? 'practice.empty' : s.practice ? 'practice.done' : 'session.done'))}</h2>
       ${empty ? `<p class="muted">${esc(t('practice.emptyHelp'))}</p>`
         : `<p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>`}
-      ${allDone ? `<p class="muted">${esc(t('practice.allDoneHelp'))}</p>` : ''}
       ${s.mistakesLogged ? `<p class="muted small">${esc(t('session.mistakesLogged', { n: s.mistakesLogged }))}</p>` : ''}
-      ${(empty || allDone) && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
+      ${empty && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
       <button class="btn primary big" id="home">${esc(t('session.backHome'))}</button>
     </section>`;
   $('#home').addEventListener('click', () => { ui.session = null; go('today'); });
   bindSuggest(main);
+}
+
+// After a practice round: mix in saved words not started yet, else words Gemini suggests,
+// or go round again with the same items at their new level.
+function renderRoundEnd() {
+  const s = ui.session;
+  const waiting = newInPool(practicePool({ ...sessionArgs(), focus: s.focus }));
+  const mix = waiting ? `<button class="btn primary" id="mixnew">${icon('plus', 18)} ${esc(t('practice.mixNew', { n: Math.min(waiting, store.getSettings().newPerDay ?? 8) }))}</button>`
+    : gem() ? `<button class="btn primary" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : '';
+  main.innerHTML = `
+    <section class="card hero end">
+      <div class="hero-num">🎉</div>
+      <h2>${esc(t('practice.roundDone'))}</h2>
+      <p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>
+      <p class="muted">${esc(t(mix ? 'practice.roundHelp' : 'practice.roundHelpNoNew'))}</p>
+      ${mix}
+      <button class="btn" id="again">${esc(t('practice.nextRound'))}</button>
+      <button class="btn text" id="home">${esc(t('session.backHome'))}</button>
+    </section>`;
+  const round = (withNew) => { nextRound(withNew); viewSession(); };
+  $('#mixnew')?.addEventListener('click', () => round(true));
+  $('#again').addEventListener('click', () => round(false));
+  $('#home').addEventListener('click', () => { ui.session = null; go('today'); });
+  // Suggested words that were added start in the next round.
+  bindSuggest(main, (added) => { if (added && ui.session === s) round(true); });
 }
 
 async function renderTask(task) {

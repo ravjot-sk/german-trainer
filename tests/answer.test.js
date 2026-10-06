@@ -52,12 +52,13 @@ test('after an answer: daily session schedules and records the exercise', () => 
     exerciseType: 'recall', answer: 'Haus', correct: true, grade: 'correct', reviewedAt: NOW });
 });
 
-test('after an answer: practice leaves a right answer on a not-yet-due item alone', () => {
+test('after an answer: a right practice answer on a not-yet-due item counts but keeps its due date', () => {
   const item = wordItem({ introducedAt: NOW - 1, due: addDays(TODAY, 5), interval: 5, reps: 2, exerciseType: 'gap' });
   const { saved, review } = answerRecord({ kind: 'recall', word: {} }, item, { grade: 'correct', answer: 'a', practice: true, lang: 'de', now: NOW });
   assert.notEqual(saved, item);
   assert.equal(saved.due, item.due);
-  assert.equal(saved.exerciseType, 'gap');
+  assert.equal(saved.reps, 3); // counts as a success, so the next exercise is harder
+  assert.equal(saved.exerciseType, 'recall');
   assert.equal(review.mode, 'practice');
   const miss = answerRecord({ kind: 'recall', word: {} }, item, { grade: 'wrong', answer: 'a', practice: true, lang: 'de', now: NOW });
   assert.equal(miss.saved.due, addDays(TODAY, 1));

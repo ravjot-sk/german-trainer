@@ -5,7 +5,7 @@ import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { logMistakes } from '../actions.js';
 import { t } from '../i18n.js';
-import { buildSession, practicePool, practiceQueue, ruleTask } from '../session.js';
+import { buildSession, practicePool, practiceQueue, newFor, ruleTask } from '../session.js';
 import { nextExercise, kindOf } from '../rules.js';
 import { isSentence } from '../languages.js';
 import { afterGap } from '../gappool.js';
@@ -28,7 +28,6 @@ function prepare(task) {
 // A new session in the active language; free practice adds { practice: true, focus }.
 const newSession = (tasks, extra = {}) => ({
   ...extra, tasks, lang: code(), idx: 0, correct: 0, answered: 0, requeued: new Set(), mistakesLogged: 0, followed: new Set(),
-  practised: new Set(),
 });
 
 export function startSession() {
@@ -90,13 +89,25 @@ export function logTaskMistakes(task, mistakes) {
 
 // Practice never runs out: it keeps a few tasks queued ahead of the current one.
 const PRACTICE_AHEAD = 3;
+// A round mixes in at most as many new words as a day introduces.
+const newLimit = () => store.getSettings().newPerDay ?? 8;
 
 export function startPractice(focus) {
-  ui.session = newSession([], { practice: true, focus });
+  ui.session = newSession([], { practice: true, focus, round: 1, roundStart: 0, newIds: null });
   topUpPractice();
   refillGaps();
   topUpRules();
   classifyOldMistakes();
+}
+
+// The next practice round goes through everything again (at its new level), with words not
+// started yet mixed in when the learner chose that.
+export function nextRound(withNew) {
+  const s = ui.session;
+  const pool = practicePool({ ...sessionArgs(), focus: s.focus });
+  Object.assign(s, { round: s.round + 1, roundStart: s.tasks.length, newIds: newFor(pool, { withNew, limit: newLimit() }) });
+  topUpPractice();
+  refillGaps();
 }
 
 export function topUpPractice() {
@@ -105,7 +116,10 @@ export function topUpPractice() {
   if (s.tasks.length >= s.idx + PRACTICE_AHEAD) return;
   // Built from current data each time, so answers already given change what comes next.
   const pool = practicePool({ ...sessionArgs(), focus: s.focus });
-  const added = practiceQueue(pool, { tasks: s.tasks, idx: s.idx, practised: s.practised, ahead: PRACTICE_AHEAD, focus: s.focus });
+  // Which new items the round mixes in is settled when the round starts.
+  s.newIds ||= newFor(pool, { withNew: false, limit: newLimit() });
+  const added = practiceQueue(pool, { tasks: s.tasks, idx: s.idx, roundStart: s.roundStart, newIds: s.newIds,
+    ahead: PRACTICE_AHEAD, focus: s.focus });
   for (const task of added) {
     prepare(task);
     s.tasks.push(task);
@@ -137,7 +151,5 @@ export function advance(task) {
       ui.session.tasks.splice(at, 0, task);
     }
   }
-  // In practice an item answered right (now or when it comes back) is done for this session.
-  if (grade !== 'wrong') ui.session.practised.add(task.item.id);
   ui.session.idx++;
 }

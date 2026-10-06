@@ -246,9 +246,7 @@ export function practicePool({ items, words, mistakes, reviews, gemini, drillabl
 
 // The next task for a practice session, or null when there is nothing (left) to practise.
 // recent: the review item ids of the latest tasks, newest last. skip: item ids that must not
-// come up now: ones already queued and not yet answered, and ones answered right this
-// session (a right answer on an item that isn't due changes nothing, so without this a short
-// list served the same word over and over). In the mix, about one task in three is grammar
+// come up now (ones already in this round). In the mix, about one task in three is grammar
 // when there is any.
 export function nextPracticeTask(pool, recent = [], { focus = 'mix', random = Math.random, skip = new Set() } = {}) {
   const open = pool.filter((x) => !skip.has(x.item.id));
@@ -265,18 +263,34 @@ export function nextPracticeTask(pool, recent = [], { focus = 'mix', random = Ma
   return weightedPick(fresh, random).make();
 }
 
-// The tasks to add to a practice session so `ahead` tasks wait after the current one (idx).
-// practised: item ids answered right this session. Neither those nor an item already waiting
-// are queued again, so the session ends once everything has been answered right.
-export function practiceQueue(pool, { tasks, idx, practised = new Set(), ahead = 3, focus = 'mix', random = Math.random }) {
+// Practice runs in rounds: each item in the pool comes up once per round (a miss also comes
+// back a few tasks later, see answer.requeueAt). Saved words not started yet wait until the
+// learner chooses to mix them in at the end of a round, unless nothing has been started.
+// The tasks to add so `ahead` tasks wait after the current one (idx); the round began at
+// task roundStart. newIds: the items not started yet that this round mixes in (newFor).
+// Empty when the round is over.
+export function practiceQueue(pool, { tasks, idx, roundStart = 0, newIds = new Set(), ahead = 3, focus = 'mix',
+  random = Math.random }) {
   const all = tasks.slice();
+  const open = pool.filter((x) => !isNew(x.item) || newIds.has(x.item.id));
   const added = [];
   while (all.length < idx + ahead) {
-    const skip = new Set([...practised, ...all.slice(idx).map((x) => x.item.id)]);
-    const task = nextPracticeTask(pool, all.map((x) => x.item.id), { focus, skip, random });
+    const skip = new Set(all.slice(roundStart).map((x) => x.item.id));
+    const task = nextPracticeTask(open, all.map((x) => x.item.id), { focus, skip, random });
     if (!task) break;
     all.push(task);
     added.push(task);
   }
   return added;
+}
+
+// How many saved items not started yet a round could mix in.
+export const newInPool = (pool) => pool.filter((x) => isNew(x.item)).length;
+
+// The items not started yet that a round mixes in: up to `limit`, the oldest saved first.
+// Without anything started, a round always takes them (else there would be nothing to do).
+export function newFor(pool, { withNew, limit = 8 }) {
+  const fresh = pool.filter((x) => isNew(x.item));
+  if (!withNew && fresh.length < pool.length) return new Set();
+  return new Set(fresh.sort((a, b) => (a.item.createdAt || 0) - (b.item.createdAt || 0)).slice(0, limit).map((x) => x.item.id));
 }
