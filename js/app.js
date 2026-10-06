@@ -16,6 +16,8 @@ import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs, pref, setPref }
 import { gem, L, code, langName, cats, noGemini, sessionArgs } from './ui/context.js';
 import { tl, furiMode, jt, furiShown, readingLine, toneLabel, fmtDate, fmtPast, diffHtml, mistakeList, correctionHtml, naturalBlock, bindNatural } from './ui/text.js';
 import { wordTitle } from './languages.js';
+import { registerRoutes, route, routeName, go } from './router.js';
+import { mountSheet, openSheet, sheetHead, moreFields } from './ui/sheet.js';
 
 // Japanese texts saved without furigana get it from Gemini once, in one call for a batch of
 // records; redraw runs when anything was added.
@@ -115,71 +117,14 @@ function bindLearnCard(redraw) {
   });
 }
 
-// ---------- routing ----------
-const routes = { today: viewToday, session: viewSession, lookup: viewLookup, correct: viewCorrect,
-  words: viewWords, profile: viewProfile, settings: viewSettings,
-  'settings/advanced': viewAdvanced, 'settings/backup': viewBackup };
-// Pages opened from another page get a back button to it; the tab bar marks their parent.
-const parents = { profile: 'today', 'settings/advanced': 'settings', 'settings/backup': 'settings' };
-
-const routeName = () => (location.hash.replace(/^#\/?/, '') || 'today').split('?')[0];
-
-function route() {
-  const name = routeName();
-  // Until a language and level are chosen, every page except Settings shows that choice.
-  const view = !L()?.level && !name.startsWith('settings') ? viewToday : routes[name] || viewToday;
-  const parent = parents[name];
-  $$('#tabs a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === (parent || name));
-    $('span', a).textContent = t(`tab.${a.dataset.route}`);
-  });
-  const back = $('#back');
-  back.classList.toggle('hidden', !parent);
-  back.setAttribute('aria-label', t('nav.back'));
-  back.dataset.to = parent || '';
-  $('#gear').classList.toggle('hidden', name.startsWith('settings'));
-  $('#gear').setAttribute('aria-label', t('settings.title'));
-  updatePill(name);
-  document.documentElement.lang = lang();
-  document.body.classList.toggle('in-session', name === 'session');
-  document.body.classList.toggle('furi-tap', furiMode() === 'tap');
-  main.scrollTop = 0;
-  window.scrollTo(0, 0);
-  view();
-}
-
-function go(name) {
-  if (location.hash === `#/${name}`) route(); else location.hash = `#/${name}`;
-}
-
-// ---------- Language pill and sheet ----------
-const PILL_ROUTES = ['today', 'lookup', 'correct', 'words', 'profile'];
-
-function updatePill(name) {
-  const pill = $('#langpill');
-  const cur = L();
-  const show = !!cur?.level && PILL_ROUTES.includes(name);
-  pill.classList.toggle('hidden', !show);
-  if (show) {
-    pill.innerHTML = `<span class="ellipsis">${esc(code().toUpperCase())} · ${esc(cur.level)}</span>${icon('down', 14)}`;
-    pill.title = `${langName()} · ${cur.level}`;
-    pill.setAttribute('aria-label', t('settings.langSheet'));
-  }
-}
-
+// ---------- Language sheet (from the pill) ----------
 function openLangSheet() {
-  const back = document.createElement('div');
-  back.className = 'sheet-backdrop';
-  back.innerHTML = `<div class="sheet form">
+  const { el: back, close } = mountSheet(`<div class="sheet form">
     <div class="sheet-head"><h2>${esc(t('settings.langSheet'))}</h2>
       <button type="button" class="icon-btn" data-act="close" aria-label="${esc(t('edit.close'))}">${icon('close', 22)}</button></div>
     ${learnCard()}
     <p class="muted small">${esc(t('settings.learningHelp'))}</p>
-  </div>`;
-  document.body.appendChild(back);
-  document.body.classList.add('no-scroll');
-  const close = () => { back.remove(); document.body.classList.remove('no-scroll'); route(); };
-  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  </div>`);
   $('[data-act=close]', back).addEventListener('click', close);
   bindLearnCard(close);
 }
@@ -1265,9 +1210,7 @@ function openEditor(id) {
     ? `<label>${esc(t('edit.article'))}<select name="article" ${tl(Lw.code)}>${['', ...Lw.articles].map((a) => `<option ${a === (w.article || '') ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select></label>`
     : '';
   const lemmaField = field('lemma', t(Lw.articles.length ? 'edit.lemmaNoArticle' : 'edit.lemma'));
-  const sheet = document.createElement('div');
-  sheet.className = 'sheet-backdrop';
-  sheet.innerHTML = `<form class="sheet">
+  openSheet(`
     ${sheetHead(id ? t('edit.title') : t('edit.newTitle'))}
     ${articleSelect ? `<div class="row2">${articleSelect}${lemmaField}</div>` : lemmaField}
     ${Lw.reading ? field('reading', t('edit.reading')) : ''}
@@ -1284,54 +1227,22 @@ function openEditor(id) {
       ${field('gapSentence', t('edit.gapSentence'), 'textarea')}
       ${field('gapAnswer', t('edit.gapAnswer'))}`)}
     <button type="submit" class="btn primary wide">${esc(t('edit.save'))}</button>
-    ${id ? `<button type="button" class="btn danger wide" data-act="delete">${esc(t('edit.delete'))}</button>` : ''}
-  </form>`;
-  document.body.appendChild(sheet);
-  document.body.classList.add('no-scroll');
-  const close = () => { sheet.remove(); document.body.classList.remove('no-scroll'); route(); };
-  sheet.addEventListener('click', (e) => { if (e.target === sheet) close(); });
-  $('[data-act=cancel]', sheet).addEventListener('click', close);
-  $('[data-act=delete]', sheet)?.addEventListener('click', () => {
-    if (!confirm(t('edit.confirmDelete', { w: wordTitle(w) }))) return;
-    store.deleteWord(id);
-    if (lastLookup?.word.id === id) lastLookup = null;
-    close();
-  });
-  $('form', sheet).addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fd = Object.fromEntries(new FormData(e.target).entries());
-    if (!fd.lemma.trim()) return;
-    fd.moreExamples = examplesFromText(fd.moreExamples);
-    if (id && !isSentence(w) && 'gapSentence' in fd && (fd.gapSentence !== (w.gapSentence || '') || fd.gapAnswer !== (w.gapAnswer || ''))) {
-      fd.gapPool = replaceInPool(poolOf(w), w.gapSentence, { sentence: fd.gapSentence, answer: fd.gapAnswer });
-      fd.gapCurrent = null;
-    }
-    if (id) store.updateWord(id, fd); else store.addWord({ ...fd, lang: Lw.code, source: 'manual' });
-    close();
-  });
-}
-
-// Sheet title with a close button (it cancels), and the fields most edits don't need.
-function sheetHead(title) {
-  return `<div class="sheet-head"><h2>${esc(title)}</h2>
-    <button type="button" class="icon-btn" data-act="cancel" aria-label="${esc(t('edit.cancel'))}">${icon('close', 22)}</button></div>`;
-}
-const moreFields = (html) => `<details class="more"><summary>${esc(t('edit.more'))} ${icon('down', 16)}</summary><div>${html}</div></details>`;
-
-// Opens a bottom sheet with a form; onSave gets the form fields.
-function openSheet(html, { onSave, onDelete }) {
-  const sheet = document.createElement('div');
-  sheet.className = 'sheet-backdrop';
-  sheet.innerHTML = `<form class="sheet">${html}</form>`;
-  document.body.appendChild(sheet);
-  document.body.classList.add('no-scroll');
-  const close = () => { sheet.remove(); document.body.classList.remove('no-scroll'); route(); };
-  sheet.addEventListener('click', (e) => { if (e.target === sheet) close(); });
-  $('[data-act=cancel]', sheet).addEventListener('click', close);
-  $('[data-act=delete]', sheet)?.addEventListener('click', () => { if (onDelete()) close(); });
-  $('form', sheet).addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (onSave(Object.fromEntries(new FormData(e.target).entries())) !== false) close();
+    ${id ? `<button type="button" class="btn danger wide" data-act="delete">${esc(t('edit.delete'))}</button>` : ''}`, {
+    onSave: (fd) => {
+      if (!fd.lemma.trim()) return false;
+      fd.moreExamples = examplesFromText(fd.moreExamples);
+      if (id && !isSentence(w) && 'gapSentence' in fd && (fd.gapSentence !== (w.gapSentence || '') || fd.gapAnswer !== (w.gapAnswer || ''))) {
+        fd.gapPool = replaceInPool(poolOf(w), w.gapSentence, { sentence: fd.gapSentence, answer: fd.gapAnswer });
+        fd.gapCurrent = null;
+      }
+      if (id) store.updateWord(id, fd); else store.addWord({ ...fd, lang: Lw.code, source: 'manual' });
+    },
+    onDelete: () => {
+      if (!confirm(t('edit.confirmDelete', { w: wordTitle(w) }))) return false;
+      store.deleteWord(id);
+      if (lastLookup?.word.id === id) lastLookup = null;
+      return true;
+    },
   });
 }
 
@@ -1771,6 +1682,9 @@ async function exportBackup() {
 }
 
 // ---------- boot ----------
+registerRoutes({ today: viewToday, session: viewSession, lookup: viewLookup, correct: viewCorrect,
+  words: viewWords, profile: viewProfile, settings: viewSettings,
+  'settings/advanced': viewAdvanced, 'settings/backup': viewBackup });
 window.addEventListener('hashchange', route);
 // Furigana on tap: tapping Japanese text shows its readings, tapping again hides them.
 // Word-order pieces are buttons, so they always show theirs.

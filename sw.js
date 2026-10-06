@@ -7,7 +7,7 @@ const SHELL = [
   './js/check.js', './js/session.js', './js/categories.js', './js/languages.js', './js/actions.js',
   './js/sync.js', './js/syncmerge.js', './js/firebase-config.js', './js/icons.js', './js/furigana.js', './js/gappool.js',
   './js/rules.js', './js/ruleseeds.js',
-  './js/ui/dom.js', './js/ui/context.js', './js/ui/text.js',
+  './js/ui/dom.js', './js/ui/context.js', './js/ui/text.js', './js/ui/sheet.js', './js/router.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 
