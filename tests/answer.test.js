@@ -102,3 +102,15 @@ test('requeue: wrong local answers come back at the end, or four tasks later in 
   assert.equal(requeueAt({ kind: 'recall' }, 'almost', { practice: false, idx: 2, length: 10 }), -1);
   assert.equal(requeueAt({ kind: 'write' }, 'wrong', { practice: false, idx: 2, length: 10 }), -1);
 });
+
+test('"I don\'t know" counts as a wrong answer: the run resets and the word comes back', () => {
+  const item = wordItem({ reps: 4, interval: 10, introducedAt: NOW - 30 * 86400000, due: addDays(TODAY, 5) });
+  for (const practice of [false, true]) {
+    const { saved, review } = answerRecord({ kind: 'recall', word: {} }, item, { grade: 'wrong', answer: '', practice, lang: 'de', now: NOW });
+    assert.equal(saved.reps, 0);
+    assert.equal(saved.lapses, 1);
+    assert.equal(saved.due, addDays(TODAY, 1));
+    assert.equal(review.correct, false);
+  }
+  assert.ok(requeueAt({ kind: 'recall' }, 'wrong', { practice: true, idx: 2, length: 10 }) > 2);
+});
