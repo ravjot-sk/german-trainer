@@ -261,6 +261,15 @@ function cleanMistakes(r) {
   return r;
 }
 
+// "Check again": the learner thinks the first verdict ({ correct, feedback }) was wrong.
+// Gemini looks again from scratch, at temperature 0, without giving in just because it was asked.
+function recheckNote(prev) {
+  if (!prev) return '';
+  return `\n\nThis is a second check, because the learner thinks the first verdict may be wrong. First verdict: ${prev.correct ? 'correct' : 'not correct'}${prev.feedback ? ` ("${prev.feedback}")` : ''}.
+Check again carefully from scratch. Change the verdict if it was wrong; keep it if it was right. Do not change it only because the learner asked.`;
+}
+const recheckTemp = (prev, temperature = 0.2) => ({ temperature: prev ? 0 : temperature });
+
 // ---------- features ----------
 export async function lookup(query, context) {
   const L = learner();
@@ -307,14 +316,14 @@ Fill every field for each word as a dictionary entry would.`;
   });
 }
 
-export async function correctText(text) {
+export async function correctText(text, { recheck } = {}) {
   const L = learner();
   const prompt = `You correct ${L.english} written by a learner at ${levelText(L)}. Correct this text:
 """${text}"""
 
 ${correctionRules(L)}
-Separately, if the text would sound clearly more natural phrased differently, put that version in natural. That is a suggestion, not a mistake.`;
-  const r = cleanMistakes(await generate(prompt, S({ ...correctionProps(L), ...naturalProps(L) })));
+Separately, if the text would sound clearly more natural phrased differently, put that version in natural. That is a suggestion, not a mistake.${recheckNote(recheck)}`;
+  const r = cleanMistakes(await generate(prompt, S({ ...correctionProps(L), ...naturalProps(L) }), recheckTemp(recheck)));
   return cleanNatural(r, r.correctedText);
 }
 
@@ -359,7 +368,7 @@ ${toneGuide(L)}`;
 
 // "Say this sentence" exercise: the learner translates a saved sentence's English meaning.
 // A different tone than the saved one is not a mistake, only a hint.
-export async function gradeTranslation(item, answer) {
+export async function gradeTranslation(item, answer, { recheck } = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} had to say this in ${L.english}, in the ${item.tone || 'everyday'} tone: "${item.meaning}"
 A model answer: """${lemmaOf(item)}"""
@@ -371,7 +380,7 @@ ${toneGuide(L)}
 
 ${correctionRules(L)}
 - Never report the tone or register of the answer as a mistake.
-Separately, if a correct answer would sound clearly more natural phrased differently, put that in natural.`;
+Separately, if a correct answer would sound clearly more natural phrased differently, put that in natural.${recheckNote(recheck)}`;
   const r = cleanMistakes(await generate(prompt, S({
     correct: { type: 'BOOLEAN' },
     toneMatches: { type: 'BOOLEAN' },
@@ -379,7 +388,7 @@ Separately, if a correct answer would sound clearly more natural phrased differe
     feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(L)}.` },
     ...correctionProps(L),
     ...naturalProps(L),
-  })));
+  }), recheckTemp(recheck)));
   // Belt and braces: a tone mismatch never lands in the mistake profile.
   r.mistakes = (r.mistakes || []).filter((m) => m.category !== 'register');
   if (r.toneMatches) r.toneHint = '';
@@ -387,14 +396,14 @@ Separately, if a correct answer would sound clearly more natural phrased differe
 }
 
 // "Write a sentence" exercise: correct it and judge whether the target word is used well.
-export async function gradeWordSentence(word, sentence) {
+export async function gradeWordSentence(word, sentence, { recheck } = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} had to write an original sentence using "${wordTitle(word)}" (${word.meaning}).
 Their sentence: """${sentence}"""
 Judge whether the word is used correctly and naturally, and correct the sentence.
 
 ${correctionRules(L)}
-Separately, if the sentence would sound clearly more natural phrased differently (still using the word), put that in natural.`;
+Separately, if the sentence would sound clearly more natural phrased differently (still using the word), put that in natural.${recheckNote(recheck)}`;
   const r = cleanMistakes(await generate(prompt, S({
     usesWordCorrectly: { type: 'BOOLEAN' },
     gapSentence: { type: 'STRING', description: 'If the word is used correctly: the corrected sentence with the exact form of the word replaced by "___". Otherwise empty.' },
@@ -403,7 +412,7 @@ Separately, if the sentence would sound clearly more natural phrased differently
     feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(L)}.` },
     ...correctionProps(L),
     ...naturalProps(L),
-  })));
+  }), recheckTemp(recheck)));
   return cleanNatural(r, r.correctedText);
 }
 
@@ -438,13 +447,13 @@ ${lines}`;
 
 // A second opinion on a gap answer the local check found wrong: whether it is the word, in a
 // form that is correct and natural in that sentence. Returns { correct, feedback }.
-export async function checkGap(word, gap, answer) {
+export async function checkGap(word, gap, answer, { recheck } = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} is filling a gap with a form of "${wordTitle(word)}" (${word.meaning}).
 Sentence: """${gap.sentence}"""
 Expected: """${gap.answer}"""${(gap.acceptable || []).length ? ` (also fine: ${gap.acceptable.map((x) => `"${x}"`).join(', ')})` : ''}
 Learner's answer: """${answer}"""
-correct is true when the learner's answer is a form of this word that makes the sentence grammatical and natural, even if it differs from the expected one (another politeness level or tense${L.reading ? `, or written in ${L.reading} instead of its usual script` : ''}). It is false for another word, a form that doesn't fit the sentence, or a misspelling.`;
+correct is true when the learner's answer is a form of this word that makes the sentence grammatical and natural, even if it differs from the expected one (another politeness level or tense${L.reading ? `, or written in ${L.reading} instead of its usual script` : ''}). It is false for another word, a form that doesn't fit the sentence, or a misspelling.${recheckNote(recheck)}`;
   const r = await generate(prompt, S({
     correct: { type: 'BOOLEAN' },
     feedback: { type: 'STRING', description: `One short sentence in ${explainLang(L)}.` },
@@ -560,7 +569,7 @@ ${texts.map((x, i) => `${i + 1}. ${x}`).join('\n')}`;
 }
 
 // Grades a free answer to a drill (transform, constraint or "fix your sentence").
-export async function gradeAnswer({ instruction, prompt: shown, model, answer, category, rule = null }) {
+export async function gradeAnswer({ instruction, prompt: shown, model, answer, category, rule = null, recheck = null }) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} is doing a grammar exercise (focus: ${categoryLabel(category, 'en', categoriesFor(L))}${rule ? `, rule: ${rule.name}${rule.statement ? ` (${rule.statement})` : ''}` : ''}).
 Instruction: ${instruction}
@@ -570,12 +579,41 @@ Learner's answer: """${answer}"""
 Decide if the learner's answer fulfils the task and is grammatically correct ${L.english}. Other correct solutions than the model answer count as correct.
 Then list the learner's mistakes, if any.
 
-${correctionRules(L)}`;
+${correctionRules(L)}${recheckNote(recheck)}`;
   return cleanMistakes(await generate(prompt, S({
     correct: { type: 'BOOLEAN' },
     feedback: { type: 'STRING', description: `One or two sentences in ${explainLang(L)}.` },
     ...correctionProps(L),
-  })));
+  }), recheckTemp(recheck)));
+}
+
+// "Check again" on an exercise the app checks itself (a word, a gap, word order, a choice):
+// Gemini judges the answer against the expected one. Other correct answers count; a small slip
+// in an otherwise right answer (a typo, a missing accent) is minor. Returns
+// { correct, minor, feedback }.
+export async function judgeAnswer({ instruction, shown = '', expected, answer, recheck = null }) {
+  const L = learner();
+  const prompt = `A ${L.english} learner at ${levelText(L)} is doing an exercise.
+Task: ${instruction}
+${shown ? `Shown to the learner: """${shown}"""\n` : ''}Expected answer: """${expected}"""
+Learner's answer: """${answer}"""
+correct is true when the learner's answer fulfils the task and is correct ${L.english}, even if it differs from the expected answer (another correct word, form or word order). minor is true when the answer is right except for a small slip such as a typo or a missing accent; then correct is false.${recheckNote(recheck)}`;
+  const r = await generate(prompt, S({
+    correct: { type: 'BOOLEAN' },
+    minor: { type: 'BOOLEAN' },
+    feedback: { type: 'STRING', description: `One or two short sentences in ${explainLang(L)}.` },
+  }), { temperature: 0 });
+  return { correct: !!r.correct, minor: !r.correct && !!r.minor, feedback: String(r.feedback || '') };
+}
+
+// English translations of texts in the language being learnt, in the same order.
+export async function translateTexts(texts) {
+  if (!texts.length) return [];
+  const L = learner();
+  const prompt = `Translate each of these ${L.english} texts into natural English, keeping the meaning and tone. Return them in the same order.
+${texts.map((x, i) => `${i + 1}. ${x}`).join('\n')}`;
+  const r = await generate(prompt, S({ translations: { type: 'ARRAY', items: STR, description: 'The English translations, same order and count.' } }), { temperature: 0 });
+  return texts.map((_, i) => String(r.translations?.[i] || '').trim());
 }
 
 // Describes a language the learner wants to add: its code, how its words are written and
