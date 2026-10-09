@@ -3,18 +3,26 @@
 import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
-import { compare, compareAny, compareExact, checkRecall, checkGap, needsPlural } from '../check.js';
+import { compare, compareAny, compareExact, checkRecall, checkGap, needsPlural, stripArticle } from '../check.js';
 import { recLang, lemmaOf, wordTitle, isSentence } from '../languages.js';
 import { icon } from '../icons.js';
 import { poolOf } from '../gappool.js';
 import { esc, $ } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
 import { tl, jt, furiShown, toneLabel, diffHtml, correctionHtml, naturalBlock } from '../ui/text.js';
-import { ruleCompare, transformGrade, strictGrade, isExact } from '../answer.js';
+import { ruleCompare, transformGrade, strictGrade, isExact, fixPairs } from '../answer.js';
 
 const grading = (fb) => { fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`; };
 const para = (x) => (x ? `<p>${esc(x)}</p>` : '');
 const numbered = (list) => list.map((x, i) => `${i + 1}. ${x}`).join('\n');
+
+// A wrong answer the app checked itself, corrected: what the learner wrote with the wrong
+// words crossed out and the right ones marked. parts: [answer, right answer(s)].
+function fixHtml(grade, parts, c) {
+  const pairs = fixPairs(grade, parts);
+  return pairs.length ? `<div class="your-fix"><div class="muted small">${esc(t('session.yourFix'))}</div>
+    ${pairs.map(([a, e]) => `<div class="sentence" ${tl(c)}>${diffHtml(a, e)}</div>`).join('')}</div>` : '';
+}
 
 // Gemini's verdict on an answer the app checked itself, for "Check again".
 async function judged(fb, args) {
@@ -45,7 +53,8 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
       almostKey = null;
     }
     canOverride = grade !== 'correct';
-    html = para(verdict) + wordReveal(w);
+    const parts = [r.main !== 'correct' && [a1, r.target], r.plural && r.plural !== 'correct' && [stripArticle(a2), r.pluralTarget]];
+    html = para(verdict) + fixHtml(grade, parts.filter(Boolean), recLang(w)) + wordReveal(w);
   } else if (task.kind === 'order') {
     grade = compare(a1, lemmaOf(w));
     if (recheck) {
@@ -53,7 +62,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
         shown: task.parts.join(' | '), expected: lemmaOf(w), answer: a1, recheck }));
     }
     canOverride = grade !== 'correct';
-    html = para(verdict) + sentenceReveal(w);
+    html = para(verdict) + fixHtml(grade, [[a1, lemmaOf(w)]], recLang(w)) + sentenceReveal(w);
   } else if (task.kind === 'say') {
     if (gem()) {
       grading(fb);
@@ -69,7 +78,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
     } else {
       grade = compare(a1, lemmaOf(w));
       canOverride = grade !== 'correct';
-      html = sentenceReveal(w);
+      html = fixHtml(grade, [[a1, lemmaOf(w)]], recLang(w)) + sentenceReveal(w);
     }
   } else if (task.kind === 'gap') {
     if (isSentence(w)) {
@@ -93,7 +102,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
       }
     }
     canOverride = grade !== 'correct';
-    html = para(verdict) + gapReveal(task);
+    html = para(verdict) + fixHtml(grade, [[a1, [task.gap.answer, ...(task.gap.acceptable || [])]]]) + gapReveal(task);
   } else if (task.kind === 'rule') {
     ({ grade, html, canOverride, mistakes, verdict } = await checkRule(task, a1, fb, recheck));
   } else if (task.kind === 'write') {
@@ -117,7 +126,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
         ({ grade, verdict } = await judged(fb, { instruction: d.instruction, shown: d.prompt, expected: d.answer, answer: a1, recheck }));
       }
       canOverride = grade !== 'correct';
-      html = para(verdict) + drillReveal(task);
+      html = para(verdict) + fixHtml(grade, [[a1, [d.answer, ...(d.acceptableAnswers || [])]]]) + drillReveal(task);
     } else {
       grading(fb);
       const r = await gemini.gradeAnswer({ instruction: d.instruction, prompt: d.prompt, model: d.answer, answer: a1, category: task.category, recheck });
@@ -144,7 +153,7 @@ async function checkRule(task, a1, fb, recheck) {
       ({ grade, verdict } = await judged(fb, { instruction: `Pick the sentence that is correct${about}.`,
         shown: task.order.join(' / '), expected: e.correct, answer: a1, recheck }));
     }
-    html = para(verdict) + ruleReveal(task);
+    html = para(verdict) + fixHtml(grade, [[a1, e.correct]]) + ruleReveal(task);
   } else if (task.ruleKind === 'gap') {
     grade = ruleCompare(rule, a1, [e.answer, ...(e.acceptable || [])]);
     if (recheck) {
@@ -152,33 +161,50 @@ async function checkRule(task, a1, fb, recheck) {
         shown: e.sentence, expected: e.answer, answer: a1, recheck }));
     }
     canOverride = grade !== 'correct';
-    html = para(verdict) + ruleReveal(task);
+    html = para(verdict) + fixHtml(grade, [[a1, [e.answer, ...(e.acceptable || [])]]]) + ruleReveal(task);
   } else if (task.ruleKind === 'transform') {
     const answers = e.items.map((_, i) => $(i ? `#t${i}` : '#a1').value);
-    const grades = e.items.map((x, i) => ruleCompare(rule, answers[i], [x.answer, ...(x.acceptable || [])]));
-    // An answer that doesn't match the model or the listed alternatives may still be right
-    // (another word order, another correct form): Gemini gets a second look at it.
+    const rights = e.items.map((x) => [x.answer, ...(x.acceptable || [])]);
+    const grades = e.items.map((x, i) => ruleCompare(rule, answers[i], rights[i]));
     const notes = [];
-    const unsure = grades.map((g, i) => (g === 'wrong' && answers[i].trim() ? i : -1)).filter((i) => i >= 0);
-    if (unsure.length && gem() && !recheck) {
+    const unsure = grades.map((g, i) => (g !== 'correct' && answers[i].trim() ? i : -1)).filter((i) => i >= 0);
+    if (unsure.length && gem()) {
       grading(fb);
-      await Promise.all(unsure.map(async (i) => {
-        const x = e.items[i];
-        const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: x.prompt, model: x.answer, answer: answers[i], category: rule.category, rule })
-          .catch(() => null);
-        if (r?.correct) grades[i] = 'correct';
-        else if (r?.feedback) notes[i] = r.feedback;
-      }));
+      if (recheck) {
+        // "Check again" looks at every sentence that isn't an exact match on its own, so each
+        // sentence's mark follows the new verdict.
+        const first = task.itemVerdicts || [];
+        await Promise.all(unsure.map(async (i) => {
+          const x = e.items[i];
+          const o = await gemini.judgeAnswer({ instruction: `${e.instruction}${about}`, shown: x.prompt, expected: x.answer, answer: answers[i],
+            recheck: { correct: first[i]?.grade === 'correct', feedback: first[i]?.note || '' } });
+          grades[i] = o.correct ? 'correct' : o.minor ? 'almost' : 'wrong';
+          notes[i] = o.correct ? '' : o.feedback;
+        }));
+      } else {
+        // An answer that doesn't match the model or the listed alternatives may still be right
+        // (another word order, another correct form): Gemini gets a second look at it.
+        await Promise.all(unsure.filter((i) => grades[i] === 'wrong').map(async (i) => {
+          const x = e.items[i];
+          const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: x.prompt, model: x.answer, answer: answers[i], category: rule.category, rule })
+            .catch(() => null);
+          if (r?.correct) grades[i] = 'correct';
+          else if (r?.feedback) notes[i] = r.feedback;
+        }));
+      }
     }
+    task.itemVerdicts = grades.map((g, i) => ({ grade: g, note: notes[i] || '' }));
     grade = transformGrade(grades);
-    if (recheck) {
-      ({ grade, verdict } = await judged(fb, { instruction: `${e.instruction}${about}`, shown: numbered(e.items.map((x) => x.prompt)),
-        expected: numbered(e.items.map((x) => x.answer)), answer: numbered(answers), recheck }));
-    }
+    verdict = notes.filter(Boolean).join(' ');
     canOverride = grade !== 'correct';
     task.answerText = answers.join(' / ');
-    html = `${para(verdict)}<div class="reveal">${e.items.map((x, i) => `<div class="tf-result ${grades[i] === 'correct' ? 'ok' : 'bad'}">
-      ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${jt(x.answer, e)}</span></div>${why(notes[i])}`).join('')}${why(e.explanation)}</div>`;
+    // A right sentence shows the model answer; a wrong one shows the learner's answer corrected.
+    const line = (x, i) => {
+      const [fix] = fixPairs(grades[i], [[answers[i], rights[i]]]);
+      return fix ? diffHtml(...fix) : jt(x.answer, e);
+    };
+    html = `<div class="reveal">${e.items.map((x, i) => `<div class="tf-result ${grades[i] === 'correct' ? 'ok' : 'bad'}">
+      ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${line(x, i)}</span></div>${why(notes[i])}`).join('')}${why(e.explanation)}</div>`;
   } else if (task.ruleKind === 'spot') {
     grade = isExact(rule) ? compareExact(a1, e.corrected) : compare(a1, e.corrected);
     if ((grade !== 'correct' || recheck) && gem()) {
@@ -189,7 +215,7 @@ async function checkRule(task, a1, fb, recheck) {
       verdict = r.feedback || '';
     }
     canOverride = grade !== 'correct' && !gem();
-    html = para(verdict) + ruleReveal(task);
+    html = para(verdict) + fixHtml(grade, [[a1, e.corrected]]) + ruleReveal(task);
   } else {
     grading(fb);
     const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: '', model: e.model, answer: a1, category: rule.category, rule, recheck });
