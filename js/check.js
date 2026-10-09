@@ -11,10 +11,19 @@ export function normalize(s) {
   return (s || '')
     // NFKC folds full-width letters, digits and punctuation (Ａ, １, ！) to their usual forms.
     .normalize('NFKC')
+    // Invisible characters (soft hyphen, zero-width spaces) that text from Gemini may carry.
+    .replace(/[\u00ad\u200b-\u200d\u2060\ufeff]/g, '')
+    // Every dash and hyphen counts as the "-" on the keyboard.
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
     .replace(/[„“”"«»‚‘’'「」『』]/g, '')
     .replace(/\s+/g, ' ')
     .replace(/\s*([,;:、])\s*/g, '$1 ')
-    .replace(/[.!?…。]+$/g, '')
+    // No space before a full stop, question or exclamation mark, or an ellipsis.
+    .replace(/\s+([.!?])/g, '$1')
+    // Trimmed first, so a space after the final full stop (iPhone types ". " on a double
+    // space) doesn't keep the stop in the answer.
+    .trim()
+    .replace(/\s*[.!?…。]+$/g, '')
     .trim();
 }
 
@@ -46,9 +55,10 @@ export function compareAny(answer, expectedList) {
 // German nouns are typed in separate article and word boxes. A word typed with its article
 // already in the word box is taken as it is.
 export function joinArticle(article, word) {
-  const a = (article || '').trim();
-  const w = (word || '').trim();
-  return !a || /^(der|die|das)\s/i.test(w) ? w : `${a} ${w}`;
+  const a = (article || '').trim().toLowerCase();
+  // An article is always written in lower case in the answer, so "Der" counts as "der".
+  const w = (word || '').trim().replace(/^(der|die|das)(?=\s)/i, (m) => m.toLowerCase());
+  return !a || /^(der|die|das)\s/.test(w) ? w : `${a} ${w}`;
 }
 
 export function stripArticle(s) {

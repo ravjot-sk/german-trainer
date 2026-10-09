@@ -100,3 +100,28 @@ test('noun recall joins the article and word boxes', () => {
   assert.equal(checkRecall(w, joinArticle('die', 'Zaun'), 'Zäune').grade, 'wrong');
   assert.equal(checkRecall(w, joinArticle('der', 'Zaun'), 'Zaune').grade, 'wrong');
 });
+
+test('a space after the final full stop does not make a sentence wrong', () => {
+  const s = 'Der kleine Junge ist sofort eingeschlafen.';
+  assert.equal(compare(`${s} `, s), 'correct');
+  assert.equal(compare(`${s}\n`, s), 'correct');
+  assert.equal(compare('Der kleine Junge ist sofort eingeschlafen .', s), 'correct');
+});
+
+test('spaces before punctuation, dash styles and invisible characters do not make an answer wrong', () => {
+  assert.equal(compare('Ich warte . Dann gehe ich.', 'Ich warte. Dann gehe ich.'), 'correct');
+  assert.equal(compare('Ich warte... und warte.', 'Ich warte … und warte.'), 'correct');
+  assert.equal(compare('Kommst du ?', 'Kommst du?'), 'correct');
+  assert.equal(compare('9-17 Uhr', '9–17 Uhr'), 'correct');
+  assert.equal(compare('E-Mail', 'E‑Mail'), 'correct');
+  assert.equal(compare('Hallo Welt', 'Hal­lo​ Welt'), 'correct');
+  // Real mistakes still count.
+  assert.equal(compare('Ich weiß dass er kommt.', 'Ich weiß, dass er kommt.'), 'wrong');
+  assert.equal(compare('Strasse', 'Straße'), 'wrong');
+});
+
+test('a capitalised article counts as the article', () => {
+  assert.equal(joinArticle('Der', 'Tisch'), 'der Tisch');
+  assert.equal(joinArticle('', 'Die Katze'), 'die Katze');
+  assert.equal(checkRecall({ pos: 'noun', article: 'der', lemma: 'Tisch', plural: 'Tische' }, joinArticle('Der', 'Tisch'), 'Die Tische').grade, 'correct');
+});
