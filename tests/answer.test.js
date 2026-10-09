@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dayStart, addDays } from '../js/srs.js';
 import { newRuleItem } from '../js/rules.js';
-import { ruleCompare, transformGrade, strictGrade, ownMistake, followUpIds, answerRecord, requeueAt } from '../js/answer.js';
+import { ruleCompare, transformGrade, strictGrade, ownMistake, followUpIds, answerRecord, requeueAt, closestAnswer, fixPairs } from '../js/answer.js';
 
 const NOW = new Date('2026-10-06T10:00:00').getTime();
 const TODAY = dayStart(NOW);
@@ -113,4 +113,17 @@ test('"I don\'t know" counts as a wrong answer: the run resets and the word come
     assert.equal(review.correct, false);
   }
   assert.ok(requeueAt({ kind: 'recall' }, 'wrong', { practice: true, idx: 2, length: 10 }) > 2);
+});
+
+test('corrections: a wrong answer is corrected towards the closest right answer', () => {
+  assert.equal(closestAnswer('Die Bücher liegt auf dem Regal.', ['Die Bücher liegen auf dem Regal.', 'Auf dem Regal liegen die Bücher.']),
+    'Die Bücher liegen auf dem Regal.');
+  assert.deepEqual(fixPairs('wrong', [['Die Bücher liegt auf dem Regal. ', ['Die Bücher liegen auf dem Regal.']]]),
+    [['Die Bücher liegt auf dem Regal.', 'Die Bücher liegen auf dem Regal.']]);
+  assert.deepEqual(fixPairs('almost', [['die tische', 'die Tische']]), [['die tische', 'die Tische']]);
+});
+
+test('corrections: nothing to correct in a right, empty or matching answer', () => {
+  assert.deepEqual(fixPairs('correct', [['Tische', 'Tisch']]), []);
+  assert.deepEqual(fixPairs('wrong', [['', 'Tisch'], [' Tisch ', 'Tisch'], ['Stuhl', ['Tisch', 'Stuhl']]]), []);
 });

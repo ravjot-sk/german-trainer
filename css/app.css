@@ -232,6 +232,7 @@ body.in-session main { min-height: 100vh; min-height: 100dvh; }
 .english-title { font-weight: 600; font-size: 14px; color: var(--accent); }
 .english-pair { display: flex; flex-direction: column; gap: 2px; }
 .reveal { display: flex; flex-direction: column; gap: 4px; }
+.your-fix { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .kv { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
 .kv > span:first-child { color: var(--muted); font-size: 14px; min-width: 58px; }
 .sentence { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); border-left: 3px solid var(--accent); padding: 8px 10px; border-radius: 6px; }

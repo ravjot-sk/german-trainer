@@ -2,7 +2,7 @@
 // toward the exercise itself, and what is saved and requeued afterwards. Pure functions so
 // they can be unit-tested in Node.
 import { schedule, schedulePractice } from './srs.js';
-import { compareAny, compareAnyExact } from './check.js';
+import { compareAny, compareAnyExact, wordDiff } from './check.js';
 import { afterAnswer, useExercise, ruleItemId } from './rules.js';
 
 // ---- grading rule exercises ----
@@ -18,6 +18,31 @@ export const transformGrade = (grades) =>
 
 // A near miss on a rule that is about case is a miss.
 export const strictGrade = (rule, grade) => (grade === 'almost' && isExact(rule) ? 'wrong' : grade);
+
+// ---- showing a wrong answer corrected ----
+// Of the right answers, the one that needs the fewest changes to the learner's answer, so the
+// correction shown changes as little of what they wrote as possible.
+export function closestAnswer(answer, list) {
+  const a = (answer || '').trim();
+  const cost = (e) => wordDiff(a, e).reduce((n, p) => n + (p.type === 'same' ? 0 : p.text.length), 0);
+  let best = '', min = Infinity;
+  for (const e of list.filter(Boolean).map((x) => String(x).trim())) {
+    const c = cost(e);
+    if (c < min) { best = e; min = c; }
+  }
+  return best;
+}
+
+// What to correct in a checked answer: [answer, right answer] for each part the learner wrote
+// that isn't exactly a right answer. parts: [answer, right answer or list of right answers].
+export function fixPairs(grade, parts) {
+  if (grade === 'correct') return [];
+  return parts.map(([answer, expected]) => {
+    const a = (answer || '').trim();
+    const e = Array.isArray(expected) ? closestAnswer(a, expected) : String(expected || '').trim();
+    return a && e && a !== e ? [a, e] : null;
+  }).filter(Boolean);
+}
 
 // ---- after an answer ----
 // Anything written freely counts as new writing, whatever the exercise was about. Only a
