@@ -1,10 +1,11 @@
 // Write: Gemini corrects a text; its mistakes go to the profile.
+import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { logMistakes } from '../actions.js';
 import { icon } from '../icons.js';
 import { main, titleEl, esc, $, toast, errorBox } from '../ui/dom.js';
-import { code, langName, ui } from '../ui/context.js';
+import { code, langName, gem, ui } from '../ui/context.js';
 import { tl, diffHtml, mistakeList, naturalBlock, bindNatural } from '../ui/text.js';
 import { wordTitle } from '../languages.js';
 import { routeName } from '../router.js';
@@ -43,7 +44,7 @@ export function viewCorrect() {
     try {
       const r = await gemini.correctText(text);
       const logged = logMistakes(r.mistakes, 'correction', code());
-      ui.lastCorrection = { text, lang: code(), ...r, newWords: logged.words.map(wordTitle) };
+      ui.lastCorrection = { text, lang: code(), ...r, newWords: logged.words.map(wordTitle), mistakeIds: logged.mistakes.map((m) => m.id) };
       ui.correctOpen = false;
       if (routeName() === 'correct') { viewCorrect(); window.scrollTo(0, 0); }
     } catch (err) {
@@ -51,6 +52,32 @@ export function viewCorrect() {
     }
   });
   bindCopy();
+  bindRecheck();
+}
+
+// "Check again": Gemini corrects the same text once more. Its result replaces the first one,
+// and the mistakes the first check saved are swapped for the new ones.
+function bindRecheck() {
+  $('#recheck')?.addEventListener('click', async () => {
+    const c = ui.lastCorrection;
+    const btn = $('#recheck');
+    btn.disabled = true;
+    btn.textContent = t('correct.loading');
+    try {
+      const first = { correct: !c.mistakes.length, feedback: c.mistakes.map((m) => `${m.original} → ${m.corrected}`).join('; ') };
+      const r = await gemini.correctText(c.text, { recheck: first });
+      if (ui.lastCorrection !== c) return;
+      store.removeMistakes(c.mistakeIds || []);
+      const logged = logMistakes(r.mistakes, 'correction', c.lang);
+      const newWords = [...new Set([...(c.newWords || []), ...logged.words.map(wordTitle)])];
+      ui.lastCorrection = { text: c.text, lang: c.lang, ...r, newWords, mistakeIds: logged.mistakes.map((m) => m.id), rechecked: true };
+      if (routeName() === 'correct') viewCorrect();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = t('correct.recheck');
+      toast(err.message || String(err));
+    }
+  });
 }
 
 function correctionResult(c) {
@@ -62,6 +89,8 @@ function correctionResult(c) {
       <p class="muted small">${esc(t('correct.logged'))}</p>` : `<p>${esc(t('correct.noMistakes'))}</p>`}
     ${c.newWords?.length ? `<p class="muted small">${esc(t('correct.wordsAdded', { w: c.newWords.join(', ') }))}</p>` : ''}
     ${naturalBlock(c.natural, c.naturalReason, c.lang)}
+    ${c.rechecked ? `<p class="muted small">${esc(t('correct.rechecked'))}</p>`
+      : gem() && c.lang === code() ? `<button class="btn small" id="recheck">${esc(t('correct.recheck'))}</button>` : ''}
   </section>`;
 }
 

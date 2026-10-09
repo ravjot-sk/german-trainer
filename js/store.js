@@ -206,6 +206,15 @@ export function addMistakes(list, source, code = 'de', now = Date.now()) {
   return added;
 }
 
+// Takes back mistakes a second check withdrew. The rules and categories they touched stay
+// scheduled.
+export function removeMistakes(ids) {
+  const drop = new Set(ids);
+  if (!drop.size) return;
+  data.mistakes = data.mistakes.filter((m) => !drop.has(m.id));
+  persist();
+}
+
 // Mistakes saved before rules existed, still waiting for Gemini to name their rule.
 export function mistakesWithoutRule(code) {
   return mistakes(code).filter((m) => !m.ruleChecked && hasRules(m.category));

@@ -147,6 +147,17 @@ in one go, in the background when a session starts.
 
 After "write a sentence" and "say it", you may also see a more natural phrasing that you can save.
 
+**Buttons on every exercise.**
+
+- **Weiß ich nicht** (I don't know) shows the answer. It counts as a wrong answer, so the item comes back, but
+  nothing goes into your mistake profile. **Überspringen** (Skip) moves on without saving anything.
+- **Auf Englisch** (In English) appears once you've answered. It shows the English of the sentences in the
+  exercise. Translations Gemini adds for gap sentences and examples are saved with the word.
+- **Nochmal prüfen** (Check again) appears with the result when Gemini is set up. If a verdict looks wrong, Gemini
+  checks the same answer once more, and its new verdict replaces the first. Mistakes are only saved when you tap
+  **Weiter** (Next), so a mistake the second check takes back never reaches your profile. **Korrigieren** has the
+  same button: there the second check replaces the first one's mistakes in your profile.
+
 **Grammar.** This comes from your own mistakes. You practise the **rule** behind a mistake, in new sentences
 each time, never by re-fixing the old sentence. Each rule climbs a ladder of five steps:
 

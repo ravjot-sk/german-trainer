@@ -5,7 +5,6 @@ import { joinArticle, needsPlural, gapFor, chunksFor, joinChunks, shuffled } fro
 import { categoryLabel } from '../categories.js';
 import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
-import { pickGap } from '../gappool.js';
 import { practicePool, newInPool } from '../session.js';
 import { segmentsFor, cutChunks, toHtml } from '../furigana.js';
 import { main, titleEl, esc, $, $$, errorBox, inputAttrs } from '../ui/dom.js';
@@ -13,7 +12,9 @@ import { gem, code, langName, cats, sessionArgs, ui } from '../ui/context.js';
 import { tl, furiMode, jt, readingLine, toneLabel, bindNatural } from '../ui/text.js';
 import { go } from '../router.js';
 import { startSession, logTaskMistakes, topUpPractice, advance, nextRound } from './runtime.js';
-import { gradeTask } from './grade.js';
+import { gradeTask, revealFor } from './grade.js';
+import { englishButton, bindEnglish } from './english.js';
+import { pickGap, poolOf, addToPool, gapLevel } from '../gappool.js';
 import { bindSuggest } from '../views/suggest.js';
 
 export function viewSession() {
@@ -39,7 +40,11 @@ export function viewSession() {
     <section class="card exercise" id="ex"></section>
     <div class="dock" id="dock"></div>
   `;
-  $('#quit').addEventListener('click', () => { ui.session.ended = true; viewSession(); });
+  $('#quit').addEventListener('click', () => {
+    if (task.state.phase === 'feedback') commit(task);
+    ui.session.ended = true;
+    viewSession();
+  });
   renderTask(task);
 }
 
@@ -149,7 +154,10 @@ async function renderTask(task) {
     <div id="feedback"></div>`;
   $('#dock').innerHTML = `
     <button class="btn primary" id="check">${esc(t('session.check'))}</button>
-    <button class="btn text" id="skip">${esc(t('session.skip'))}</button>`;
+    <div class="dock-row">
+      <button class="btn text" id="dontKnow">${esc(t('session.dontKnow'))}</button>
+      <button class="btn text" id="skip">${esc(t('session.skip'))}</button>
+    </div>`;
 
   $('#ex input.answer, #ex textarea.answer')?.focus({ preventScroll: true });
   if (task.kind === 'order') bindOrder(task);
@@ -165,6 +173,7 @@ async function renderTask(task) {
   }
   $('#check')?.addEventListener('click', () => onCheck(task));
   $('#skip').addEventListener('click', () => { ui.session.idx++; viewSession(); });
+  $('#dontKnow').addEventListener('click', () => onDontKnow(task));
   $$('input.answer', ex).forEach((el) => el.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -281,42 +290,97 @@ async function onCheck(task) {
   if (!a1.trim()) return;
   task.state.phase = 'checking';
   const fb = $('#feedback');
-  const checkBtn = $('#check');
-  checkBtn.disabled = true;
-  $('#skip').disabled = true;
+  const buttons = $$('#dock button');
+  buttons.forEach((b) => (b.disabled = true));
   let result;
   try {
     result = await gradeTask(task, a1, a2, fb);
   } catch (e) {
     task.state.phase = 'answer';
-    checkBtn.disabled = false;
-    $('#skip').disabled = false;
+    buttons.forEach((b) => (b.disabled = false));
     fb.innerHTML = errorBox(e);
     return;
   }
-  const { grade, html, canOverride, mistakes, almostKey } = result;
-  if (mistakes.length) logTaskMistakes(task, mistakes);
-  task.state = { phase: 'feedback', grade, almostKey, answer: a1 + (a2 ? ` / ${a2}` : ''), feedback: html };
-  showFeedback(task, canOverride);
+  task.state = feedbackState(result, a1, a2);
+  showFeedback(task, result.canOverride);
+}
+
+const feedbackState = (r, a1, a2) => ({
+  phase: 'feedback', grade: r.grade, almostKey: r.almostKey, a1, a2, answer: a1 + (a2 ? ` / ${a2}` : ''), feedback: r.html,
+  verdict: r.verdict, mistakes: r.mistakes, ownGap: r.ownGap, corrected: r.corrected, natural: r.natural,
+});
+
+// "I don't know": the answer is shown, and it counts as a wrong answer (nothing is logged to
+// the mistake profile).
+function onDontKnow(task) {
+  if (task.state.phase !== 'answer') return;
+  task.state = { phase: 'feedback', grade: 'wrong', dontKnow: true, answer: '', feedback: revealFor(task), mistakes: [] };
+  showFeedback(task, false);
+}
+
+// "Check again": Gemini looks at the same answer once more, and its verdict replaces the first.
+async function onRecheck(task) {
+  const st = task.state;
+  if (st.phase !== 'feedback' || st.rechecked) return;
+  st.phase = 'checking';
+  const fb = $('#feedback');
+  const shown = fb.innerHTML;
+  $$('#dock button').forEach((b) => (b.disabled = true));
+  let result;
+  try {
+    result = await gradeTask(task, st.a1, st.a2, fb, { correct: st.grade === 'correct', feedback: st.verdict });
+  } catch (e) {
+    if (ui.session?.tasks[ui.session.idx] !== task) return;
+    st.phase = 'feedback';
+    fb.innerHTML = shown + errorBox(e);
+    $$('#dock button').forEach((b) => (b.disabled = false));
+    return;
+  }
+  if (ui.session?.tasks[ui.session.idx] !== task) return;
+  task.state = { ...feedbackState(result, st.a1, st.a2), rechecked: true };
+  showFeedback(task, result.canOverride);
 }
 
 function showFeedback(task, canOverride) {
-  const { grade, feedback, almostKey } = task.state;
-  const cls = grade === 'correct' ? 'ok' : grade === 'almost' ? 'almost' : 'bad';
-  const label = grade === 'correct' ? t('session.correct') : grade === 'almost' ? t(almostKey || 'session.almost') : t('session.wrong');
-  $('#feedback').innerHTML = `<div class="result ${cls}"><div class="result-title">${esc(label)}</div>${feedback}</div>`;
+  const { grade, feedback, almostKey, dontKnow, rechecked } = task.state;
+  const cls = dontKnow ? 'shown' : grade === 'correct' ? 'ok' : grade === 'almost' ? 'almost' : 'bad';
+  const label = dontKnow ? t('session.hereIsAnswer') : grade === 'correct' ? t('session.correct') : grade === 'almost' ? t(almostKey || 'session.almost') : t('session.wrong');
+  $('#feedback').innerHTML = `<div class="result ${cls}"><div class="result-title">${esc(label)}</div>
+    ${rechecked ? `<div class="muted small">${esc(t('session.rechecked'))}</div>` : ''}${feedback}</div>
+    ${englishButton(task)}`;
   bindNatural($('#feedback'));
+  bindEnglish(task);
   $$('#ex .chunk').forEach((b) => (b.disabled = true));
+  const recheck = !dontKnow && !rechecked && gem();
   $('#dock').innerHTML = `
     <button class="btn primary" id="next">${esc(t('session.next'))}</button>
-    ${canOverride ? `<button class="btn text" id="override">${esc(t('session.iWasRight'))}</button>` : ''}`;
+    ${recheck || canOverride ? `<div class="dock-row">
+      ${recheck ? `<button class="btn text" id="recheck">${esc(t('session.recheck'))}</button>` : '<span></span>'}
+      ${canOverride ? `<button class="btn text" id="override">${esc(t('session.iWasRight'))}</button>` : ''}
+    </div>` : ''}`;
+  $('#recheck')?.addEventListener('click', () => onRecheck(task));
   $('#override')?.addEventListener('click', () => { task.state.grade = 'correct'; next(task); });
   $('#next').addEventListener('click', () => next(task));
   $('#next').focus({ preventScroll: true });
   $$('#ex .answer').forEach((el) => (el.readOnly = true));
 }
 
+// What a checked answer leaves behind once the learner moves on (or quits): the mistakes
+// Gemini found, and the learner's own sentence as a new gap sentence for the word. Kept
+// until then so that "Check again" can still change them.
+function commit(task) {
+  const st = task.state;
+  if (st.committed) return;
+  st.committed = true;
+  if (st.mistakes?.length) logTaskMistakes(task, st.mistakes);
+  if (st.ownGap) {
+    const w = store.getWord(task.word.id);
+    if (w) store.updateWord(w.id, { gapPool: addToPool(poolOf(w), [st.ownGap], { level: gapLevel(task.item.reps || 0), source: 'own' }) });
+  }
+}
+
 function next(task) {
+  commit(task);
   advance(task);
   viewSession();
 }
