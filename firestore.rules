@@ -2,19 +2,70 @@ rules_version = '2';
 
 // Language Trainer: invite-only, private accounts.
 // - Only verified email addresses listed in the allowlist collection get any access.
-//   To invite someone, add a document to allowlist whose id is their email in lowercase.
+//   Someone joins either by the owner adding a document to allowlist whose id is their email in
+//   lowercase, or by redeeming an invite code, which adds that document for them.
 // - Each user can read and write only their own data under users/{their uid}.
+// - Admins (a document admins/{uid}, added by hand in the console) create and delete invite codes.
 service cloud.firestore {
   match /databases/{database}/documents {
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
     function invited() {
-      return request.auth != null
-        && request.auth.token.email_verified == true
+      return verified()
         && exists(/databases/$(database)/documents/allowlist/$(request.auth.token.email));
     }
 
-    // The app checks its own invitation; nobody can list or change the allowlist.
+    function isAdmin() {
+      return verified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function codePath(code) {
+      return /databases/$(database)/documents/inviteCodes/$(code);
+    }
+
+    function allowlistPath(email) {
+      return /databases/$(database)/documents/allowlist/$(email);
+    }
+
+    // The app asks whether its own account is an admin; nobody can list or change admins.
+    match /admins/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // The app checks its own invitation; nobody can list, change or delete the allowlist.
     match /allowlist/{email} {
       allow get: if request.auth != null && request.auth.token.email == email;
+      // Redeeming an invite code: only for your own verified email, and only in the same batch
+      // that uses up one use of that code (see inviteCodes below).
+      allow create: if verified() && request.auth.token.email == email
+        && request.resource.data.keys().hasOnly(['code', 'uid', 'joinedAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.joinedAt == request.time
+        && request.resource.data.code is string
+        && exists(codePath(request.resource.data.code))
+        && getAfter(codePath(request.resource.data.code)).data.uses
+          == get(codePath(request.resource.data.code)).data.uses + 1;
+    }
+
+    // Invite codes can be fetched or listed by admins only, so they can't be read or guessed
+    // from the database.
+    match /inviteCodes/{code} {
+      allow get, list, delete: if isAdmin();
+      allow create: if isAdmin() && code.matches('^[A-HJ-NP-Z2-9]{8}$')
+        && request.resource.data.keys().hasOnly(['maxUses', 'uses', 'createdAt'])
+        && request.resource.data.uses == 0
+        && request.resource.data.maxUses is int
+        && request.resource.data.maxUses >= 1 && request.resource.data.maxUses <= 100
+        && request.resource.data.createdAt == request.time;
+      // One use, while it has uses left, by someone joining with it in the same batch.
+      allow update: if verified()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses'])
+        && request.resource.data.uses == resource.data.uses + 1
+        && request.resource.data.uses <= resource.data.maxUses
+        && !exists(allowlistPath(request.auth.token.email))
+        && getAfter(allowlistPath(request.auth.token.email)).data.code == code;
     }
 
     match /users/{uid}/{coll}/{id} {

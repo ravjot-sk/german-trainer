@@ -1,14 +1,18 @@
 // Account sync with Firebase (Auth + Firestore). The app stays local-first: localStorage
 // is what the app reads and writes, and this module mirrors it to
 // users/{uid}/{collection}/{id} in Firestore and merges other devices' changes back in
-// (rules in syncmerge.js). Access is invite-only and private, enforced by firestore.rules.
+// (rules in syncmerge.js). Access is invite-only and private, enforced by firestore.rules:
+// the owner adds someone's email to the allowlist, or they redeem an invite code.
 // The Firebase SDK is loaded on demand, so the app still starts offline or without config.
 import * as store from './store.js';
 import { firebaseConfig } from './firebase-config.js';
 import { COLLECTIONS, pendingChanges, applyRemote, docId, recId } from './syncmerge.js';
+import { newCode, normCode, isCode } from './invites.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0';
 const STATE_KEY = 'gt.sync.v1';
+// A code entered when creating the account, used once the email is confirmed.
+const INVITE_KEY = 'gt.sync.invite';
 const BATCH = 400;
 // On restart, re-read the last minute too, in case server times landed slightly out of order.
 const OVERLAP = 60e3;
@@ -20,6 +24,8 @@ let db = null;
 let user = null;
 let status = firebaseConfig ? 'loading' : 'off';
 let lastError = '';
+let admin = false; // may create invite codes
+let inviteFailed = false; // the code from sign-up didn't work
 let live = false; // listeners running and uploads allowed
 let unsubs = [];
 let inflight = {};
@@ -48,15 +54,28 @@ function countPending() {
 }
 
 export function getState() {
-  return { status, email: user?.email || '', error: lastError, pending: live ? countPending() : 0 };
+  return { status, email: user?.email || '', error: lastError, pending: live ? countPending() : 0, admin, inviteFailed };
 }
 
 export function onState(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
+const notify = () => listeners.forEach((fn) => fn(getState()));
+
 function setStatus(s) {
   if (s === status) return;
   status = s;
-  listeners.forEach((fn) => fn(getState()));
+  notify();
+}
+
+function setAdmin(a) {
+  if (a === admin) return;
+  admin = a;
+  notify();
+}
+
+const pendingCode = () => { try { return localStorage.getItem(INVITE_KEY) || ''; } catch { return ''; } };
+function setPendingCode(code) {
+  try { if (code) localStorage.setItem(INVITE_KEY, code); else localStorage.removeItem(INVITE_KEY); } catch { /* not kept */ }
 }
 
 // While syncing, the status follows the connection, the upload queue and the last error.
@@ -105,18 +124,54 @@ async function load() {
 
 async function check() {
   stop();
-  if (!user) return setStatus('signedOut');
+  if (!user) { setAdmin(false); return setStatus('signedOut'); }
   if (!user.emailVerified) return setStatus('unverified');
   setStatus('loading');
+  checkAdmin();
   try {
     const snap = await F.getDoc(F.doc(db, 'allowlist', user.email.toLowerCase()));
-    if (!snap.exists()) return setStatus('notInvited');
+    if (!snap.exists()) return notInvited();
   } catch (e) {
-    if (e.code === 'permission-denied') return setStatus('notInvited');
+    if (e.code === 'permission-denied') return notInvited();
     // Offline: a device that already syncs this account carries on from its local data.
     if (sync?.uid !== user.uid) { lastError = e.message; return setStatus('error'); }
   }
   start();
+}
+
+// Not on the allowlist (yet): use the code from sign-up, if there was one.
+async function notInvited() {
+  const code = pendingCode();
+  if (code) {
+    try {
+      await joinWith(code);
+      setPendingCode('');
+      inviteFailed = false;
+      return start();
+    } catch (e) {
+      console.warn('invite code failed', e);
+      if (badCode(e)) { setPendingCode(''); inviteFailed = true; }
+    }
+  }
+  setStatus('notInvited');
+}
+
+// The rules refuse a code that doesn't exist or has no uses left.
+const badCode = (e) => e.code === 'permission-denied' || e.code === 'not-found';
+
+// Adds this account to the allowlist and uses up one use of the code, both or neither.
+async function joinWith(code) {
+  const batch = F.writeBatch(db);
+  batch.set(F.doc(db, 'allowlist', user.email.toLowerCase()), { code, uid: user.uid, joinedAt: F.serverTimestamp() });
+  batch.update(F.doc(db, 'inviteCodes', code), { uses: F.increment(1) });
+  await batch.commit();
+}
+
+async function checkAdmin() {
+  const uid = user.uid;
+  let a = false;
+  try { a = (await F.getDoc(F.doc(db, 'admins', uid))).exists(); } catch { /* not an admin, or offline */ }
+  if (user?.uid === uid) setAdmin(a);
 }
 
 function start() {
@@ -243,8 +298,13 @@ export async function signIn(email, password) {
   await A.signInWithEmailAndPassword(auth, norm(email), password);
 }
 
-export async function signUp(email, password) {
+// An invite code is optional; it's kept until the email is confirmed and then used.
+export async function signUp(email, password, invite = '') {
+  const code = normCode(invite);
+  if (code && !isCode(code)) throw inviteError();
   await init();
+  setPendingCode(code);
+  inviteFailed = false;
   const cred = await A.createUserWithEmailAndPassword(auth, norm(email), password);
   await A.sendEmailVerification(cred.user);
 }
@@ -262,6 +322,39 @@ export async function recheck() {
   await check();
 }
 
+function inviteError() {
+  return Object.assign(new Error('invalid invite code'), { code: 'invite/invalid' });
+}
+
+// From the "not invited" card: join with a code now.
+export async function redeemInvite(invite) {
+  const code = normCode(invite);
+  if (!isCode(code)) throw inviteError();
+  try {
+    await joinWith(code);
+  } catch (e) {
+    throw badCode(e) ? inviteError() : e;
+  }
+  inviteFailed = false;
+  await check();
+}
+
+// ---------- invite codes (admins only, enforced by the rules) ----------
+export async function listInvites() {
+  const snap = await F.getDocs(F.query(F.collection(db, 'inviteCodes'), F.orderBy('createdAt', 'desc')));
+  return snap.docs.map((d) => ({ code: d.id, uses: d.data().uses || 0, maxUses: d.data().maxUses || 0 }));
+}
+
+export async function createInvite(maxUses) {
+  const code = newCode();
+  await F.setDoc(F.doc(db, 'inviteCodes', code), { maxUses, uses: 0, createdAt: F.serverTimestamp() });
+  return code;
+}
+
+export async function deleteInvite(code) {
+  await F.deleteDoc(F.doc(db, 'inviteCodes', code));
+}
+
 export async function resetPassword(email) {
   await init();
   await A.sendPasswordResetEmail(auth, norm(email));
@@ -277,6 +370,8 @@ export async function signOut({ force = false } = {}) {
     if (pending) return { pending };
   }
   stop();
+  setPendingCode('');
+  inviteFailed = false;
   const hadAccountData = !!sync;
   sync = null;
   saveState();

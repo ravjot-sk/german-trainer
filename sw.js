@@ -1,11 +1,11 @@
 // Offline support: cache the app shell so the daily session opens without a connection.
 // Gemini and Firebase requests go to other origins and are never cached.
-const VERSION = 'gt-v16';
+const VERSION = 'gt-v17';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/i18n.js', './js/gemini.js', './js/srs.js',
   './js/check.js', './js/session.js', './js/categories.js', './js/languages.js', './js/actions.js',
-  './js/sync.js', './js/syncmerge.js', './js/firebase-config.js', './js/icons.js', './js/furigana.js', './js/gappool.js',
+  './js/sync.js', './js/syncmerge.js', './js/invites.js', './js/firebase-config.js', './js/icons.js', './js/furigana.js', './js/gappool.js',
   './js/rules.js', './js/ruleseeds.js',
   './js/ui/dom.js', './js/ui/context.js', './js/ui/text.js', './js/ui/sheet.js', './js/router.js', './js/background.js', './js/stats.js', './js/answer.js',
   './js/practice/runtime.js', './js/practice/render.js', './js/practice/grade.js', './js/practice/english.js',

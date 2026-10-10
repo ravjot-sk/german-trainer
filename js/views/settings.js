@@ -8,7 +8,7 @@ import { code, resetViews } from '../ui/context.js';
 import { furiMode } from '../ui/text.js';
 import { route } from '../router.js';
 import { learnCard, bindLearnCard } from './learncard.js';
-import { accountSynced, renderSync } from './account.js';
+import { accountSynced, renderSync, renderAdmin } from './account.js';
 
 const standalone = () => navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
 
@@ -29,6 +29,7 @@ export function viewSettings() {
     </section>
     <div class="group-label">${esc(t('sync.title'))}</div>
     <section class="card form" id="synccard"></section>
+    <div id="admincard" class="contents"></div>
     <div class="group-label">Gemini</div>
     <section class="card form">
       <label>${esc(t('settings.apiKey'))}
@@ -79,6 +80,7 @@ export function viewSettings() {
   $('#npdminus').addEventListener('click', () => step(-1));
   $('#npdplus').addEventListener('click', () => step(1));
   renderSync();
+  renderAdmin();
 }
 
 function bindTest() {
