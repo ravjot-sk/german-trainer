@@ -8,6 +8,13 @@
 
 export const COLLECTIONS = ['words', 'mistakes', 'reviewItems', 'reviews', 'languages'];
 
+// Firestore reads "/" in a document id as a path separator, and rule ids contain one
+// ("rule:verb_complex/perfekt_sein"). The cloud document name escapes it; ids in the app
+// stay as they are. "%" is escaped too so the mapping can be undone, and ids without
+// either character keep the document name they always had.
+export const docId = (id) => String(id).replace(/%/g, '%25').replace(/\//g, '%2F');
+export const recId = (name) => String(name).replace(/%2F/g, '/').replace(/%25/g, '%');
+
 // Records written before sync existed have no updatedAt; fall back to their creation time.
 export function stamp(r) {
   return r.updatedAt || r.reviewedAt || r.addedAt || r.createdAt || 0;
