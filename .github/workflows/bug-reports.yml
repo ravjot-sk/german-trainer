@@ -22,10 +22,10 @@ jobs:
   issues:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
       - run: npm install --no-save --no-audit --no-fund firebase-admin@13
       - run: node scripts/bug-reports.mjs
         env:
