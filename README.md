@@ -258,10 +258,12 @@ exercises that need Gemini wait until you're back online.
 Accounts are optional and invite only. Without one, the app works exactly as before, with data on the
 device only.
 
-1. In **Einstellungen → Konto & Synchronisierung**, enter your email and a password and tap
-   **Konto erstellen**.
-2. Open the confirmation link in the email you get, then tap **Ich habe bestätigt** in the app.
-3. If your email hasn't been invited yet, ask the app's owner to invite it, then tap **Erneut prüfen**.
+1. In **Einstellungen → Konto & Synchronisierung**, enter your email and a password. If you were given
+   an invite code, enter it under **Einladungscode**. Tap **Konto erstellen**.
+2. Open the confirmation link in the email you get, then tap **Ich habe bestätigt** in the app. Your
+   invite code is used at this point and sync starts.
+3. If you had no code (or it didn't work), the app says you're not invited yet. Enter a code there and
+   tap **Code einlösen**, or ask the app's owner to invite your email and tap **Erneut prüfen**.
 4. On your other devices, tap **Anmelden** with the same email and password.
 
 The first time you sign in, everything already on that device is added to your account. Changes you make
@@ -286,10 +288,24 @@ Sync uses a free Firebase project. Until it's set up, the account card says acco
    [`js/firebase-config.js`](js/firebase-config.js) in place of `null`, and push that to `main`. These
    values aren't secret; the rules decide who can read what.
 
-**Inviting someone:** in **Firestore Database → Data**, start a collection called `allowlist` (first
-time only), then add a document whose **Document ID** is their email address in lowercase, for example
-`ravi@example.com`. Give it any field, for example `name` = their name. Invite yourself the same way.
-To remove someone's access, delete their document.
+**Inviting yourself:** in **Firestore Database → Data**, start a collection called `allowlist` (first
+time only), then add a document whose **Document ID** is your email address in lowercase, for example
+`ravi@example.com`. Give it any field, for example `name` = your name. You can invite anyone else the
+same way, but invite codes (below) are easier.
+
+**Making yourself an admin** (one time): create your account in the app first. Then in
+**Authentication → Users**, copy the **User UID** of your account. In **Firestore Database → Data**,
+start a collection called `admins` and add a document whose **Document ID** is that UID, with any
+field, for example `name` = your name. Nothing about you goes into the code. Reopen Settings and an
+**Einladungscodes** section appears below your account.
+
+**Invite codes:** in **Einladungscodes**, choose how many people may use a code (1 for one person, more
+for a group), tap **Neuen Code erstellen** and send the code (it's copied for you). Anyone who enters it
+when creating their account, or later on the "not invited" screen, is added to `allowlist` with the
+code they used. The list shows how often each code has been used. **Löschen** stops a code; people who
+already joined keep access.
+
+**Removing someone:** delete their document in `allowlist`.
 
 Everyone's data is private: each person can only read and write their own, and Firebase's free plan is
 plenty for a small group.
@@ -327,8 +343,9 @@ npm test    # unit tests: scheduler, answer checking, languages, session buildin
 | `js/store.js` | Local storage: `words`, `mistakes`, `reviewItems`, `reviews`, `languages` |
 | `js/sync.js` | Accounts and sync: mirrors local data to Firestore `users/{uid}/…` and merges other devices' changes |
 | `js/syncmerge.js` | Merge rules: per-record "latest edit wins", deletes as tombstones |
+| `js/invites.js` | Invite code format |
 | `js/firebase-config.js` | Firebase project config (`null` turns accounts off) |
-| `firestore.rules` | Security rules: invite-only allowlist, each user sees only their own data |
+| `firestore.rules` | Security rules: invite-only allowlist and invite codes, each user sees only their own data |
 | `js/i18n.js` | German and English UI text |
 | `sw.js` | Service worker for offline use |
 

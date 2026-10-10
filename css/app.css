@@ -118,6 +118,7 @@ a { color: var(--accent); }
 .small { font-size: var(--fs-sm); }
 .center { text-align: center; }
 .hidden { display: none !important; }
+.contents { display: contents; }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 p { margin: 0; }
 
@@ -180,6 +181,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 }
 .list > :last-child { border-bottom: 0; }
 .list .val { color: var(--muted); display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.list .code { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.08em; }
 .list .ico { color: var(--muted); }
 
 /* ---------- Today ---------- */
