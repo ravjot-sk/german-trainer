@@ -5,7 +5,7 @@
 // The Firebase SDK is loaded on demand, so the app still starts offline or without config.
 import * as store from './store.js';
 import { firebaseConfig } from './firebase-config.js';
-import { COLLECTIONS, pendingChanges, applyRemote } from './syncmerge.js';
+import { COLLECTIONS, pendingChanges, applyRemote, docId, recId } from './syncmerge.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0';
 const STATE_KEY = 'gt.sync.v1';
@@ -158,7 +158,7 @@ function onSnap(coll, snap) {
     const d = ch.doc.data();
     const at = d.syncedAt?.toMillis?.() || 0;
     if (at > max) max = at;
-    docs.push({ ...d, id: ch.doc.id });
+    docs.push({ ...d, id: recId(ch.doc.id) });
   }
   sync.cursor[coll] = max;
   if (docs.length && applyRemote(store.rawData(), sync.synced, coll, docs)) store.commitRemote();
@@ -214,7 +214,7 @@ async function upload() {
     const chunk = ops.slice(i, i + BATCH);
     const batch = F.writeBatch(db);
     for (const op of chunk) {
-      const ref = F.doc(db, 'users', uid, op.coll, op.id);
+      const ref = F.doc(db, 'users', uid, op.coll, docId(op.id));
       inflight[`${op.coll}/${op.id}`] = op.t;
       if (op.t === 'del') batch.set(ref, { deleted: true, updatedAt: Date.now(), syncedAt: F.serverTimestamp() });
       else batch.set(ref, { ...op.rec, updatedAt: op.t, syncedAt: F.serverTimestamp() });

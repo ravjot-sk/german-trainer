@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pendingChanges, applyRemote, stamp } from '../js/syncmerge.js';
+import { pendingChanges, applyRemote, stamp, docId, recId } from '../js/syncmerge.js';
 
 const empty = () => ({ words: [], mistakes: [], reviewItems: [], reviews: [] });
 const word = (id, updatedAt, o = {}) => ({ id, german: id, addedAt: 1, updatedAt, ...o });
@@ -77,4 +77,13 @@ test('duplicate review items from two devices collapse the same way everywhere',
   applyRemote(laptop, {}, 'reviewItems', [item('x1', 3)]);
   assert.deepEqual(phone.reviewItems.map((r) => r.id), ['x1']);
   assert.deepEqual(laptop.reviewItems.map((r) => r.id), ['x1']);
+});
+
+test('rule ids with a slash get a single-segment document name and come back unchanged', () => {
+  const ids = ['rule:verb_complex/perfekt_sein_movement_change', 'rule:ja:particles/wa_ga', 'a%2Fb', 'word:abc-123'];
+  for (const id of ids) {
+    assert.ok(!docId(id).includes('/'));
+    assert.equal(recId(docId(id)), id);
+  }
+  assert.equal(docId('word:abc-123'), 'word:abc-123');
 });
