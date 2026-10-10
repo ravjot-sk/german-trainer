@@ -199,6 +199,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 /* ---------- Session ---------- */
 .session-top { display: flex; align-items: center; gap: 12px; padding-top: calc(env(safe-area-inset-top) + 8px); }
 .session-top .icon-btn { margin-left: -8px; color: var(--text); }
+.session-top .icon-btn.report { margin: 0 -8px 0 0; color: var(--muted); }
 .session-top .count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; }
 .progress { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .progress div { height: 100%; background: var(--accent); transition: width 0.3s; }
@@ -311,6 +312,9 @@ details.more > div { display: flex; flex-direction: column; gap: 12px; padding-t
 .sheet-head h2 { font-size: 19px; }
 .sheet-head .icon-btn { margin-right: -8px; }
 .sheet .btn.danger { margin-top: 4px; }
+.sheet label.check { flex-direction: row; align-items: flex-start; gap: 10px; color: var(--text); font-size: var(--fs-body); cursor: pointer; }
+.sheet label.check input { width: 20px; height: 20px; padding: 0; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.report-preview { white-space: pre-wrap; word-break: break-word; font-size: 13px; max-height: 40vh; overflow-y: auto; background: var(--bg); border-radius: 10px; padding: 10px; margin: 0; }
 
 #toast {
   position: fixed; left: 50%; bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom) + 14px); transform: translate(-50%, 20px);

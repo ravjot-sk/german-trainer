@@ -13,6 +13,7 @@ import { viewCorrect } from './views/correct.js';
 import { viewProfile } from './views/profile.js';
 import { viewSettings, viewAdvanced, viewBackup } from './views/settings.js';
 import { showSyncState } from './views/account.js';
+import { openReport } from './views/report.js';
 
 registerRoutes({ today: viewToday, session: viewSession, lookup: viewLookup, correct: viewCorrect,
   words: viewWords, profile: viewProfile, settings: viewSettings,
@@ -27,6 +28,7 @@ document.addEventListener('click', (e) => {
 window.addEventListener('online', () => { if (!ui.session) route(); });
 window.addEventListener('offline', () => { if (!ui.session) route(); });
 $('#gear').addEventListener('click', () => go('settings'));
+$('#report').addEventListener('click', openReport);
 $('#back').addEventListener('click', () => go($('#back').dataset.to || 'today'));
 $('#langpill').addEventListener('click', openLangSheet);
 navigator.storage?.persist?.().catch(() => {});

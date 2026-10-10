@@ -72,5 +72,22 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid && invited()
         && coll in ['words', 'mistakes', 'reviewItems', 'reviews', 'languages'];
     }
+
+    // Bug reports: an invited user can send one; nobody can read, change or delete them from the
+    // app. A GitHub Action with a service-account key turns them into issues and deletes them.
+    match /bugReports/{id} {
+      allow create: if invited()
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt', 'text', 'appVersion', 'screen',
+          'language', 'uiLang', 'userAgent', 'screenText', 'exercise'])
+        && request.resource.data.keys().hasAll(['uid', 'createdAt', 'text'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 2000
+        && (!('screenText' in request.resource.data)
+          || (request.resource.data.screenText is string && request.resource.data.screenText.size() <= 21000))
+        && (!('exercise' in request.resource.data)
+          || (request.resource.data.exercise is string && request.resource.data.exercise.size() <= 21000));
+    }
   }
 }

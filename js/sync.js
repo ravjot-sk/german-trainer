@@ -290,6 +290,16 @@ async function upload() {
   }
 }
 
+// ---------- bug reports ----------
+// Reports need an invited, signed-in account: firestore.rules lets such users create a report
+// in bugReports and nobody read one from the app.
+export const canReport = () => live && !!user;
+
+export async function sendReport(report) {
+  if (!canReport()) throw new Error('not signed in');
+  await F.addDoc(F.collection(db, 'bugReports'), { ...report, uid: user.uid, createdAt: F.serverTimestamp() });
+}
+
 // ---------- account actions (errors are Firebase errors with a .code) ----------
 const norm = (email) => email.trim().toLowerCase();
 
