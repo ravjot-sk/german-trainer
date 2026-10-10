@@ -6,13 +6,14 @@ import { route } from '../router.js';
 import { esc, $ } from './dom.js';
 
 // Shows the panel's HTML over a backdrop and returns the backdrop and its close function.
-export function mountSheet(panelHtml) {
+// redraw: false leaves the page as it was, for sheets that change nothing on it.
+export function mountSheet(panelHtml, { redraw = true } = {}) {
   const back = document.createElement('div');
   back.className = 'sheet-backdrop';
   back.innerHTML = panelHtml;
   document.body.appendChild(back);
   document.body.classList.add('no-scroll');
-  const close = () => { back.remove(); document.body.classList.remove('no-scroll'); route(); };
+  const close = () => { back.remove(); document.body.classList.remove('no-scroll'); if (redraw) route(); };
   back.addEventListener('click', (e) => { if (e.target === back) close(); });
   return { el: back, close };
 }

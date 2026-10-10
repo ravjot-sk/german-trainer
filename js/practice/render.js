@@ -16,6 +16,7 @@ import { gradeTask, revealFor } from './grade.js';
 import { englishButton, bindEnglish } from './english.js';
 import { pickGap, poolOf, addToPool, gapLevel } from '../gappool.js';
 import { bindSuggest } from '../views/suggest.js';
+import { openReport } from '../views/report.js';
 
 export function viewSession() {
   if (!ui.session) startSession();
@@ -36,10 +37,13 @@ export function viewSession() {
     <div class="session-top">
       <button class="icon-btn" id="quit" aria-label="${esc(t('session.quit'))}">${icon('close', 24)}</button>
       ${top}
+      <button class="icon-btn report" id="sessreport" aria-label="${esc(t('report.title'))}">${icon('bug', 22)}</button>
     </div>
     <section class="card exercise" id="ex"></section>
     <div class="dock" id="dock"></div>
   `;
+  // The header (with its report icon) is hidden during a session, so the session has its own.
+  $('#sessreport').addEventListener('click', openReport);
   $('#quit').addEventListener('click', () => {
     if (task.state.phase === 'feedback') commit(task);
     ui.session.ended = true;

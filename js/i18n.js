@@ -332,6 +332,18 @@ const STRINGS = {
     'invites.copied': '{c} kopiert.',
     'invites.delete': 'Löschen',
     'invites.confirmDelete': 'Code {c} löschen? Danach kann ihn niemand mehr einlösen.',
+
+    'report.title': 'Fehler melden',
+    'report.what': 'Was ist passiert?',
+    'report.placeholder': 'z. B. Meine Antwort war richtig, wurde aber als falsch markiert.',
+    'report.capture': 'Bildschirm mitsenden (deine Eingabe, die Bewertung und die Übungsdaten)',
+    'report.preview': 'Vorschau',
+    'report.exercise': 'Übungsdaten',
+    'report.public': 'Der Bericht wird öffentlich als GitHub-Issue gespeichert, ohne deinen Namen und deine E-Mail-Adresse.',
+    'report.send': 'Senden',
+    'report.sent': 'Danke, gesendet.',
+    'report.timeout': 'Senden hat zu lange gedauert. Bitte versuch es noch einmal.',
+    'report.signIn': 'Um einen Fehler zu melden, melde dich bitte zuerst in den Einstellungen an.',
   },
   en: {
     'tab.today': 'Today',
@@ -662,6 +674,18 @@ const STRINGS = {
     'invites.copied': '{c} copied.',
     'invites.delete': 'Delete',
     'invites.confirmDelete': 'Delete code {c}? Nobody will be able to use it after that.',
+
+    'report.title': 'Report a problem',
+    'report.what': 'What happened?',
+    'report.placeholder': 'e.g. My answer was right but was marked wrong.',
+    'report.capture': 'Include the screen (your input, the verdict and the exercise data)',
+    'report.preview': 'Preview',
+    'report.exercise': 'Exercise data',
+    'report.public': 'The report is saved publicly as a GitHub issue, without your name or email address.',
+    'report.send': 'Send',
+    'report.sent': 'Thanks, sent.',
+    'report.timeout': 'Sending took too long. Please try again.',
+    'report.signIn': 'To report a problem, please sign in under Settings first.',
   },
 };
 

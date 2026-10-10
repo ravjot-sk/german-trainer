@@ -251,6 +251,11 @@ exercises that need Gemini wait until you're back online.
   tap **Modelle laden** and pick a "flash" model.
 - *The app looks out of date*: close it and open it again. Updates load in the background.
 
+**Found a bug?** Tap the 🐞 icon at the top (it's in the session bar during practice), say what went wrong
+and tap **Senden**. Leave **Bildschirm mitsenden** ticked so the report includes what was on screen (your
+answer and what the app marked right or wrong) and the exercise's data; untick it to send only your text.
+Reports become public issues in this repository, without your name or email. You need to be signed in.
+
 ---
 
 ## Accounts and sync
@@ -309,6 +314,24 @@ already joined keep access.
 
 Everyone's data is private: each person can only read and write their own, and Firebase's free plan is
 plenty for a small group.
+
+### Bug reports to GitHub issues (app owner, one time)
+
+Reports sent from the app wait in Firestore (`bugReports`, which users can add to but not read). Every
+hour, the **Bug reports to issues** GitHub Action opens one issue per report, labelled `user-report`, and
+deletes the report from Firestore. Until the secret below is added, the Action runs but does nothing.
+
+1. Publish the current [`firestore.rules`](firestore.rules) (step 4 above).
+2. **Project settings (⚙️) → Service accounts → Generate new private key**. This downloads a JSON file.
+3. On GitHub: **Settings → Secrets and variables → Actions → New repository secret**, named
+   `FIREBASE_SERVICE_ACCOUNT`, with the whole content of that file as its value. Then delete the file.
+4. To try it, open **Actions → Bug reports to issues → Run workflow**. Tick **dry run** to only print the
+   issues in the log without creating or deleting anything.
+
+The key gives full access to the Firebase project, so keep it only in that secret. An issue shows the
+reporter as the first 8 characters of their user id, which you can look up under **Authentication**.
+GitHub pauses scheduled Actions in a repository with no activity for 60 days; **Actions** then shows a
+button to turn it back on.
 
 ---
 
