@@ -215,7 +215,10 @@ async function checkRule(task, a1, fb, recheck) {
       verdict = r.feedback || '';
     }
     canOverride = grade !== 'correct' && !gem();
-    html = para(verdict) + fixHtml(grade, [[a1, e.corrected]]) + ruleReveal(task);
+    // The learner's answer corrected replaces the corrected exercise text, which would otherwise
+    // look like a second correction of their answer.
+    const fix = fixHtml(grade, [[a1, e.corrected]]);
+    html = para(verdict) + (fix ? fix + why(e.explanation) : ruleReveal(task));
   } else {
     grading(fb);
     const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: '', model: e.model, answer: a1, category: rule.category, rule, recheck });
