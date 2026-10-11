@@ -10,6 +10,9 @@ import { missing, strip, poolTexts } from './furigana.js';
 import { gem, L, code } from './ui/context.js';
 import { furiMode } from './ui/text.js';
 
+// Everything here waits behind what the learner is doing (see gemini.js).
+const BG = { background: true };
+
 // Japanese texts saved without furigana get it from Gemini once, in one call for a batch of
 // records; redraw runs when anything was added.
 const furiAsked = new Set();
@@ -19,7 +22,7 @@ export async function fillFurigana(recs, redraw) {
   if (!todo.length) return;
   todo.forEach((r) => furiAsked.add(r.id));
   try {
-    const marked = await gemini.annotate([...new Set(todo.flatMap(missing))].slice(0, 40));
+    const marked = await gemini.annotate([...new Set(todo.flatMap(missing))].slice(0, 40), BG);
     let added = false;
     for (const r of todo) {
       const need = missing(r);
@@ -39,19 +42,21 @@ export async function fillFurigana(recs, redraw) {
 export const latestItem = (item) => store.reviewItems().find((r) => r.id === item.id) || item;
 
 // Generates one exercise set per rule in one Gemini call and adds it to each rule's pool.
-// A rule already being generated for shares that call.
+// A rule already being generated for shares that call. In the background, the call is tagged
+// with the rules' ids (see gemini.promote).
 const generating = new Map();
-export function generateRuleSets(items) {
+export function generateRuleSets(items, { background = false } = {}) {
   const todo = items.filter((it) => !generating.has(it.id));
   const waits = items.filter((it) => generating.has(it.id)).map((it) => generating.get(it.id));
   if (todo.length) {
     const lang = code();
     const run = (async () => {
+      const call = { background, tags: todo.map((it) => it.id) };
       const sets = await gemini.ruleExercises(todo.map((it) => ({
         rule: it.rule,
         examples: store.mistakes(lang).filter((m) => m.rule === it.rule.key && m.category === it.rule.category).slice(0, 3),
-      })));
-      if (lang === 'ja' && furiMode() !== 'off') await addFurigana(sets);
+      })), call);
+      if (lang === 'ja' && furiMode() !== 'off') await addFurigana(sets, call);
       todo.forEach((it, i) => {
         const cur = latestItem(it);
         if (sets[i]) store.updateReviewItem(addSet(cur, sets[i]));
@@ -66,7 +71,7 @@ export function generateRuleSets(items) {
 
 // Japanese exercises get furigana for all their texts in one extra call; each exercise keeps
 // the markup list, which jt() reads.
-async function addFurigana(sets) {
+async function addFurigana(sets, call) {
   const texts = [];
   for (const set of sets) {
     for (const ex of Object.values(set || {})) {
@@ -76,7 +81,7 @@ async function addFurigana(sets) {
     }
   }
   try {
-    const marked = await gemini.annotate([...new Set(texts.filter((x) => x && /[\u3400-\u9fff]/.test(x)))].slice(0, 60));
+    const marked = await gemini.annotate([...new Set(texts.filter((x) => x && /[\u3400-\u9fff]/.test(x)))].slice(0, 60), call);
     for (const set of sets) for (const ex of Object.values(set || {})) if (ex && typeof ex === 'object') ex.furigana = marked;
   } catch (e) {
     console.warn('furigana', e);
@@ -90,7 +95,7 @@ export function topUpRules() {
   const list = topUpList(store.ruleItems(code()), { now: Date.now(), skip: topUpAsked });
   if (!list.length) return;
   list.forEach((it) => topUpAsked.add(it.id));
-  generateRuleSets(list).catch((e) => console.warn('rule exercises', e));
+  generateRuleSets(list, { background: true }).catch((e) => console.warn('rule exercises', e));
 }
 
 // Mistakes saved before rules existed get their category checked and their rule named, a
@@ -104,7 +109,7 @@ export async function classifyOldMistakes(redraw) {
   list.forEach((m) => classifyAsked.add(m.id));
   classifying = true;
   try {
-    const got = await gemini.classifyMistakes(list);
+    const got = await gemini.classifyMistakes(list, BG);
     list.forEach((m, i) => store.setMistakeRule(m.id, got[i]));
     if (redraw) redraw();
   } catch (e) {
@@ -126,7 +131,7 @@ export async function refillGaps() {
   list.forEach((x) => refillAsked.add(x.word.id));
   refilling = true;
   try {
-    const got = await gemini.gapSentences(list);
+    const got = await gemini.gapSentences(list, undefined, BG);
     const updated = [];
     list.forEach((x, i) => {
       const w = store.getWord(x.word.id);

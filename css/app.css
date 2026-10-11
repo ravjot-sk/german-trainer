@@ -168,6 +168,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .loading { color: var(--muted); padding: 8px 0; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .loading { animation: none; } }
+.waiting { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.notice + [data-retry] { margin-top: 8px; }
+.updatebar { display: block; width: calc(100% - 2 * max(16px, calc((100% - 608px) / 2))); margin: 0 auto 8px; font: inherit; font-size: 15px; font-weight: 600;
+  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--radius-sm); padding: 10px 12px; cursor: pointer; }
 
 /* Segmented switch, one style everywhere */
 .seg { display: flex; background: color-mix(in srgb, var(--line) 70%, var(--bg)); border-radius: var(--radius-sm); padding: 3px; }

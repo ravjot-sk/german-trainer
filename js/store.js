@@ -15,7 +15,7 @@ const KEY_KEY = 'gt.apiKey';
 const SETTINGS_KEY = 'gt.settings.v1';
 const TRIMMED_KEY = 'gt.reviewsTrimmed';
 
-const DEFAULT_SETTINGS = { lang: 'de', model: 'gemini-flash-latest', newPerDay: 8, newSentencesPerDay: 3, newMistakesPerDay: 4 };
+const DEFAULT_SETTINGS = { lang: 'de', model: 'gemini-flash-lite-latest', newPerDay: 8, newSentencesPerDay: 3, newMistakesPerDay: 4 };
 
 const dataSlot = slot('data', DATA_KEY);
 // Until ready() has loaded from IndexedDB, the data from localStorage (none once it has moved).

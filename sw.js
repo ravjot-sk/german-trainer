@@ -1,9 +1,11 @@
-// Offline support: cache the app shell so the daily session opens without a connection.
+// Offline support and fast start: the app opens from the cached copy of this version at once,
+// even on a weak signal. A new version is downloaded in the background and waits until the app
+// asks for it (the "Neue Version" bar, or the next start); see app.js.
 // Gemini and Firebase requests go to other origins and are never cached.
-const VERSION = 'gt-v20';
+const VERSION = 'gt-v21';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
-  './js/app.js', './js/store.js', './js/i18n.js', './js/gemini.js', './js/srs.js',
+  './js/app.js', './js/store.js', './js/i18n.js', './js/gemini.js', './js/gemclient.js', './js/srs.js',
   './js/check.js', './js/session.js', './js/categories.js', './js/languages.js', './js/actions.js',
   './js/sync.js', './js/syncmerge.js', './js/invites.js', './js/firebase-config.js', './js/icons.js', './js/furigana.js', './js/gappool.js',
   './js/rules.js', './js/ruleseeds.js', './js/report.js', './js/localdb.js', './js/reviews.js',
@@ -14,8 +16,14 @@ const SHELL = [
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 
+// cache: 'reload' skips the browser's HTTP cache (GitHub Pages allows 10 minutes), which right
+// after a deploy could put an old module into the new version next to new ones.
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))));
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'skipWaiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
@@ -25,20 +33,17 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Network first for our own files (so updates land), falling back to the cache offline.
-// no-cache makes every request check with the server instead of taking the browser's HTTP
-// cache (GitHub Pages allows 10 minutes), which right after a deploy could hand out an old
-// module next to new ones.
+// Cache first, from this version's cache only, so an open app never mixes files of two
+// versions. Anything not cached is fetched and kept.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  e.respondWith(
-    fetch(e.request, { cache: 'no-cache' })
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(VERSION).then((c) => c.put(e.request, copy));
-        return res;
-      })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./index.html')))
-  );
+  e.respondWith(caches.open(VERSION).then(async (cache) => {
+    const hit = await cache.match(e.request, { ignoreSearch: true })
+      || (e.request.mode === 'navigate' ? await cache.match('./index.html') : null);
+    if (hit) return hit;
+    const res = await fetch(e.request, { cache: 'no-cache' });
+    if (res.ok) cache.put(e.request, res.clone());
+    return res;
+  }));
 });
