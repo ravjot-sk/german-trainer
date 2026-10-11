@@ -1,7 +1,7 @@
 // Settings, and its Advanced (Gemini model) and Backup pages.
 import * as store from '../store.js';
 import * as gemini from '../gemini.js';
-import { t } from '../i18n.js';
+import { t, lang } from '../i18n.js';
 import { icon } from '../icons.js';
 import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs } from '../ui/dom.js';
 import { code, resetViews } from '../ui/context.js';
@@ -127,6 +127,7 @@ export function viewBackup() {
   main.innerHTML = `
     <section class="card form">
       <p class="muted small">${esc(t(accountSynced() ? 'settings.backupHelpSynced' : 'settings.backupHelp'))}</p>
+      <p class="muted small" id="storage"></p>
       <div class="actions">
         <button class="btn" id="export">${esc(t('settings.export'))}</button>
         <label class="btn" for="importfile">${esc(t('settings.import'))}</label>
@@ -135,6 +136,7 @@ export function viewBackup() {
     </section>
     <button class="btn danger" id="reset">${esc(t('settings.reset'))}</button>`;
   $('#export').addEventListener('click', exportBackup);
+  showStorage();
   $('#importfile').addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -147,6 +149,17 @@ export function viewBackup() {
     if (confirm(t(accountSynced() ? 'settings.confirmResetSynced' : 'settings.confirmReset'))) { store.resetData(); resetViews(); toast('OK'); }
   });
 }
+
+// How much this app takes up on the device (data, offline copy of the app), if the browser says.
+async function showStorage() {
+  try {
+    const { usage } = await navigator.storage.estimate();
+    const el = $('#storage');
+    if (el && usage != null) el.textContent = t('settings.storage', { n: fmtBytes(usage) });
+  } catch { /* not supported */ }
+}
+
+const fmtBytes = (n) => (n < 1e6 ? `${Math.max(1, Math.round(n / 1e3))} KB` : `${(n / 1e6).toFixed(1).replace('.', lang() === 'de' ? ',' : '.')} MB`);
 
 async function exportBackup() {
   const name = `language-trainer-${new Date().toISOString().slice(0, 10)}.json`;

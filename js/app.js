@@ -1,7 +1,9 @@
 // Starts the app: registers the screens with the router and the page-wide listeners.
 import * as store from './store.js';
 import * as sync from './sync.js';
-import { $ } from './ui/dom.js';
+import * as localdb from './localdb.js';
+import { t } from './i18n.js';
+import { $, esc } from './ui/dom.js';
 import { ui } from './ui/context.js';
 import { registerRoutes, route, routeName, go } from './router.js';
 import { openLangSheet } from './views/learncard.js';
@@ -40,5 +42,17 @@ store.onChange(({ remote } = {}) => {
   if (remote && ['today', 'profile'].includes(routeName())) route();
 });
 sync.onState(showSyncState);
-route();
-sync.init();
+// Saving: pending writes go out when the app is sent to the background, and a failed save
+// shows a banner until a save works again.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') localdb.flushAll(); });
+window.addEventListener('pagehide', () => localdb.flushAll());
+function showSaveProblem(e) {
+  const el = $('#savewarn');
+  el.classList.toggle('hidden', !e);
+  if (e) el.innerHTML = `${esc(t('save.failed'))} <a href="#/settings/backup">${esc(t('save.backup'))}</a>`;
+}
+localdb.onProblem(showSaveProblem);
+store.ready().catch((e) => console.warn('loading data failed', e)).then(() => {
+  route();
+  sync.init();
+});

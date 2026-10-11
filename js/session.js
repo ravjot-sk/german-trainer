@@ -18,6 +18,14 @@ function introducedToday(items, type, now, only = () => true) {
   return items.filter((r) => r.itemType === type && r.introducedAt && r.introducedAt >= today && only(r)).length;
 }
 
+// Drills take turns: the kind after the one last practised (the latest review is never
+// trimmed, see reviews.js), starting with a gap fill.
+export function nextDrillKind(last) {
+  return DRILL_KINDS[(DRILL_KINDS.indexOf(last?.exerciseType) + 1) % DRILL_KINDS.length];
+}
+
+const latestReview = (list) => list.reduce((a, v) => (!a || v.reviewedAt >= a.reviewedAt ? v : a), null);
+
 // Picks the exercise for a word from how far along it is.
 export function wordExercise(item, word, gemini) {
   const hasGap = !!pickGap(word, item.reps || 0);
@@ -110,8 +118,8 @@ export function buildSession({ items, words, mistakes, reviews, settings, gemini
       .sort((a, b) => weakness(parseCatKey(b.itemId).id, mistakes, now) - weakness(parseCatKey(a.itemId).id, mistakes, now))
       .slice(0, MAX_CATEGORIES)
       .map((item) => {
-        const done = reviews.filter((v) => v.reviewItemId === item.id).length;
-        return { item, category: parseCatKey(item.itemId).id, kind: 'drill', drillKind: DRILL_KINDS[done % DRILL_KINDS.length] };
+        const last = latestReview(reviews.filter((v) => v.reviewItemId === item.id));
+        return { item, category: parseCatKey(item.itemId).id, kind: 'drill', drillKind: nextDrillKind(last) };
       });
   }
 
@@ -205,9 +213,7 @@ export function practicePool({ items, words, mistakes, reviews, gemini, drillabl
   const withRules = categoriesWithRules(items);
   const used = categoriesWithMistakes(mistakes);
   const lastReview = new Map();
-  const done = new Map();
   for (const v of reviews) {
-    done.set(v.reviewItemId, (done.get(v.reviewItemId) || 0) + 1);
     const prev = lastReview.get(v.reviewItemId);
     if (!prev || v.reviewedAt >= prev.reviewedAt) lastReview.set(v.reviewItemId, v);
   }
@@ -234,7 +240,7 @@ export function practicePool({ items, words, mistakes, reviews, gemini, drillabl
       const weak = weakness(category, mistakes, now);
       if (focus === 'weak' && !isWeak(item, last, weak)) continue;
       pool.push({ item, group: 'grammar', weight: practiceWeight(item, last, now) + weak * 0.5,
-        make: () => ({ item, category, kind: 'drill', drillKind: DRILL_KINDS[(done.get(item.id) || 0) % DRILL_KINDS.length] }) });
+        make: () => ({ item, category, kind: 'drill', drillKind: nextDrillKind(last) }) });
       continue;
     }
     if (!entry) continue;
