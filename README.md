@@ -345,6 +345,8 @@ npm start   # serve locally at http://localhost:8080
 npm test    # unit tests: scheduler, answer checking, languages, session building, sync merging
 ```
 
+The tests also run automatically on every pull request and every push to `main` (`.github/workflows/tests.yml`).
+
 | File | What's in it |
 |---|---|
 | `js/app.js` | Starts the app: registers the screens and page-wide listeners |
