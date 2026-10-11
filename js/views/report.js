@@ -8,12 +8,14 @@ import { main, titleEl, esc, $, toast, errorBox } from '../ui/dom.js';
 import { mountSheet, sheetHead } from '../ui/sheet.js';
 import { L, ui } from '../ui/context.js';
 import { routeName, go } from '../router.js';
-import { screenText, exerciseData, buildReport, TEXT_MAX } from '../report.js';
+import { screenText, exerciseData, buildReport, capturable, TEXT_MAX } from '../report.js';
 
 const SEND_TIMEOUT = 15000;
 
+// Settings screens are never captured: they show the account and the Gemini key.
 function capture() {
   const screen = routeName();
+  if (!capturable(screen)) return { screen, screenTextValue: '', exercise: '' };
   const task = screen === 'session' && ui.session ? ui.session.tasks[ui.session.idx] : null;
   const text = screenText(main);
   return { screen, screenTextValue: `${titleEl.textContent}\n${text}`, exercise: exerciseData(task) };
@@ -22,19 +24,21 @@ function capture() {
 export function openReport() {
   if (!sync.canReport()) return signInFirst();
   const cap = capture();
+  const canCapture = capturable(cap.screen);
   const preview = cap.screenTextValue + (cap.exercise ? `\n\n${t('report.exercise')}:\n${cap.exercise}` : '');
   const { el, close } = mountSheet(`<form class="sheet report">
     ${sheetHead(t('report.title'))}
     <label>${esc(t('report.what'))}
       <textarea name="text" rows="4" maxlength="${TEXT_MAX}" required placeholder="${esc(t('report.placeholder'))}"></textarea></label>
-    <label class="check"><input type="checkbox" name="capture" checked> <span>${esc(t('report.capture'))}</span></label>
-    <details class="more"><summary>${esc(t('report.preview'))}</summary><pre class="report-preview">${esc(preview)}</pre></details>
+    ${canCapture ? `<label class="check"><input type="checkbox" name="capture" checked> <span>${esc(t('report.capture'))}</span></label>
+    <details class="more"><summary>${esc(t('report.preview'))}</summary><pre class="report-preview">${esc(preview)}</pre></details>`
+    : `<p class="muted small">${esc(t('report.noCapture'))}</p>`}
     <p class="muted small">${esc(t('report.public'))}</p>
     <div id="reportres"></div>
     <button type="submit" class="btn primary wide">${esc(t('report.send'))}</button>
   </form>`, { redraw: false });
   $('[data-act=cancel]', el).addEventListener('click', close);
-  $('[name=capture]', el).addEventListener('change', (e) => { $('details.more', el).hidden = !e.target.checked; });
+  $('[name=capture]', el)?.addEventListener('change', (e) => { $('details.more', el).hidden = !e.target.checked; });
   $('form', el).addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
@@ -47,7 +51,7 @@ export function openReport() {
     res.innerHTML = '';
     const Lx = L();
     const report = buildReport({
-      ...cap, text, capture: form.get('capture') === 'on',
+      ...cap, text, capture: canCapture && form.get('capture') === 'on',
       language: Lx ? [Lx.code, Lx.level].filter(Boolean).join(' ') : '', uiLang: lang(), userAgent: navigator.userAgent,
     });
     try {
