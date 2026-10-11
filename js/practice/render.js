@@ -11,18 +11,21 @@ import { main, titleEl, esc, $, $$, errorBox, inputAttrs } from '../ui/dom.js';
 import { gem, code, langName, cats, sessionArgs, ui } from '../ui/context.js';
 import { tl, furiMode, jt, readingLine, toneLabel, bindNatural } from '../ui/text.js';
 import { go } from '../router.js';
-import { startSession, logTaskMistakes, topUpPractice, advance, nextRound } from './runtime.js';
+import { logTaskMistakes, topUpPractice, advance, nextRound, saveSession, clearSession, resumeSession } from './runtime.js';
 import { gradeTask, revealFor } from './grade.js';
 import { englishButton, bindEnglish } from './english.js';
 import { pickGap, poolOf, addToPool, gapLevel } from '../gappool.js';
 import { bindSuggest } from '../views/suggest.js';
 import { openReport } from '../views/report.js';
+import { confirmSheet } from '../ui/sheet.js';
 
 export function viewSession() {
-  if (!ui.session) startSession();
+  // Opened without a session (the app was restarted): carry on with today's, else go home.
+  if (!ui.session && !resumeSession()) return go('today');
   if (ui.session.practice) topUpPractice();
   titleEl.textContent = t(ui.session.practice ? 'practice.title' : 'today.title');
   const { tasks, idx } = ui.session;
+  if (ui.session.ended || (!ui.session.practice && idx >= tasks.length)) clearSession(); else saveSession();
   if (ui.session.ended || idx >= tasks.length) return renderSessionEnd();
   const task = tasks[idx];
   task.state = { phase: 'answer' };
@@ -44,7 +47,9 @@ export function viewSession() {
   `;
   // The header (with its report icon) is hidden during a session, so the session has its own.
   $('#sessreport').addEventListener('click', openReport);
-  $('#quit').addEventListener('click', () => {
+  $('#quit').addEventListener('click', async () => {
+    // A daily session asks first; practice has no end, so its X is how it ends.
+    if (!ui.session.practice && !(await confirmSheet(t('session.confirmQuit'), { ok: t('session.quit') }))) return;
     if (task.state.phase === 'feedback') commit(task);
     ui.session.ended = true;
     viewSession();
@@ -68,7 +73,7 @@ function renderSessionEnd() {
       ${empty && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
       <button class="btn primary big" id="home">${esc(t('session.backHome'))}</button>
     </section>`;
-  $('#home').addEventListener('click', () => { ui.session = null; go('today'); });
+  $('#home').addEventListener('click', () => { ui.session = null; clearSession(); go('today'); });
   bindSuggest(main);
 }
 
@@ -92,7 +97,7 @@ function renderRoundEnd() {
   const round = (withNew) => { nextRound(withNew); viewSession(); };
   $('#mixnew')?.addEventListener('click', () => round(true));
   $('#again').addEventListener('click', () => round(false));
-  $('#home').addEventListener('click', () => { ui.session = null; go('today'); });
+  $('#home').addEventListener('click', () => { ui.session = null; clearSession(); go('today'); });
   // Suggested words that were added start in the next round.
   bindSuggest(main, (added) => { if (added && ui.session === s) round(true); });
 }

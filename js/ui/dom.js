@@ -19,6 +19,12 @@ export function errorBox(e) {
   return `<div class="notice error">${esc(e.message || e)}</div>`;
 }
 
+// Segmented buttons: marks b as the chosen one of its group, for sight and screen readers.
+export const pressedAttrs = (on) => `class="${on ? 'on' : ''}" aria-pressed="${on}"`;
+export function choose(group, b) {
+  group.forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+}
+
 export const inputAttrs = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
 
 // Small per-device UI preferences (last lookup mode and tone). Storage can be unavailable.

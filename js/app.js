@@ -37,7 +37,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 }
 // Changes merged in from another device: refresh the overview pages (not forms or sessions).
 store.onChange(({ remote } = {}) => {
-  if (remote && ['today', 'profile'].includes(routeName())) route();
+  if (remote && ['today', 'profile'].includes(routeName())) route({ keepScroll: true });
 });
 sync.onState(showSyncState);
 route();

@@ -2,6 +2,7 @@
 import * as sync from '../sync.js';
 import { t } from '../i18n.js';
 import { esc, $, $$, errorBox, toast, inputAttrs } from '../ui/dom.js';
+import { confirmSheet } from '../ui/sheet.js';
 import { MAX_USES } from '../invites.js';
 import { forgetResults } from '../ui/context.js';
 
@@ -117,7 +118,7 @@ export function renderSync() {
   syncAction('ssignout', async () => {
     let r = await sync.signOut();
     if (r.pending) {
-      if (!confirm(t('sync.confirmPending', { n: r.pending }))) return;
+      if (!(await confirmSheet(t('sync.confirmPending', { n: r.pending }), { ok: t('sync.signOut') }))) return;
       r = await sync.signOut({ force: true });
     }
     forgetResults();
@@ -178,7 +179,7 @@ async function loadInvites() {
     : `<li class="muted small">${esc(t('invites.none'))}</li>`;
   $$('#ilist [data-copy]').forEach((b) => b.addEventListener('click', () => copy(b.dataset.copy)));
   $$('#ilist [data-del]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm(t('invites.confirmDelete', { c: b.dataset.del }))) return;
+    if (!(await confirmSheet(t('invites.confirmDelete', { c: b.dataset.del }), { ok: t('invites.delete') }))) return;
     b.disabled = true;
     try { await sync.deleteInvite(b.dataset.del); await loadInvites(); } catch (e) { b.disabled = false; toast(syncError(e)); }
   }));

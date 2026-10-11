@@ -7,7 +7,7 @@ import { poolOf, replaceInPool } from '../gappool.js';
 import { esc, inputAttrs } from '../ui/dom.js';
 import { code, forgetWord } from '../ui/context.js';
 import { tl, toneLabel } from '../ui/text.js';
-import { openSheet, sheetHead, moreFields } from '../ui/sheet.js';
+import { openSheet, sheetHead, moreFields, confirmSheet } from '../ui/sheet.js';
 
 export function openEditor(id) {
   const saved = id ? store.getWord(id) : null;
@@ -55,8 +55,8 @@ export function openEditor(id) {
       }
       if (id) store.updateWord(id, fd); else store.addWord({ ...fd, lang: Lw.code, source: 'manual' });
     },
-    onDelete: () => {
-      if (!confirm(t('edit.confirmDelete', { w: wordTitle(w) }))) return false;
+    onDelete: async () => {
+      if (!(await confirmSheet(t('edit.confirmDelete', { w: wordTitle(w) }), { ok: t('edit.deleteOk') }))) return false;
       store.deleteWord(id);
       forgetWord(id);
       return true;
@@ -90,8 +90,8 @@ function openSentenceEditor(w) {
       if (!fd.lemma.trim()) return false;
       store.updateWord(w.id, fd);
     },
-    onDelete: () => {
-      if (!confirm(t('edit.confirmDelete', { w: lemmaOf(w) }))) return false;
+    onDelete: async () => {
+      if (!(await confirmSheet(t('edit.confirmDelete', { w: lemmaOf(w) }), { ok: t('edit.deleteOk') }))) return false;
       store.deleteWord(w.id);
       forgetWord(w.id);
       return true;
