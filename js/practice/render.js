@@ -7,11 +7,12 @@ import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { practicePool, newInPool } from '../session.js';
 import { segmentsFor, cutChunks, toHtml } from '../furigana.js';
-import { main, titleEl, esc, $, $$, errorBox, inputAttrs } from '../ui/dom.js';
+import { main, titleEl, esc, $, $$, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
 import { gem, code, langName, cats, sessionArgs, ui } from '../ui/context.js';
 import { tl, furiMode, jt, readingLine, toneLabel, bindNatural } from '../ui/text.js';
 import { go } from '../router.js';
-import { logTaskMistakes, topUpPractice, advance, nextRound, saveSession, clearSession, resumeSession } from './runtime.js';
+import { logTaskMistakes, topUpPractice, advance, nextRound, retryPrepare, waitTag, saveSession, clearSession, resumeSession } from './runtime.js';
+import { promote, isCancel } from '../gemini.js';
 import { gradeTask, revealFor } from './grade.js';
 import { englishButton, bindEnglish } from './english.js';
 import { pickGap, poolOf, addToPool, gapLevel } from '../gappool.js';
@@ -197,19 +198,27 @@ async function renderTask(task) {
 // Waits for the exercise Gemini is generating for a task (task.ex or task.drill, with its
 // Promise and Error next to it). False when there is nothing to show: the learner moved on
 // meanwhile, or generation failed (then only a Next button is shown).
+// Abbrechen stops waiting (the call may still finish for later); then, as after an error,
+// "Nochmal versuchen" asks again and Weiter skips the task.
 async function generated(task, key) {
   const ex = $('#ex');
-  if (!task[key] && !task[`${key}Error`]) {
-    ex.innerHTML = `<div class="loading">${esc(t('session.loading'))}</div>`;
+  let error = task[`${key}Error`];
+  if (!task[key] && !error) {
+    promote(waitTag(task));
+    const signal = waitBox(ex, t('session.loading'));
     $('#dock').innerHTML = '';
-    await task[`${key}Promise`];
+    const cancelled = new Promise((resolve) => signal.addEventListener('abort', () => resolve('cancel')));
+    if (await Promise.race([task[`${key}Promise`], cancelled]) === 'cancel') error = { kind: 'cancel' };
     if (ui.session?.tasks[ui.session.idx] !== task) return false; // user moved on
   }
-  const error = task[`${key}Error`];
+  error ||= task[`${key}Error`];
   if (error || !task[key]) {
-    ex.innerHTML = `${errorBox(error || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
-    $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>`;
+    ex.innerHTML = isCancel(error) ? ''
+      : `${errorBox(error || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
+    $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>
+      <div class="dock-row"><button class="btn text" id="regen">${esc(t('common.retry'))}</button><span></span></div>`;
     $('#next').addEventListener('click', () => { ui.session.idx++; viewSession(); });
+    $('#regen').addEventListener('click', () => { retryPrepare(task); viewSession(); });
     return false;
   }
   return true;
@@ -305,9 +314,11 @@ async function onCheck(task) {
   try {
     result = await gradeTask(task, a1, a2, fb);
   } catch (e) {
+    if (ui.session?.tasks[ui.session.idx] !== task) return;
+    // The answer stays, so checking again is one tap on the same button.
     task.state.phase = 'answer';
     buttons.forEach((b) => (b.disabled = false));
-    fb.innerHTML = errorBox(e);
+    fb.innerHTML = isCancel(e) ? '' : errorBox(e);
     return;
   }
   task.state = feedbackState(result, a1, a2);
@@ -341,7 +352,7 @@ async function onRecheck(task) {
   } catch (e) {
     if (ui.session?.tasks[ui.session.idx] !== task) return;
     st.phase = 'feedback';
-    fb.innerHTML = shown + errorBox(e);
+    fb.innerHTML = shown + (isCancel(e) ? '' : errorBox(e));
     $$('#dock button').forEach((b) => (b.disabled = false));
     return;
   }

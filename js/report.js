@@ -4,7 +4,7 @@
 // issueFromReport. No browser APIs here, so the Action and the tests can import it too.
 
 // Must match VERSION in sw.js (a test checks), so a report says which build it came from.
-export const APP_VERSION = 'gt-v19';
+export const APP_VERSION = 'gt-v22';
 
 export const TEXT_MAX = 2000;
 export const CAPTURE_MAX = 20000;
@@ -13,6 +13,13 @@ const BLOCK = new Set(['ADDRESS', 'ARTICLE', 'ASIDE', 'BUTTON', 'DD', 'DETAILS',
   'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LABEL', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE',
   'SECTION', 'SUMMARY', 'TABLE', 'TR', 'UL']);
 const SKIP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'svg', 'SVG', 'RT', 'RP']);
+
+// Elements marked data-private (the account email, invite codes, the Gemini key) are never
+// captured, on any screen.
+const isPrivate = (n) => !!n.dataset && 'private' in n.dataset;
+
+// Settings screens hold the account and the key, so their screen is never sent at all.
+export const capturable = (screen) => !String(screen || '').startsWith('settings');
 
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n)}\n… (gekürzt)` : s);
 
@@ -26,7 +33,7 @@ export function screenText(root) {
     if (n.nodeType === 3) { out += n.textContent.replace(/\s+/g, ' '); return; }
     if (n.nodeType !== 1) return;
     const tag = n.tagName;
-    if (SKIP.has(tag) || n.hidden || n.classList?.contains('hidden')) return;
+    if (SKIP.has(tag) || n.hidden || n.classList?.contains('hidden') || isPrivate(n)) return;
     if (tag === 'BR') { out += '\n'; return; }
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
       const type = (n.type || '').toLowerCase();
@@ -117,8 +124,25 @@ const fence = (s) => {
 
 const ISSUE_MAX = 60000;
 
-// The issue for a report: { title, body, labels }. reporter is a short tag (not the email).
-export function issueFromReport(r, { reporter = '', createdAt = '' } = {}) {
+// Removes what must never be public from a report's text: email addresses, Gemini keys and
+// the given invite codes (exact matches only, so ordinary words are left alone). The Action
+// applies it to every report, also those sent by older versions of the app.
+export function redact(s, codes = []) {
+  let out = String(s ?? '')
+    .replace(/[^\s@<>"'()[\]{},;:]+@[^\s@<>"'()[\]{},;:]+\.[A-Za-z]{2,}/g, '[E-Mail entfernt]')
+    .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[Schlüssel entfernt]');
+  for (const c of codes) {
+    const code = String(c ?? '').replace(/[^A-Za-z0-9]/g, '');
+    if (code) out = out.replace(new RegExp(`(?<![A-Za-z0-9])${code}(?![A-Za-z0-9])`, 'gi'), '[Code entfernt]');
+  }
+  return out;
+}
+
+// The issue for a report: { title, body, labels }. reporter is a short tag (not the email);
+// codes are the current invite codes, removed wherever they appear.
+export function issueFromReport(report, { reporter = '', createdAt = '', codes = [] } = {}) {
+  const r = { ...report };
+  for (const k of ['text', 'screenText', 'exercise']) if (r[k]) r[k] = redact(r[k], codes);
   const first = String(r.text || '').split('\n')[0].trim();
   const title = `Fehlerbericht: ${first.length > 70 ? `${first.slice(0, 69)}…` : first || '(ohne Text)'}`;
   const meta = [

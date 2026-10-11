@@ -6,7 +6,7 @@ import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { isSentence } from '../languages.js';
 import { poolOf } from '../gappool.js';
-import { esc, $, errorBox } from '../ui/dom.js';
+import { esc, $, errorBox, waitBox } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
 import { tl } from '../ui/text.js';
 import { writeExamples } from './grade.js';
@@ -65,9 +65,10 @@ export function bindEnglish(task) {
     for (const x of list) if (x.en) task.english[x.text] = x.en;
     const missing = list.filter((x) => !task.english[x.text]);
     if (missing.length) {
-      slot.innerHTML = `<div class="loading">${esc(t('session.translating'))}</div>`;
+      const shown = slot.innerHTML;
+      const signal = waitBox(slot, t('session.translating'));
       try {
-        const out = await gemini.translateTexts(missing.map((x) => x.text));
+        const out = await gemini.translateTexts(missing.map((x) => x.text), { signal });
         missing.forEach((x, i) => {
           if (!out[i]) return;
           task.english[x.text] = out[i];
@@ -75,7 +76,9 @@ export function bindEnglish(task) {
         });
       } catch (e) {
         if (task.state?.phase !== 'feedback' || !document.contains(slot)) return;
-        slot.innerHTML = errorBox(e);
+        // The button comes back, so tapping it again tries again.
+        slot.innerHTML = gemini.isCancel(e) ? shown : errorBox(e) + shown;
+        bindEnglish(task);
         return;
       }
       if (!document.contains(slot)) return; // the learner moved on

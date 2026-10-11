@@ -4,7 +4,7 @@ import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { lemmaOf, isSentence, wordTitle } from '../languages.js';
-import { esc, $, $$, toast, errorBox, inputAttrs } from '../ui/dom.js';
+import { esc, $, $$, toast, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
 import { L, code, langName } from '../ui/context.js';
 import { tl, jt } from '../ui/text.js';
 import { openSheet, sheetHead } from '../ui/sheet.js';
@@ -49,12 +49,12 @@ function openSuggest(onAdded) {
     const go = $('#sgo', sheet);
     $('#sadd', sheet).classList.add('hidden');
     go.disabled = true;
-    list.innerHTML = `<div class="loading">${esc(t('suggest.loading'))}</div>`;
+    const signal = waitBox(list, t('suggest.loading'));
     try {
       // The newest saved words are listed so Gemini avoids them; any that slip through are dropped here.
       const exclude = store.words(c).filter((w) => !isSentence(w)).slice(0, 300).map(lemmaOf);
       const seen = new Set();
-      found = (await gemini.suggestWords(SUGGEST_COUNT, { topic: $('#topic', sheet).value.trim(), exclude })).filter((w) => {
+      found = (await gemini.suggestWords(SUGGEST_COUNT, { topic: $('#topic', sheet).value.trim(), exclude }, { signal })).filter((w) => {
         const key = store.normKey(w.lemma, store.language(c)?.articles);
         if (seen.has(key) || store.findWord(w.lemma, c, store.language(c)?.articles)) return false;
         seen.add(key);
@@ -71,7 +71,7 @@ function openSuggest(onAdded) {
       $('#sadd', sheet).classList.remove('hidden');
       count();
     } catch (e) {
-      list.innerHTML = errorBox(e);
+      list.innerHTML = gemini.isCancel(e) ? '' : errorBox(e);
     } finally {
       go.disabled = false;
       go.textContent = t(found.length ? 'suggest.again' : 'suggest.go');

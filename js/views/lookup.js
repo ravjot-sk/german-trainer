@@ -5,7 +5,7 @@ import { t } from '../i18n.js';
 import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { poolOf, addToPool, poolFromLookup } from '../gappool.js';
-import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
+import { main, titleEl, esc, $, $$, toast, errorBox, waitBox, retryBox, inputAttrs, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
 import { gem, L, code, langName, noGemini, ui } from '../ui/context.js';
 import { tl, jt, readingLine, toneLabel } from '../ui/text.js';
 import { fillFurigana } from '../background.js';
@@ -91,31 +91,38 @@ async function lookupWord(q, ctx) {
     else res.innerHTML = errorBox(noGemini());
     return;
   }
-  res.innerHTML = `<div class="card loading">${esc(t('lookup.loading'))}</div>`;
+  const signal = waitBox(res, t('lookup.loading'), 'card');
   try {
-    const r = await gemini.lookup(q, ctx);
+    const r = await gemini.lookup(q, ctx, { signal });
     if (!r.found || !r.lemma) { res.innerHTML = `<div class="notice">${esc(t('lookup.notFound'))}</div>`; return; }
     const { word, created } = saveLookup(r, { lang: code(), contextSentence: ctx, source: 'lookup' });
     ui.lastLookup = { word, note: created ? t('lookup.saved') : t('lookup.already') };
     viewLookup();
   } catch (err) {
-    res.innerHTML = errorBox(err);
+    failed(res, err, () => lookupWord(q, ctx));
   }
+}
+
+// Abbrechen clears the waiting box; other errors offer to try again. The query stays typed.
+function failed(res, err, retry) {
+  if (!document.contains(res)) return;
+  if (gemini.isCancel(err)) res.innerHTML = '';
+  else retryBox(res, err, retry);
 }
 
 async function translate(q, tone) {
   const res = $('#lres');
   if (!gem()) { res.innerHTML = errorBox(noGemini()); return; }
-  res.innerHTML = `<div class="card loading">${esc(t('lookup.translating'))}</div>`;
+  const signal = waitBox(res, t('lookup.translating'), 'card');
   try {
-    const r = await gemini.translateSentence(q, tone);
+    const r = await gemini.translateSentence(q, tone, {}, { signal });
     if (!r.sentence) { res.innerHTML = `<div class="notice">${esc(t('lookup.notTranslated'))}</div>`; return; }
     const { word, created } = store.addSentence({ ...r, query: q }, code());
     ui.lastLookup = { word, note: created ? t('lookup.sentenceSaved') : t('lookup.sentenceAlready') };
     viewLookup();
     $('#q').value = q;
   } catch (err) {
-    res.innerHTML = errorBox(err);
+    failed(res, err, () => translate(q, tone));
   }
 }
 

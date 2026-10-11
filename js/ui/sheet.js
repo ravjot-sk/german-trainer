@@ -24,7 +24,7 @@ export function mountSheet(panelHtml, { redraw = true, onClose } = {}) {
   panel.setAttribute('aria-modal', 'true');
   if (title) panel.setAttribute('aria-labelledby', title.id);
   panel.tabIndex = -1;
-  const behind = [...document.body.children].filter((el) => !el.inert && el.id !== 'toast' && el.tagName !== 'SCRIPT');
+  const behind = [...document.body.children].filter((el) => !el.inert && el.tagName !== 'SCRIPT' && !el.matches('[role=status], [role=alert]'));
   behind.forEach((el) => (el.inert = true));
   document.body.appendChild(back);
   document.body.classList.add('no-scroll');

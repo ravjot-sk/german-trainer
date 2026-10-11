@@ -37,12 +37,14 @@ async function createIssue(issue) {
 
 const snap = await db.collection('bugReports').orderBy('createdAt').limit(50).get();
 console.log(`${snap.size} report(s)`);
+// Live invite codes are removed from every report before it becomes public (report.redact).
+const codes = snap.size ? (await db.collection('inviteCodes').get()).docs.map((d) => d.id) : [];
 // The label, if the repo doesn't have it yet (422 when it already exists).
 if (!dry && snap.size) await gh('/labels', { name: 'user-report', color: 'd93f0b', description: 'Sent from the app' });
 let failed = 0;
 for (const doc of snap.docs) {
   const r = doc.data();
-  const issue = issueFromReport(r, { reporter: reporter(r.uid), createdAt: r.createdAt?.toDate().toISOString() || '' });
+  const issue = issueFromReport(r, { reporter: reporter(r.uid), createdAt: r.createdAt?.toDate().toISOString() || '', codes });
   if (dry) {
     console.log(`--- ${doc.id}\n${issue.title}\n\n${issue.body}\n`);
     continue;

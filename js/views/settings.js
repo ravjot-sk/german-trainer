@@ -1,7 +1,8 @@
 // Settings, and its Advanced (Gemini model) and Backup pages.
 import * as store from '../store.js';
 import * as gemini from '../gemini.js';
-import { t } from '../i18n.js';
+import { textModels, RECOMMENDED_MODEL } from '../gemclient.js';
+import { t, lang } from '../i18n.js';
 import { icon } from '../icons.js';
 import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs, pressedAttrs, choose } from '../ui/dom.js';
 import { confirmSheet } from '../ui/sheet.js';
@@ -29,12 +30,12 @@ export function viewSettings() {
       <p class="muted small">${esc(t('settings.furiganaHelp'))}</p>` : ''}
     </section>
     <div class="group-label">${esc(t('sync.title'))}</div>
-    <section class="card form" id="synccard"></section>
-    <div id="admincard" class="contents"></div>
+    <section class="card form" id="synccard" data-private></section>
+    <div id="admincard" class="contents" data-private></div>
     <div class="group-label">Gemini</div>
     <section class="card form">
       <label>${esc(t('settings.apiKey'))}
-        <div class="inline"><input id="key" type="password" ${inputAttrs} value="${esc(store.getApiKey())}" placeholder="AIza…">
+        <div class="inline"><input id="key" type="password" data-private ${inputAttrs} value="${esc(store.getApiKey())}" placeholder="AIza…">
         <button class="btn small text" id="showkey">${esc(t('settings.show'))}</button></div>
       </label>
       <p class="muted small">${esc(t('settings.apiKeyHelp'))} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></p>
@@ -90,35 +91,41 @@ function bindTest() {
     $('#testres').innerHTML = `<div class="loading">…</div>`;
     try {
       const r = await gemini.testKey();
-      if ($('#model')) $('#model').value = r.model;
+      if ($('#model')) fillModels($('#model'));
       $('#testres').innerHTML = `<div class="notice ok">${esc(t('settings.testOk', { m: r.model }))}</div>`;
     } catch (e) { $('#testres').innerHTML = errorBox(e); }
   });
 }
 
+// The models in the dropdown: the ones the key can use once loaded, and always the saved and
+// the recommended one.
+let models = [];
+function fillModels(sel) {
+  const cur = store.getSettings().model;
+  sel.innerHTML = textModels([...models, cur, RECOMMENDED_MODEL]).map((n) => `<option value="${esc(n)}"${n === cur ? ' selected' : ''}>${esc(n)}${n === RECOMMENDED_MODEL ? ` ${esc(t('settings.recommended'))}` : ''}</option>`).join('');
+}
+
 // Settings › Advanced: which Gemini model to use.
 export function viewAdvanced() {
   titleEl.textContent = t('settings.advanced');
-  const s = store.getSettings();
   main.innerHTML = `
     <section class="card form">
       <label>${esc(t('settings.model'))}
-        <div class="inline"><input id="model" list="models" ${inputAttrs} value="${esc(s.model)}">
-        <button class="btn small" id="loadmodels">${esc(t('settings.loadModels'))}</button></div>
-        <datalist id="models"></datalist>
+        <select id="model"></select>
       </label>
       <p class="muted small">${esc(t('settings.advancedHelp'))}</p>
       <button class="btn" id="test">${esc(t('settings.test'))}</button>
       <div id="testres"></div>
     </section>`;
-  $('#model').addEventListener('change', (e) => { store.setSettings({ model: e.target.value.trim() || 'gemini-flash-latest' }); toast(t('settings.saved')); });
-  $('#loadmodels').addEventListener('click', async () => {
-    try {
-      const names = await gemini.listModels();
-      $('#models').innerHTML = names.map((n) => `<option value="${esc(n)}">`).join('');
-      $('#testres').innerHTML = `<p class="muted small">${esc(names.join(', '))}</p>`;
-    } catch (e) { $('#testres').innerHTML = errorBox(e); }
-  });
+  const sel = $('#model');
+  fillModels(sel);
+  sel.addEventListener('change', (e) => { store.setSettings({ model: e.target.value }); toast(t('settings.saved')); });
+  if (gemini.canUseGemini()) {
+    gemini.listModels().then((names) => {
+      models = names;
+      if (document.contains(sel)) fillModels(sel);
+    }).catch((e) => console.warn('models', e));
+  }
   bindTest();
 }
 
@@ -128,6 +135,7 @@ export function viewBackup() {
   main.innerHTML = `
     <section class="card form">
       <p class="muted small">${esc(t(accountSynced() ? 'settings.backupHelpSynced' : 'settings.backupHelp'))}</p>
+      <p class="muted small" id="storage"></p>
       <div class="actions">
         <button class="btn" id="export">${esc(t('settings.export'))}</button>
         <label class="btn" for="importfile">${esc(t('settings.import'))}</label>
@@ -136,6 +144,7 @@ export function viewBackup() {
     </section>
     <button class="btn danger" id="reset">${esc(t('settings.reset'))}</button>`;
   $('#export').addEventListener('click', exportBackup);
+  showStorage();
   $('#importfile').addEventListener('change', async (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -149,6 +158,17 @@ export function viewBackup() {
     store.resetData(); resetViews(); toast('OK');
   });
 }
+
+// How much this app takes up on the device (data, offline copy of the app), if the browser says.
+async function showStorage() {
+  try {
+    const { usage } = await navigator.storage.estimate();
+    const el = $('#storage');
+    if (el && usage != null) el.textContent = t('settings.storage', { n: fmtBytes(usage) });
+  } catch { /* not supported */ }
+}
+
+const fmtBytes = (n) => (n < 1e6 ? `${Math.max(1, Math.round(n / 1e3))} KB` : `${(n / 1e6).toFixed(1).replace('.', lang() === 'de' ? ',' : '.')} MB`);
 
 async function exportBackup() {
   const name = `language-trainer-${new Date().toISOString().slice(0, 10)}.json`;

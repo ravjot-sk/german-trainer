@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { APP_VERSION, screenText, exerciseData, buildReport, issueFromReport, screenHtml } from '../js/report.js';
+import { APP_VERSION, screenText, exerciseData, buildReport, issueFromReport, screenHtml, redact, capturable } from '../js/report.js';
 
 // A tiny stand-in for the DOM: elements with tagName and childNodes, text nodes, inputs.
 const txt = (s) => ({ nodeType: 3, textContent: s });
@@ -67,4 +67,40 @@ test('issue: no email, no mentions, user text stays plain, corrections show as s
 
 test('issue without the screen says so', () => {
   assert.match(issueFromReport({ text: 'x' }).body, /Ohne Bildschirminhalt/);
+});
+
+test('private elements are never captured', () => {
+  const root = el('MAIN', [
+    el('SECTION', [el('P', ['Angemeldet als ravi@example.com'])], { dataset: { private: '' } }),
+    el('INPUT', [], { type: 'text', value: 'AIzaSyExampleExampleExampleExample123', dataset: { private: '' } }),
+    el('UL', [el('LI', ['ABCD2345'])], { dataset: { private: '' } }),
+    el('P', ['Einstellungen']),
+  ]);
+  assert.equal(screenText(root), 'Einstellungen');
+});
+
+test('settings screens are not captured', () => {
+  assert.equal(capturable('settings'), false);
+  assert.equal(capturable('settings/advanced'), false);
+  assert.equal(capturable('settings/backup'), false);
+  assert.equal(capturable('session'), true);
+  assert.equal(capturable('today'), true);
+});
+
+test('redact removes emails, Gemini keys and live invite codes only', () => {
+  const s = 'Angemeldet als Ravi.S@example.co.uk, Schlüssel AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUv, Code abcd2345 und GRAMMATIK ABCD23456';
+  assert.equal(redact(s, ['ABCD2345']),
+    'Angemeldet als [E-Mail entfernt], Schlüssel [Schlüssel entfernt], Code [Code entfernt] und GRAMMATIK ABCD23456');
+  assert.equal(redact('Ich habe gegangen', ['ABCD2345']), 'Ich habe gegangen');
+  assert.equal(redact('{"note":"a@b.de"}'), '{"note":"[E-Mail entfernt]"}');
+});
+
+test('issue is redacted in title, text, screen and exercise data', () => {
+  const issue = issueFromReport({ text: 'Code ZXCV7890 geht nicht, mail me x@y.de',
+    screenText: 'Angemeldet als x@y.de\nZXCV7890', exercise: '{"k":"AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUv"}' },
+  { codes: ['ZXCV7890'] });
+  for (const leak of ['ZXCV7890', 'x&#64;y.de', 'x@y.de', 'AIzaSy']) {
+    assert.ok(!issue.title.includes(leak) && !issue.body.includes(leak), leak);
+  }
+  assert.match(issue.title, /\[Code entfernt\]/);
 });

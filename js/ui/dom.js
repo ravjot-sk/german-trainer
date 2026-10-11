@@ -1,4 +1,5 @@
 // Small DOM helpers shared by every screen.
+import { t } from '../i18n.js';
 
 export const main = document.getElementById('main');
 export const titleEl = document.getElementById('title');
@@ -23,6 +24,21 @@ export function errorBox(e) {
 export const pressedAttrs = (on) => `class="${on ? 'on' : ''}" aria-pressed="${on}"`;
 export function choose(group, b) {
   group.forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+}
+
+// While Gemini works: the waiting text in el with an "Abbrechen" button. Returns the signal the
+// button aborts, to pass to the Gemini call. cls is added to the box (e.g. 'card').
+export function waitBox(el, text, cls = '', ctl = new AbortController()) {
+  el.innerHTML = `<div class="waiting ${cls}"><span class="loading">${esc(text)}</span>
+    <button type="button" class="btn small text" data-cancel>${esc(t('common.cancel'))}</button></div>`;
+  el.querySelector('[data-cancel]').addEventListener('click', () => ctl.abort());
+  return ctl.signal;
+}
+
+// A failed call: the message and "Nochmal versuchen", which runs retry.
+export function retryBox(el, e, retry) {
+  el.innerHTML = `${errorBox(e)}<button type="button" class="btn small" data-retry>${esc(t('common.retry'))}</button>`;
+  el.querySelector('[data-retry]').addEventListener('click', retry);
 }
 
 export const inputAttrs = 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
