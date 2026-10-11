@@ -4,7 +4,7 @@
 // issueFromReport. No browser APIs here, so the Action and the tests can import it too.
 
 // Must match VERSION in sw.js (a test checks), so a report says which build it came from.
-export const APP_VERSION = 'gt-v21';
+export const APP_VERSION = 'gt-v22';
 
 export const TEXT_MAX = 2000;
 export const CAPTURE_MAX = 20000;

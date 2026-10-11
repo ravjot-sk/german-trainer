@@ -12,6 +12,7 @@ import { afterGap } from '../gappool.js';
 import { gem, code, sessionArgs, ui } from '../ui/context.js';
 import { fillFurigana, latestItem, generateRuleSets, topUpRules, classifyOldMistakes, refillGaps } from '../background.js';
 import { ownMistake, followUpIds, answerRecord, requeueAt } from '../answer.js';
+import { snapshotOf, restoreSession, SESSION_KEY } from '../resume.js';
 
 // Starts generating a drill as soon as its task is queued, so it is ready when it comes up.
 function prepare(task) {
@@ -49,6 +50,31 @@ export function startSession() {
   refillGaps();
   topUpRules();
   classifyOldMistakes();
+}
+
+// The running session is kept on this device (not synced) after every step, so it can carry
+// on when iOS closed the app in the background. Storage can be unavailable.
+export function saveSession() {
+  if (!ui.session) return;
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(snapshotOf(ui.session))); } catch { /* not kept */ }
+}
+
+export function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* nothing kept */ }
+}
+
+// Picks up the session saved today in the active language. False when there is none.
+export function resumeSession() {
+  let snap = null;
+  try { snap = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { /* none */ }
+  const s = restoreSession(snap, { ...sessionArgs(), lang: code() });
+  if (!s) { clearSession(); return false; }
+  s.tasks.slice(s.idx).forEach(prepare);
+  ui.session = s;
+  if (code() === 'ja') fillFurigana(s.tasks.slice(s.idx).map((x) => x.word).filter(Boolean));
+  refillGaps();
+  topUpRules();
+  return true;
 }
 
 // A rule task takes the exercise for the rule's rung from its pool, or has one generated.

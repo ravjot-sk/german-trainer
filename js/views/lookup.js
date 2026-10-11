@@ -5,7 +5,7 @@ import { t } from '../i18n.js';
 import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { poolOf, addToPool, poolFromLookup } from '../gappool.js';
-import { main, titleEl, esc, $, $$, toast, errorBox, waitBox, retryBox, inputAttrs, pref, setPref } from '../ui/dom.js';
+import { main, titleEl, esc, $, $$, toast, errorBox, waitBox, retryBox, inputAttrs, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
 import { gem, L, code, langName, noGemini, ui } from '../ui/context.js';
 import { tl, jt, readingLine, toneLabel } from '../ui/text.js';
 import { fillFurigana } from '../background.js';
@@ -20,7 +20,7 @@ export function viewLookup() {
   const tone = pref('tone', 'everyday');
   const romanized = L()?.romanized ? `<p class="muted small">${esc(t('lookup.romanized', { r: L().romanized }))}</p>` : '';
   const seg = (id, options, current) => `<div class="seg" id="${id}">${options.map(([v, label]) =>
-    `<button type="button" data-v="${esc(v)}" class="${v === current ? 'on' : ''}">${esc(label)}</button>`).join('')}</div>`;
+    `<button type="button" data-v="${esc(v)}" ${pressedAttrs(v === current)}>${esc(label)}</button>`).join('')}</div>`;
   const form = mode === 'sentence'
     ? `<textarea id="q" rows="3" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.sentencePlaceholder', { l: langName() }))}"></textarea>
       <div class="field-label">${esc(t('lookup.tone'))}</div>
@@ -49,7 +49,7 @@ export function viewLookup() {
   }));
   $$('#tone button').forEach((b) => b.addEventListener('click', () => {
     setPref('tone', b.dataset.v);
-    $$('#tone button').forEach((x) => x.classList.toggle('on', x === b));
+    choose($$('#tone button'), b);
     $('#tonehelp').textContent = t(`tone.${b.dataset.v}.help`);
   }));
   $('#addctx')?.addEventListener('click', () => { $('#ctx').classList.remove('hidden'); $('#addctx').remove(); $('#ctx').focus(); });

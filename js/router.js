@@ -14,13 +14,18 @@ export function registerRoutes(table) { routes = table; }
 
 export const routeName = () => (location.hash.replace(/^#\/?/, '') || 'today').split('?')[0];
 
-export function route() {
+// keepScroll: a redraw of the same page (after a sync or a sheet), which keeps the reader's place.
+// As the hashchange listener it gets an event, which starts at the top.
+export function route({ keepScroll = false } = {}) {
   const name = routeName();
+  const y = [main.scrollTop, window.scrollY];
   // Until a language and level are chosen, every page except Settings shows that choice.
   const view = !L()?.level && !name.startsWith('settings') ? routes.today : routes[name] || routes.today;
   const parent = parents[name];
   $$('#tabs a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === (parent || name));
+    const on = a.dataset.route === (parent || name);
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     $('span', a).textContent = t(`tab.${a.dataset.route}`);
   });
   const back = $('#back');
@@ -36,6 +41,10 @@ export function route() {
   main.scrollTop = 0;
   window.scrollTo(0, 0);
   view();
+  if (keepScroll) {
+    main.scrollTop = y[0];
+    window.scrollTo(0, y[1]);
+  }
 }
 
 export function go(name) {

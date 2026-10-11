@@ -66,7 +66,7 @@ function watchUpdates(reg) {
 }
 // Changes merged in from another device: refresh the overview pages (not forms or sessions).
 store.onChange(({ remote } = {}) => {
-  if (remote && ['today', 'profile'].includes(routeName())) route();
+  if (remote && ['today', 'profile'].includes(routeName())) route({ keepScroll: true });
 });
 sync.onState(showSyncState);
 // Saving: pending writes go out when the app is sent to the background, and a failed save

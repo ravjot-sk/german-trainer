@@ -2,13 +2,13 @@
 // even on a weak signal. A new version is downloaded in the background and waits until the app
 // asks for it (the "Neue Version" bar, or the next start); see app.js.
 // Gemini and Firebase requests go to other origins and are never cached.
-const VERSION = 'gt-v21';
+const VERSION = 'gt-v22';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/store.js', './js/i18n.js', './js/gemini.js', './js/gemclient.js', './js/srs.js',
   './js/check.js', './js/session.js', './js/categories.js', './js/languages.js', './js/actions.js',
   './js/sync.js', './js/syncmerge.js', './js/invites.js', './js/firebase-config.js', './js/icons.js', './js/furigana.js', './js/gappool.js',
-  './js/rules.js', './js/ruleseeds.js', './js/report.js', './js/localdb.js', './js/reviews.js',
+  './js/rules.js', './js/ruleseeds.js', './js/report.js', './js/localdb.js', './js/reviews.js', './js/resume.js',
   './js/ui/dom.js', './js/ui/context.js', './js/ui/text.js', './js/ui/sheet.js', './js/router.js', './js/background.js', './js/stats.js', './js/answer.js',
   './js/practice/runtime.js', './js/practice/render.js', './js/practice/grade.js', './js/practice/english.js',
   './js/views/learncard.js', './js/views/today.js', './js/views/lookup.js', './js/views/words.js', './js/views/suggest.js',

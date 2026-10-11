@@ -20,6 +20,12 @@ export function errorBox(e) {
   return `<div class="notice error">${esc(e.message || e)}</div>`;
 }
 
+// Segmented buttons: marks b as the chosen one of its group, for sight and screen readers.
+export const pressedAttrs = (on) => `class="${on ? 'on' : ''}" aria-pressed="${on}"`;
+export function choose(group, b) {
+  group.forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+}
+
 // While Gemini works: the waiting text in el with an "Abbrechen" button. Returns the signal the
 // button aborts, to pass to the Gemini call. cls is added to the box (e.g. 'card').
 export function waitBox(el, text, cls = '', ctl = new AbortController()) {
