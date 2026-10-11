@@ -1,23 +1,29 @@
-// Local-first data store. Everything lives in localStorage on this device; the collections
-// mirror the spec's data model (words, mistakes, reviewItems, reviews) plus the learner's
-// languages and levels. Words, mistakes and reviews carry a `lang` (none means German). When
-// the user signs in, sync.js mirrors each record to Firestore, using updatedAt to decide
-// which copy is newer.
+// Local-first data store. Everything lives on this device (IndexedDB, see localdb.js); the
+// collections mirror the spec's data model (words, mistakes, reviewItems, reviews) plus the
+// learner's languages and levels. Words, mistakes and reviews carry a `lang` (none means
+// German). When the user signs in, sync.js mirrors each record to Firestore, using updatedAt
+// to decide which copy is newer.
 import { dayStart } from './srs.js';
 import { describe, recLang, lemmaOf, catKey } from './languages.js';
 import { migrateCategory, hasRules } from './categories.js';
 import { migrateData, ruleFrom, ruleItemId, newRuleItem, afterMistake } from './rules.js';
+import { slot } from './localdb.js';
+import { trimReviews } from './reviews.js';
 
 const DATA_KEY = 'gt.data.v1';
 const KEY_KEY = 'gt.apiKey';
 const SETTINGS_KEY = 'gt.settings.v1';
+const TRIMMED_KEY = 'gt.reviewsTrimmed';
 
 const DEFAULT_SETTINGS = { lang: 'de', model: 'gemini-flash-latest', newPerDay: 8, newSentencesPerDay: 3, newMistakesPerDay: 4 };
 
-let data = load();
+const dataSlot = slot('data', DATA_KEY);
+// Until ready() has loaded from IndexedDB, the data from localStorage (none once it has moved).
+const early = !dataSlot.moved();
+let data = early ? load() : emptyData();
 let settings = loadSettings();
 // Older data moves onto the current grammar categories once.
-if (migrateData(data, touch)) save();
+if (early && migrateData(data, touch)) save();
 const listeners = new Set();
 
 function emptyData() {
@@ -25,11 +31,17 @@ function emptyData() {
 }
 
 function load() {
-  try {
-    const raw = localStorage.getItem(DATA_KEY);
-    if (raw) return { ...emptyData(), ...JSON.parse(raw) };
-  } catch (e) { console.warn('load failed', e); }
-  return emptyData();
+  const saved = dataSlot.readLegacy();
+  return saved ? { ...emptyData(), ...saved } : emptyData();
+}
+
+// Loads the data from IndexedDB (moving it there from localStorage the first time). The app
+// waits for this before drawing its first screen. Old reviews are trimmed once a day.
+export async function ready(now = Date.now()) {
+  const saved = await dataSlot.load();
+  data = saved ? { ...emptyData(), ...saved } : emptyData();
+  if (migrateData(data, touch)) save();
+  trimOldReviews(now);
 }
 
 function loadSettings() {
@@ -44,9 +56,7 @@ function persist({ remote = false } = {}) {
   listeners.forEach((fn) => fn({ remote }));
 }
 
-function save() {
-  try { localStorage.setItem(DATA_KEY, JSON.stringify(data)); } catch (e) { console.warn('save failed', e); }
-}
+function save() { dataSlot.save(data); }
 
 // A strictly increasing edit time, so an edit always counts as newer than the last sync.
 function touch(rec, now = Date.now()) {
@@ -291,6 +301,22 @@ export function saveReview(item, review) {
   }
   data.reviews.push({ id: uid(), ...review, updatedAt: Date.now() });
   persist();
+}
+
+// Reviews older than reviews.KEEP_DAYS go, except those the app still reads (reviews.js).
+// At most once a day; sync removes them from the account too.
+export function trimOldReviews(now = Date.now()) {
+  let last = 0;
+  try { last = Number(localStorage.getItem(TRIMMED_KEY)) || 0; } catch { /* trim anyway */ }
+  if (last >= dayStart(now)) return 0;
+  try { localStorage.setItem(TRIMMED_KEY, String(now)); } catch { /* not kept */ }
+  const kept = trimReviews(data.reviews, now);
+  const removed = data.reviews.length - kept.length;
+  if (removed) {
+    data.reviews = kept;
+    persist();
+  }
+  return removed;
 }
 
 // ---- backup ----

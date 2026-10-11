@@ -8,6 +8,7 @@ import * as store from './store.js';
 import { firebaseConfig } from './firebase-config.js';
 import { COLLECTIONS, pendingChanges, applyRemote, docId, recId } from './syncmerge.js';
 import { newCode, normCode, isCode } from './invites.js';
+import { slot } from './localdb.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0';
 const STATE_KEY = 'gt.sync.v1';
@@ -34,16 +35,13 @@ let again = false;
 let timer = null;
 let loading = null;
 // { uid, cursor: { coll: ms }, synced: { coll: { id: updatedAt } } }. The uid also marks
-// whose account the local data belongs to.
-let sync = loadState();
+// whose account the local data belongs to. Kept next to the data (localdb.js), loaded by init().
+const stateSlot = slot('sync', STATE_KEY);
+let sync = null;
+let stateLoaded = false;
 const listeners = new Set();
 
-function loadState() {
-  try { return JSON.parse(localStorage.getItem(STATE_KEY)) || null; } catch { return null; }
-}
-function saveState() {
-  if (sync) localStorage.setItem(STATE_KEY, JSON.stringify(sync)); else localStorage.removeItem(STATE_KEY);
-}
+function saveState() { stateSlot.save(sync); }
 
 export const enabled = () => !!firebaseConfig;
 
@@ -93,6 +91,10 @@ export function init() {
 }
 
 async function load() {
+  if (!stateLoaded) {
+    sync = await stateSlot.load();
+    stateLoaded = true;
+  }
   try {
     const [appM, authM, fsM] = await Promise.all([
       import(`${SDK}/firebase-app.js`), import(`${SDK}/firebase-auth.js`), import(`${SDK}/firebase-firestore.js`),

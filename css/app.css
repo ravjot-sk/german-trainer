@@ -164,6 +164,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .notice { background: var(--warn-soft); color: var(--text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; }
 .notice.error { background: var(--bad-soft); }
 .notice.ok { background: var(--ok-soft); }
+.savewarn { margin: 0 max(16px, calc((100% - 608px) / 2)) 8px; }
 .loading { color: var(--muted); padding: 8px 0; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .loading { animation: none; } }
