@@ -4,7 +4,7 @@ import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { isCurated } from '../categories.js';
 import { icon } from '../icons.js';
-import { esc, $, toast, errorBox, inputAttrs } from '../ui/dom.js';
+import { esc, $, toast, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
 import { L, code, langName, resetViews } from '../ui/context.js';
 import { mountSheet } from '../ui/sheet.js';
 
@@ -50,9 +50,9 @@ export function bindLearnCard(redraw) {
     if (!name) return;
     const btn = e.currentTarget;
     btn.disabled = true;
-    $('#learnres').innerHTML = `<div class="loading">${esc(t('settings.adding'))}</div>`;
+    const signal = waitBox($('#learnres'), t('settings.adding'));
     try {
-      const d = await gemini.setupLanguage(name);
+      const d = await gemini.setupLanguage(name, { signal });
       if (!d) { $('#learnres').innerHTML = errorBox(t('settings.langNotFound')); return; }
       // A language that is already here (built in or added before) keeps its categories.
       if (!store.knownLanguages().some((x) => x.code === d.code)) {
@@ -63,7 +63,7 @@ export function bindLearnCard(redraw) {
       resetViews();
       redraw();
     } catch (err) {
-      $('#learnres').innerHTML = errorBox(err);
+      $('#learnres').innerHTML = gemini.isCancel(err) ? '' : errorBox(err);
     } finally {
       btn.disabled = false;
     }

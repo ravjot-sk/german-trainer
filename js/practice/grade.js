@@ -7,12 +7,15 @@ import { compare, compareAny, compareExact, checkRecall, checkGap, needsPlural, 
 import { recLang, lemmaOf, wordTitle, isSentence } from '../languages.js';
 import { icon } from '../icons.js';
 import { poolOf } from '../gappool.js';
-import { esc, $ } from '../ui/dom.js';
+import { esc, $, waitBox } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
 import { tl, jt, furiShown, toneLabel, diffHtml, correctionHtml, naturalBlock } from '../ui/text.js';
 import { ruleCompare, transformGrade, strictGrade, isExact, fixPairs } from '../answer.js';
 
-const grading = (fb) => { fb.innerHTML = `<div class="loading">${esc(t('session.grading'))}</div>`; };
+// The check under way: its Abbrechen stops every Gemini call it makes (see gradeTask).
+let ctl = null;
+const call = () => ({ signal: ctl?.signal });
+const grading = (fb) => { waitBox(fb, t('session.grading'), '', ctl || undefined); };
 const para = (x) => (x ? `<p>${esc(x)}</p>` : '');
 const numbered = (list) => list.map((x, i) => `${i + 1}. ${x}`).join('\n');
 
@@ -27,7 +30,7 @@ function fixHtml(grade, parts, c) {
 // Gemini's verdict on an answer the app checked itself, for "Check again".
 async function judged(fb, args) {
   grading(fb);
-  const o = await gemini.judgeAnswer(args);
+  const o = await gemini.judgeAnswer(args, call());
   return { grade: o.correct ? 'correct' : o.minor ? 'almost' : 'wrong', verdict: o.feedback };
 }
 
@@ -36,7 +39,17 @@ async function judged(fb, args) {
 // second check can still withdraw them) and the plain verdict text.
 // recheck ({ correct, feedback }, the first verdict) asks Gemini again: answers the app checks
 // itself then get Gemini's opinion instead of the local check.
+// Abbrechen while Gemini checks rejects with a GeminiError of kind 'cancel'.
 export async function gradeTask(task, a1, a2, fb, recheck = null) {
+  ctl = new AbortController();
+  try {
+    return await gradeOnce(task, a1, a2, fb, recheck);
+  } finally {
+    ctl = null;
+  }
+}
+
+async function gradeOnce(task, a1, a2, fb, recheck) {
   let grade = 'wrong', html = '', canOverride = false, mistakes = [], almostKey = null, verdict = '';
   let ownGap = null, corrected = '', natural = '';
   const w = task.word;
@@ -66,7 +79,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
   } else if (task.kind === 'say') {
     if (gem()) {
       grading(fb);
-      const r = await gemini.gradeTranslation(w, a1, { recheck });
+      const r = await gemini.gradeTranslation(w, a1, { recheck }, call());
       mistakes = r.mistakes || [];
       grade = r.correct && !mistakes.length ? 'correct' : 'wrong';
       verdict = r.feedback || '';
@@ -96,7 +109,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
       // form nobody listed must not count as wrong. Gemini decides when it can.
       if (grade === 'wrong' && gem()) {
         grading(fb);
-        const g = await gemini.checkGap(w, task.gap, a1, { recheck }).catch((e) => { if (recheck) throw e; return null; });
+        const g = await gemini.checkGap(w, task.gap, a1, { recheck }, call()).catch((e) => { if (recheck || gemini.isCancel(e)) throw e; return null; });
         if (g?.correct) grade = 'correct';
         verdict = g?.feedback || '';
       }
@@ -107,7 +120,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
     ({ grade, html, canOverride, mistakes, verdict } = await checkRule(task, a1, fb, recheck));
   } else if (task.kind === 'write') {
     grading(fb);
-    const r = await gemini.gradeWordSentence(w, a1, { recheck });
+    const r = await gemini.gradeWordSentence(w, a1, { recheck }, call());
     mistakes = r.mistakes || [];
     grade = r.usesWordCorrectly && !mistakes.length ? 'correct' : 'wrong';
     verdict = r.feedback || '';
@@ -129,7 +142,7 @@ export async function gradeTask(task, a1, a2, fb, recheck = null) {
       html = para(verdict) + fixHtml(grade, [[a1, [d.answer, ...(d.acceptableAnswers || [])]]]) + drillReveal(task);
     } else {
       grading(fb);
-      const r = await gemini.gradeAnswer({ instruction: d.instruction, prompt: d.prompt, model: d.answer, answer: a1, category: task.category, recheck });
+      const r = await gemini.gradeAnswer({ instruction: d.instruction, prompt: d.prompt, model: d.answer, answer: a1, category: task.category, recheck }, call());
       mistakes = r.mistakes || [];
       grade = r.correct ? 'correct' : 'wrong';
       verdict = r.feedback || '';
@@ -177,7 +190,7 @@ async function checkRule(task, a1, fb, recheck) {
         await Promise.all(unsure.map(async (i) => {
           const x = e.items[i];
           const o = await gemini.judgeAnswer({ instruction: `${e.instruction}${about}`, shown: x.prompt, expected: x.answer, answer: answers[i],
-            recheck: { correct: first[i]?.grade === 'correct', feedback: first[i]?.note || '' } });
+            recheck: { correct: first[i]?.grade === 'correct', feedback: first[i]?.note || '' } }, call());
           grades[i] = o.correct ? 'correct' : o.minor ? 'almost' : 'wrong';
           notes[i] = o.correct ? '' : o.feedback;
         }));
@@ -186,8 +199,8 @@ async function checkRule(task, a1, fb, recheck) {
         // (another word order, another correct form): Gemini gets a second look at it.
         await Promise.all(unsure.filter((i) => grades[i] === 'wrong').map(async (i) => {
           const x = e.items[i];
-          const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: x.prompt, model: x.answer, answer: answers[i], category: rule.category, rule })
-            .catch(() => null);
+          const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: x.prompt, model: x.answer, answer: answers[i], category: rule.category, rule }, call())
+            .catch((err) => { if (gemini.isCancel(err)) throw err; return null; });
           if (r?.correct) grades[i] = 'correct';
           else if (r?.feedback) notes[i] = r.feedback;
         }));
@@ -210,7 +223,7 @@ async function checkRule(task, a1, fb, recheck) {
     if ((grade !== 'correct' || recheck) && gem()) {
       grading(fb);
       const r = await gemini.gradeAnswer({ instruction: 'Find and correct the mistakes against the rule in this text. Change nothing else.',
-        prompt: e.text, model: e.corrected, answer: a1, category: rule.category, rule, recheck });
+        prompt: e.text, model: e.corrected, answer: a1, category: rule.category, rule, recheck }, call());
       grade = r.correct ? 'correct' : 'wrong';
       verdict = r.feedback || '';
     }
@@ -221,7 +234,7 @@ async function checkRule(task, a1, fb, recheck) {
     html = para(verdict) + (fix ? fix + why(e.explanation) : ruleReveal(task));
   } else {
     grading(fb);
-    const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: '', model: e.model, answer: a1, category: rule.category, rule, recheck });
+    const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: '', model: e.model, answer: a1, category: rule.category, rule, recheck }, call());
     mistakes = r.mistakes || [];
     grade = r.correct ? 'correct' : 'wrong';
     verdict = r.feedback || '';

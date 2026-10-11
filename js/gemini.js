@@ -7,78 +7,111 @@ import { seedGuide } from './ruleseeds.js';
 import { lemmaOf, wordTitle, cleanExamples, MORE_EXAMPLES } from './languages.js';
 import { parse as parseFurigana } from './furigana.js';
 import { t, lang } from './i18n.js';
+import { send, createQueue, isDailyLimit, textModels, CallError, FOREGROUND_MS, BACKGROUND_MS, RECOMMENDED_MODEL } from './gemclient.js';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
+export { RECOMMENDED_MODEL };
 
-export class GeminiError extends Error {}
+// kind: 'cancel' when the learner stopped the call, otherwise why it failed.
+export class GeminiError extends Error {
+  constructor(message, kind = 'api') {
+    super(message);
+    this.kind = kind;
+  }
+}
+
+export const isCancel = (e) => e?.kind === 'cancel';
 
 export function canUseGemini() {
   return !!getApiKey() && navigator.onLine !== false;
 }
 
-async function request(model, body) {
-  const res = await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getApiKey() },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => ({}));
-  return { res, json };
+const queue = createQueue();
+
+// Starts a background call that was queued for a task now, because the learner reached it.
+export const promote = (tag) => queue.promote(tag);
+
+const ERRORS = { timeout: 'err.timeout', cancel: 'err.cancelled', offline: 'err.offline', network: 'err.network' };
+
+// One request with the time limit and retries of gemclient.js; network problems become a
+// GeminiError the screens can show.
+async function request(path, { body, signal, background } = {}) {
+  try {
+    return await send(async (abort) => {
+      const res = await fetch(`${BASE}/${path}`, {
+        method: body ? 'POST' : 'GET',
+        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), 'x-goog-api-key': getApiKey() },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: abort,
+      });
+      const json = await res.json().catch(() => ({}));
+      return { res, json };
+    }, { signal, ms: background ? BACKGROUND_MS : FOREGROUND_MS, onLimit: queue.limited });
+  } catch (e) {
+    if (e instanceof CallError) throw new GeminiError(t(ERRORS[e.kind] || 'err.network'), e.kind);
+    throw e;
+  }
 }
 
-async function generate(prompt, schema, { temperature = 0.2 } = {}) {
+function replyError({ res, json }) {
+  if (res.status === 429 && isDailyLimit(json)) return new GeminiError(t('err.dailyLimit'), 'daily');
+  if (res.status === 429 || res.status === 503) return new GeminiError(t('err.busy'), 'busy');
+  return new GeminiError(t('err.api', { m: json?.error?.message || res.status }));
+}
+
+// call: { signal } to let the learner stop it, { background, tags } for work done ahead
+// (see createQueue).
+async function generate({ signal, background = false, tags = [] }, prompt, schema, { temperature = 0.2 } = {}) {
   if (!getApiKey()) throw new GeminiError(t('err.noKey'));
-  if (navigator.onLine === false) throw new GeminiError(t('err.offline'));
+  if (navigator.onLine === false) throw new GeminiError(t('err.offline'), 'offline');
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { temperature, responseMimeType: 'application/json', responseSchema: schema },
   };
-  let model = getSettings().model || 'gemini-flash-latest';
-  let { res, json } = await request(model, body);
-  if (res.status === 404) {
-    // The saved model name no longer exists: pick a current Flash model and retry once.
-    const fallback = await pickDefaultModel();
-    if (fallback && fallback !== model) {
-      model = fallback;
-      setSettings({ model });
-      ({ res, json } = await request(model, body));
+  return queue.run(async (bg) => {
+    const ask = (model) => request(`models/${encodeURIComponent(model)}:generateContent`, { body, signal, background: bg });
+    let model = getSettings().model || RECOMMENDED_MODEL;
+    let reply = await ask(model);
+    if (reply.res.status === 404) {
+      // The saved model name no longer exists: pick a current one and retry once.
+      const fallback = await pickDefaultModel(signal);
+      if (fallback && fallback !== model) {
+        model = fallback;
+        setSettings({ model });
+        reply = await ask(model);
+      }
     }
-  }
-  if (!res.ok) {
-    throw new GeminiError(t('err.api', { m: json?.error?.message || res.status }));
-  }
-  const text = (json.candidates?.[0]?.content?.parts || [])
-    .filter((p) => !p.thought).map((p) => p.text || '').join('');
-  try {
-    return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
-  } catch {
-    throw new GeminiError(t('err.api', { m: 'invalid JSON' }));
-  }
+    if (!reply.res.ok) throw replyError(reply);
+    const text = (reply.json.candidates?.[0]?.content?.parts || [])
+      .filter((p) => !p.thought).map((p) => p.text || '').join('');
+    try {
+      return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    } catch {
+      throw new GeminiError(t('err.api', { m: 'invalid JSON' }));
+    }
+  }, { background, tags });
 }
 
-export async function listModels() {
+// The text models this key can use, the recommended one first.
+export async function listModels({ signal } = {}) {
   if (!getApiKey()) throw new GeminiError(t('err.noKey'));
-  const res = await fetch(`${BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': getApiKey() } });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new GeminiError(t('err.api', { m: json?.error?.message || res.status }));
-  return (json.models || [])
+  const reply = await request('models?pageSize=200', { signal });
+  if (!reply.res.ok) throw replyError(reply);
+  return textModels((reply.json.models || [])
     .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
-    .map((m) => m.name.replace(/^models\//, ''))
-    .filter((n) => n.startsWith('gemini'));
+    .map((m) => m.name.replace(/^models\//, '')));
 }
 
-async function pickDefaultModel() {
+async function pickDefaultModel(signal) {
   try {
-    const names = await listModels();
-    const flash = names.filter((n) => /flash/.test(n) && !/lite|image|tts|audio|live|exp|preview/.test(n));
-    if (names.includes('gemini-flash-latest')) return 'gemini-flash-latest';
-    flash.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    return flash[0] || names[0];
+    const names = await listModels({ signal });
+    if (names.includes(RECOMMENDED_MODEL)) return RECOMMENDED_MODEL;
+    return names.find((n) => /flash/.test(n)) || names[0];
   } catch { return null; }
 }
 
-export async function testKey() {
-  const r = await generate('Reply with {"ok": true}.', {
+export async function testKey(call = {}) {
+  const r = await generate(call, 'Reply with {"ok": true}.', {
     type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } }, required: ['ok'],
   });
   return { ok: !!r.ok, model: getSettings().model };
@@ -271,7 +304,7 @@ Check again carefully from scratch. Change the verdict if it was wrong; keep it 
 const recheckTemp = (prev, temperature = 0.2) => ({ temperature: prev ? 0 : temperature });
 
 // ---------- features ----------
-export async function lookup(query, context) {
+export async function lookup(query, context, call = {}) {
   const L = learner();
   const name = L.english;
   const prompt = `You are a ${name} dictionary for a learner at ${levelText(L)} whose working language is English.
@@ -286,7 +319,7 @@ If the query is not a real word in either language, set found to false.`;
   };
   if (hasFurigana(L) && context) props.contextFurigana = furiganaOf('The context sentence');
   const schema = S({ found: { type: 'BOOLEAN' }, ...props }, ['found', ...Object.keys(props)]);
-  const r = cleanWord(await generate(prompt, schema));
+  const r = cleanWord(await generate(call, prompt, schema));
   const extra = cleanExamples(r.moreExamples, r.example);
   r.moreExamples = extra.map(({ text, translation }) => ({ text, translation }));
   // The gapped extras only seed the word's gap sentences (gappool.poolFromLookup).
@@ -300,7 +333,7 @@ If the query is not a real word in either language, set found to false.`;
 
 // Random words that fit the learner's level, as full dictionary entries like a lookup.
 // exclude: dictionary forms the learner already has. topic: optional theme.
-export async function suggestWords(n, { topic = '', exclude = [] } = {}) {
+export async function suggestWords(n, { topic = '', exclude = [] } = {}, call = {}) {
   const L = learner();
   const name = L.english;
   const prompt = `You pick new ${name} vocabulary for a learner at ${levelText(L)} whose working language is English.
@@ -309,28 +342,28 @@ ${topic ? `Topic: "${topic}". All words should fit it.` : 'Vary the topics (work
 ${exclude.length ? `The learner already has these, so do not suggest them: ${exclude.join(', ')}` : ''}
 Fill every field for each word as a dictionary entry would.`;
   const props = wordProps(L);
-  const r = await generate(prompt, S({ words: { type: 'ARRAY', items: S(props) } }), { temperature: 1 });
+  const r = await generate(call, prompt, S({ words: { type: 'ARRAY', items: S(props) } }), { temperature: 1 });
   return (r.words || []).filter((w) => w && w.lemma).map((w) => {
     cleanWord(w);
     return hasFurigana(L) ? collectFurigana(w, [['exampleFurigana', (x) => x.example], ['gapFurigana', (x) => x.gapSentence]]) : w;
   });
 }
 
-export async function correctText(text, { recheck } = {}) {
+export async function correctText(text, { recheck } = {}, call = {}) {
   const L = learner();
   const prompt = `You correct ${L.english} written by a learner at ${levelText(L)}. Correct this text:
 """${text}"""
 
 ${correctionRules(L)}
 Separately, if the text would sound clearly more natural phrased differently, put that version in natural. That is a suggestion, not a mistake.${recheckNote(recheck)}`;
-  const r = cleanMistakes(await generate(prompt, S({ ...correctionProps(L), ...naturalProps(L) }), recheckTemp(recheck)));
+  const r = cleanMistakes(await generate(call, prompt, S({ ...correctionProps(L), ...naturalProps(L) }), recheckTemp(recheck)));
   return cleanNatural(r, r.correctedText);
 }
 
 // Translates a sentence (English or any language) into the language being learnt, in a tone.
 // keep: the text is already in that language (a suggestion being saved), so only describe it;
 // tone is then detected.
-export async function translateSentence(text, tone = 'everyday', { keep = false } = {}) {
+export async function translateSentence(text, tone = 'everyday', { keep = false } = {}, call = {}) {
   const L = learner();
   const name = L.english;
   const unspaced = L.code === 'ja' || /^(zh|th|lo|km|my)$/.test(L.code);
@@ -359,7 +392,7 @@ Match what a native speaker would really say in that tone, not a word-for-word t
 ${task}
 
 ${toneGuide(L)}`;
-  const r = await generate(prompt, S(props), { temperature: 0.4 });
+  const r = await generate(call, prompt, S(props), { temperature: 0.4 });
   if (keep) r.sentence = text.trim();
   if (!TONES.includes(r.tone)) r.tone = keep ? 'everyday' : tone;
   if (hasFurigana(L)) collectFurigana(r, [['sentenceFurigana', (x) => (x.sentence || '').trim()], ['gapFurigana', (x) => x.gapSentence]]);
@@ -368,7 +401,7 @@ ${toneGuide(L)}`;
 
 // "Say this sentence" exercise: the learner translates a saved sentence's English meaning.
 // A different tone than the saved one is not a mistake, only a hint.
-export async function gradeTranslation(item, answer, { recheck } = {}) {
+export async function gradeTranslation(item, answer, { recheck } = {}, call = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} had to say this in ${L.english}, in the ${item.tone || 'everyday'} tone: "${item.meaning}"
 A model answer: """${lemmaOf(item)}"""
@@ -381,7 +414,7 @@ ${toneGuide(L)}
 ${correctionRules(L)}
 - Never report the tone or register of the answer as a mistake.
 Separately, if a correct answer would sound clearly more natural phrased differently, put that in natural.${recheckNote(recheck)}`;
-  const r = cleanMistakes(await generate(prompt, S({
+  const r = cleanMistakes(await generate(call, prompt, S({
     correct: { type: 'BOOLEAN' },
     toneMatches: { type: 'BOOLEAN' },
     toneHint: { type: 'STRING', description: 'Empty when toneMatches is true.' },
@@ -396,7 +429,7 @@ Separately, if a correct answer would sound clearly more natural phrased differe
 }
 
 // "Write a sentence" exercise: correct it and judge whether the target word is used well.
-export async function gradeWordSentence(word, sentence, { recheck } = {}) {
+export async function gradeWordSentence(word, sentence, { recheck } = {}, call = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} had to write an original sentence using "${wordTitle(word)}" (${word.meaning}).
 Their sentence: """${sentence}"""
@@ -404,7 +437,7 @@ Judge whether the word is used correctly and naturally, and correct the sentence
 
 ${correctionRules(L)}
 Separately, if the sentence would sound clearly more natural phrased differently (still using the word), put that in natural.${recheckNote(recheck)}`;
-  const r = cleanMistakes(await generate(prompt, S({
+  const r = cleanMistakes(await generate(call, prompt, S({
     usesWordCorrectly: { type: 'BOOLEAN' },
     gapSentence: { type: 'STRING', description: 'If the word is used correctly: the corrected sentence with the exact form of the word replaced by "___". Otherwise empty.' },
     gapAnswer: { type: 'STRING', description: 'The exact text replaced by ___, or empty.' },
@@ -424,7 +457,7 @@ export const GAP_LEVELS = {
   2: 'sentences using a different form, case or tense than the basic one, in a less obvious situation',
   3: 'longer sentences with a subordinate clause or an idiomatic, less common use of the word',
 };
-export async function gapSentences(list, n = 3) {
+export async function gapSentences(list, n = 3, call = {}) {
   const L = learner();
   const name = L.english;
   const lines = list.map((x, i) => `${i + 1}. "${wordTitle(x.word)}" (${x.word.meaning}). Difficulty: ${GAP_LEVELS[x.level] || GAP_LEVELS[1]}.${x.existing.length
@@ -432,7 +465,7 @@ export async function gapSentences(list, n = 3) {
   const prompt = `Write gap-fill exercises for a ${name} learner at ${levelText(L)}. For each word below write ${n} new, natural ${name} sentences, each showing the word in a different situation, then replace the exact form of the word in the sentence with "___".${isGerman(L) ? ' For separable verbs gap only the verb stem part.' : ''}
 Return one entry per word, in the same order.
 ${lines}`;
-  const r = await generate(prompt, S({
+  const r = await generate(call, prompt, S({
     words: { type: 'ARRAY', items: S({
       sentences: { type: 'ARRAY', items: S({
         sentence: { type: 'STRING', description: 'The sentence with the word replaced by "___".' },
@@ -447,14 +480,14 @@ ${lines}`;
 
 // A second opinion on a gap answer the local check found wrong: whether it is the word, in a
 // form that is correct and natural in that sentence. Returns { correct, feedback }.
-export async function checkGap(word, gap, answer, { recheck } = {}) {
+export async function checkGap(word, gap, answer, { recheck } = {}, call = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} is filling a gap with a form of "${wordTitle(word)}" (${word.meaning}).
 Sentence: """${gap.sentence}"""
 Expected: """${gap.answer}"""${(gap.acceptable || []).length ? ` (also fine: ${gap.acceptable.map((x) => `"${x}"`).join(', ')})` : ''}
 Learner's answer: """${answer}"""
 correct is true when the learner's answer is a form of this word that makes the sentence grammatical and natural, even if it differs from the expected one (another politeness level or tense${L.reading ? `, or written in ${L.reading} instead of its usual script` : ''}). It is false for another word, a form that doesn't fit the sentence, or a misspelling.${recheckNote(recheck)}`;
-  const r = await generate(prompt, S({
+  const r = await generate(call, prompt, S({
     correct: { type: 'BOOLEAN' },
     feedback: { type: 'STRING', description: `One short sentence in ${explainLang(L)}.` },
   }), { temperature: 0 });
@@ -462,7 +495,7 @@ correct is true when the learner's answer is a form of this word that makes the 
 }
 
 // Grammar drills for a weak category. kind: gapfill | transform | constraint.
-export async function generateDrill(category, kind, { examples = [], word = null } = {}) {
+export async function generateDrill(category, kind, { examples = [], word = null } = {}, call = {}) {
   const L = learner();
   const name = L.english;
   const list = categoriesFor(L);
@@ -483,7 +516,7 @@ Category: ${label}${hint ? ` (${hint})` : ''}
 Exercise type: ${kinds[kind]}
 ${own}
 Write the instruction in ${explainLang(L)}. Keep sentences natural and everyday (work, travel, friends, news), with vocabulary and grammar that suit the learner's level.`;
-  const r = await generate(prompt, S({
+  const r = await generate(call, prompt, S({
     instruction: STR,
     prompt: { type: 'STRING', description: `${name} sentence(s) shown to the learner; for gapfill it contains ___.` },
     answer: STR,
@@ -504,7 +537,7 @@ Write the instruction in ${explainLang(L)}. Keep sentences natural and everyday 
 // One set of exercises per rule, one for each rung of the ladder (see rules.js). Each set
 // trains the rule itself: new sentences every time, the learner's own mistakes only as a hint
 // of what goes wrong. list: [{ rule, examples: [mistake] }]. Returns one set per rule, in order.
-export async function ruleExercises(list) {
+export async function ruleExercises(list, call = {}) {
   if (!list.length) return [];
   const L = learner();
   const name = L.english;
@@ -522,7 +555,7 @@ Write instructions and explanations in ${explainLang(L)}. Give each kind a one-l
 Rules:
 ${lines}`;
   const alt = { type: 'ARRAY', items: STR };
-  const r = await generate(prompt, S({
+  const r = await generate(call, prompt, S({
     sets: { type: 'ARRAY', items: S({
       pair: S({ correct: STR, wrong: STR, explanation: STR }),
       gap: S({ sentence: { type: 'STRING', description: 'Contains ___ once.' }, answer: STR, acceptable: alt, explanation: STR }),
@@ -540,7 +573,7 @@ ${lines}`;
 
 // Sorts older mistakes into the current categories and gives each its rule. list: mistakes.
 // Returns one { category, rule, ruleName, ruleStatement, ruleLevel } per mistake, in order.
-export async function classifyMistakes(list) {
+export async function classifyMistakes(list, call = {}) {
   if (!list.length) return [];
   const L = learner();
   const cats = categoriesFor(L);
@@ -552,7 +585,7 @@ ${ruleRules(L)}
 
 Mistakes:
 ${list.map((m, i) => `${i + 1}. wrote "${m.original}" instead of "${m.corrected}"${m.fullSentence ? ` in "${m.fullSentence}"` : ''}${m.explanation ? ` (${m.explanation})` : ''}`).join('\n')}`;
-  const r = await generate(prompt, S({
+  const r = await generate(call, prompt, S({
     mistakes: { type: 'ARRAY', items: S({ category: { type: 'STRING', enum: cats.map((c) => c.id) }, ...ruleProps(L) }) },
   }));
   return list.map((_, i) => r.mistakes?.[i] || null);
@@ -560,16 +593,16 @@ ${list.map((m, i) => `${i + 1}. wrote "${m.original}" instead of "${m.corrected}
 
 // Furigana for Japanese texts saved before Gemini added it. Returns the markup for each text
 // that came back valid.
-export async function annotate(texts) {
+export async function annotate(texts, call = {}) {
   if (!texts.length) return [];
   const prompt = `Add furigana to each of these Japanese texts. For each text, in the same order, ${FURIGANA_RULE}
 ${texts.map((x, i) => `${i + 1}. ${x}`).join('\n')}`;
-  const r = await generate(prompt, S({ texts: { type: 'ARRAY', items: STR, description: 'The texts with furigana, same order and count.' } }), { temperature: 0 });
+  const r = await generate(call, prompt, S({ texts: { type: 'ARRAY', items: STR, description: 'The texts with furigana, same order and count.' } }), { temperature: 0 });
   return (r.texts || []).filter((m, i) => texts[i] && parseFurigana(m, texts[i]));
 }
 
 // Grades a free answer to a drill (transform, constraint or "fix your sentence").
-export async function gradeAnswer({ instruction, prompt: shown, model, answer, category, rule = null, recheck = null }) {
+export async function gradeAnswer({ instruction, prompt: shown, model, answer, category, rule = null, recheck = null }, call = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} is doing a grammar exercise (focus: ${categoryLabel(category, 'en', categoriesFor(L))}${rule ? `, rule: ${rule.name}${rule.statement ? ` (${rule.statement})` : ''}` : ''}).
 Instruction: ${instruction}
@@ -580,7 +613,7 @@ Decide if the learner's answer fulfils the task and is grammatically correct ${L
 Then list the learner's mistakes, if any.
 
 ${correctionRules(L)}${recheckNote(recheck)}`;
-  return cleanMistakes(await generate(prompt, S({
+  return cleanMistakes(await generate(call, prompt, S({
     correct: { type: 'BOOLEAN' },
     feedback: { type: 'STRING', description: `One or two sentences in ${explainLang(L)}.` },
     ...correctionProps(L),
@@ -591,14 +624,14 @@ ${correctionRules(L)}${recheckNote(recheck)}`;
 // Gemini judges the answer against the expected one. Other correct answers count; a small slip
 // in an otherwise right answer (a typo, a missing accent) is minor. Returns
 // { correct, minor, feedback }.
-export async function judgeAnswer({ instruction, shown = '', expected, answer, recheck = null }) {
+export async function judgeAnswer({ instruction, shown = '', expected, answer, recheck = null }, call = {}) {
   const L = learner();
   const prompt = `A ${L.english} learner at ${levelText(L)} is doing an exercise.
 Task: ${instruction}
 ${shown ? `Shown to the learner: """${shown}"""\n` : ''}Expected answer: """${expected}"""
 Learner's answer: """${answer}"""
 correct is true when the learner's answer fulfils the task and is correct ${L.english}, even if it differs from the expected answer (another correct word, form or word order). minor is true when the answer is right except for a small slip such as a typo or a missing accent; then correct is false.${recheckNote(recheck)}`;
-  const r = await generate(prompt, S({
+  const r = await generate(call, prompt, S({
     correct: { type: 'BOOLEAN' },
     minor: { type: 'BOOLEAN' },
     feedback: { type: 'STRING', description: `One or two short sentences in ${explainLang(L)}.` },
@@ -607,18 +640,18 @@ correct is true when the learner's answer fulfils the task and is correct ${L.en
 }
 
 // English translations of texts in the language being learnt, in the same order.
-export async function translateTexts(texts) {
+export async function translateTexts(texts, call = {}) {
   if (!texts.length) return [];
   const L = learner();
   const prompt = `Translate each of these ${L.english} texts into natural English, keeping the meaning and tone. Return them in the same order.
 ${texts.map((x, i) => `${i + 1}. ${x}`).join('\n')}`;
-  const r = await generate(prompt, S({ translations: { type: 'ARRAY', items: STR, description: 'The English translations, same order and count.' } }), { temperature: 0 });
+  const r = await generate(call, prompt, S({ translations: { type: 'ARRAY', items: STR, description: 'The English translations, same order and count.' } }), { temperature: 0 });
   return texts.map((_, i) => String(r.translations?.[i] || '').trim());
 }
 
 // Describes a language the learner wants to add: its code, how its words are written and
 // learnt, and the grammar areas its learners most often get wrong. Called once per language.
-export async function setupLanguage(name) {
+export async function setupLanguage(name, call = {}) {
   const prompt = `A learner wants to practise this language in a vocabulary and writing app: "${name}".
 Describe it for the app. Explanations in the app are in English or German.
 If this is not a real language with a written standard, set found to false.
@@ -631,7 +664,7 @@ does not have (e.g. articles in a language without them). Then add any area that
 for learners of this language but missing from the list (e.g. tones, aspect pairs, counters).
 Aim for 8 to 16 categories in total.
 ${SKELETON.map((x) => `- ${x}`).join('\n')}`;
-  const r = await generate(prompt, S({
+  const r = await generate(call, prompt, S({
     found: { type: 'BOOLEAN' },
     code: { type: 'STRING', description: 'ISO 639-1 code, or ISO 639-3 if there is none. Lowercase.' },
     english: { type: 'STRING', description: 'The language name in English.' },

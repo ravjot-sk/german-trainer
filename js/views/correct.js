@@ -4,7 +4,7 @@ import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { logMistakes } from '../actions.js';
 import { icon } from '../icons.js';
-import { main, titleEl, esc, $, toast, errorBox } from '../ui/dom.js';
+import { main, titleEl, esc, $, toast, waitBox, retryBox } from '../ui/dom.js';
 import { code, langName, gem, ui } from '../ui/context.js';
 import { tl, diffHtml, mistakeList, naturalBlock, bindNatural } from '../ui/text.js';
 import { wordTitle } from '../languages.js';
@@ -39,20 +39,27 @@ export function viewCorrect() {
     const text = $('#text').value.trim();
     if (!text) return;
     $('#text').blur();
-    const res = $('#cres');
-    res.innerHTML = `<div class="card loading">${esc(t('correct.loading'))}</div>`;
-    try {
-      const r = await gemini.correctText(text);
-      const logged = logMistakes(r.mistakes, 'correction', code());
-      ui.lastCorrection = { text, lang: code(), ...r, newWords: logged.words.map(wordTitle), mistakeIds: logged.mistakes.map((m) => m.id) };
-      ui.correctOpen = false;
-      if (routeName() === 'correct') { viewCorrect(); window.scrollTo(0, 0); }
-    } catch (err) {
-      res.innerHTML = errorBox(err);
-    }
+    check(text);
   });
   bindCopy();
   bindRecheck();
+}
+
+// Sends the text for correction. Abbrechen or an error leaves the text as typed.
+async function check(text) {
+  const res = $('#cres');
+  const signal = waitBox(res, t('correct.loading'), 'card');
+  try {
+    const r = await gemini.correctText(text, {}, { signal });
+    const logged = logMistakes(r.mistakes, 'correction', code());
+    ui.lastCorrection = { text, lang: code(), ...r, newWords: logged.words.map(wordTitle), mistakeIds: logged.mistakes.map((m) => m.id) };
+    ui.correctOpen = false;
+    if (routeName() === 'correct') { viewCorrect(); window.scrollTo(0, 0); }
+  } catch (err) {
+    if (!document.contains(res)) return;
+    if (gemini.isCancel(err)) res.innerHTML = '';
+    else retryBox(res, err, () => check(text));
+  }
 }
 
 // "Check again": Gemini corrects the same text once more. Its result replaces the first one,

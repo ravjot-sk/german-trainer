@@ -20,10 +20,21 @@ function prepare(task) {
   const examples = store.mistakes(code()).filter((m) => m.category === task.category).slice(0, 4);
   const words = store.words(code()).filter((w) => !isSentence(w));
   const word = task.drillKind === 'constraint' && words.length ? words[Math.floor(Math.random() * Math.min(words.length, 30))] : null;
-  task.drillPromise = gemini.generateDrill(task.category, task.drillKind, { examples, word })
+  task.drillPromise = gemini.generateDrill(task.category, task.drillKind, { examples, word }, { background: true, tags: [task] })
     .then((d) => (task.drill = d))
     .catch((e) => { task.drillError = e; });
 }
+
+// "Nochmal versuchen" after an exercise could not be generated asks Gemini again. After
+// Abbrechen the first call may still be running; then the screen just waits for it again.
+export function retryPrepare(task) {
+  if (!task.drillError && !task.exError) return;
+  task.drillError = task.exError = null;
+  prepare(task);
+}
+
+// What a task's queued Gemini call is tagged with, so it can be promoted when the task is shown.
+export const waitTag = (task) => (task.kind === 'rule' ? task.item.id : task);
 
 // A new session in the active language; free practice adds { practice: true, focus }.
 const newSession = (tasks, extra = {}) => ({
@@ -50,7 +61,7 @@ function prepareRule(task) {
     return;
   }
   task.ruleKind = kindOf(task.item);
-  task.exPromise = generateRuleSets([task.item])
+  task.exPromise = generateRuleSets([task.item], { background: true })
     .then(() => {
       task.item = latestItem(task.item);
       const r = nextExercise(task.item);
