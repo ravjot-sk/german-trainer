@@ -28,12 +28,12 @@ export function viewSettings() {
       <p class="muted small">${esc(t('settings.furiganaHelp'))}</p>` : ''}
     </section>
     <div class="group-label">${esc(t('sync.title'))}</div>
-    <section class="card form" id="synccard"></section>
-    <div id="admincard" class="contents"></div>
+    <section class="card form" id="synccard" data-private></section>
+    <div id="admincard" class="contents" data-private></div>
     <div class="group-label">Gemini</div>
     <section class="card form">
       <label>${esc(t('settings.apiKey'))}
-        <div class="inline"><input id="key" type="password" ${inputAttrs} value="${esc(store.getApiKey())}" placeholder="AIza…">
+        <div class="inline"><input id="key" type="password" data-private ${inputAttrs} value="${esc(store.getApiKey())}" placeholder="AIza…">
         <button class="btn small text" id="showkey">${esc(t('settings.show'))}</button></div>
       </label>
       <p class="muted small">${esc(t('settings.apiKeyHelp'))} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></p>
