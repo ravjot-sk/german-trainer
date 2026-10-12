@@ -1,4 +1,4 @@
-# Runs the unit tests on every pull request and on every push to main.
+# Runs the linter and the unit tests on every pull request and on every push to main.
 name: Tests
 
 on:
@@ -21,4 +21,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
       - run: npm test

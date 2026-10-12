@@ -5,7 +5,7 @@ import { summarizeDue, practicePool, PRACTICE_FOCUS } from '../session.js';
 import { dayStart } from '../srs.js';
 import { icon } from '../icons.js';
 import { main, titleEl, esc, $, $$, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
-import { gem, L, code, langName, sessionArgs, ui } from '../ui/context.js';
+import { gem, L, code, langName, sessionArgs } from '../ui/context.js';
 import { route, go } from '../router.js';
 import { learnCard, bindLearnCard } from './learncard.js';
 import { startPractice, startSession } from '../practice/runtime.js';
