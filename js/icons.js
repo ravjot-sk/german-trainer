@@ -1,4 +1,6 @@
 // Line icons used across the app, drawn in the text colour so they follow the theme.
+import { html, raw } from './html.js';
+
 const PATHS = {
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -16,5 +18,5 @@ const PATHS = {
 };
 
 export function icon(name, size = 20) {
-  return `<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${PATHS[name] || ''}</svg>`;
+  return html`<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${raw(PATHS[name] || '')}</svg>`;
 }

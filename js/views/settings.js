@@ -4,7 +4,7 @@ import * as gemini from '../gemini.js';
 import { textModels, RECOMMENDED_MODEL } from '../gemclient.js';
 import { t, lang } from '../i18n.js';
 import { icon } from '../icons.js';
-import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs, pressedAttrs, choose } from '../ui/dom.js';
+import { html, setHtml, main, titleEl, $, $$, toast, errorBox, inputAttrs, pressedAttrs, choose } from '../ui/dom.js';
 import { confirmSheet } from '../ui/sheet.js';
 import { code, resetViews } from '../ui/context.js';
 import { furiMode } from '../ui/text.js';
@@ -17,37 +17,37 @@ const standalone = () => navigator.standalone === true || window.matchMedia?.('(
 export function viewSettings() {
   titleEl.textContent = t('settings.title');
   const s = store.getSettings();
-  main.innerHTML = `
-    <div class="group-label">${esc(t('settings.groupLearn'))}</div>
+  setHtml(main, html`
+    <div class="group-label">${t('settings.groupLearn')}</div>
     <section class="card form" id="learncard">
       ${learnCard()}
-      <div class="row-label"><span>${esc(t('settings.newPerDay'))}</span>
-        <div class="stepper"><button type="button" id="npdminus" aria-label="−">−</button><output id="npd">${esc(s.newPerDay)}</output><button type="button" id="npdplus" aria-label="+">+</button></div></div>
-      <p class="muted small">${esc(t('settings.learningHelp'))}</p>
-      ${code() === 'ja' ? `<div class="row-label"><span>${esc(t('settings.furigana'))}</span>
+      <div class="row-label"><span>${t('settings.newPerDay')}</span>
+        <div class="stepper"><button type="button" id="npdminus" aria-label="−">−</button><output id="npd">${s.newPerDay}</output><button type="button" id="npdplus" aria-label="+">+</button></div></div>
+      <p class="muted small">${t('settings.learningHelp')}</p>
+      ${code() === 'ja' ? html`<div class="row-label"><span>${t('settings.furigana')}</span>
         <div class="seg" id="furi" style="min-width:210px">${['tap', 'always', 'off'].map((v) =>
-          `<button type="button" data-v="${v}" ${pressedAttrs(furiMode() === v)}>${esc(t(`settings.furigana.${v}`))}</button>`).join('')}</div></div>
-      <p class="muted small">${esc(t('settings.furiganaHelp'))}</p>` : ''}
+          html`<button type="button" data-v="${v}" ${pressedAttrs(furiMode() === v)}>${t(`settings.furigana.${v}`)}</button>`)}</div></div>
+      <p class="muted small">${t('settings.furiganaHelp')}</p>` : ''}
     </section>
-    <div class="group-label">${esc(t('sync.title'))}</div>
+    <div class="group-label">${t('sync.title')}</div>
     <section class="card form" id="synccard" data-private></section>
     <div id="admincard" class="contents" data-private></div>
     <div class="group-label">Gemini</div>
     <section class="card form">
-      <label>${esc(t('settings.apiKey'))}
-        <div class="inline"><input id="key" type="password" data-private ${inputAttrs} value="${esc(store.getApiKey())}" placeholder="AIza…">
-        <button class="btn small text" id="showkey">${esc(t('settings.show'))}</button></div>
+      <label>${t('settings.apiKey')}
+        <div class="inline"><input id="key" type="password" data-private ${inputAttrs} value="${store.getApiKey()}" placeholder="AIza…">
+        <button class="btn small text" id="showkey">${t('settings.show')}</button></div>
       </label>
-      <p class="muted small">${esc(t('settings.apiKeyHelp'))} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></p>
-      <button class="btn" id="test">${esc(t('settings.test'))}</button>
+      <p class="muted small">${t('settings.apiKeyHelp')} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></p>
+      <button class="btn" id="test">${t('settings.test')}</button>
       <div id="testres"></div>
     </section>
     <nav class="list">
-      <a href="#/settings/advanced"><span>${esc(t('settings.advanced'))}</span><span class="val"><span class="ellipsis">${esc(s.model)}</span>${icon('chevron', 18)}</span></a>
+      <a href="#/settings/advanced"><span>${t('settings.advanced')}</span><span class="val"><span class="ellipsis">${s.model}</span>${icon('chevron', 18)}</span></a>
     </nav>
-    <div class="group-label">${esc(t('settings.groupApp'))}</div>
+    <div class="group-label">${t('settings.groupApp')}</div>
     <section class="card form">
-      <div class="row-label"><span>${esc(t('settings.language'))}</span>
+      <div class="row-label"><span>${t('settings.language')}</span>
         <div class="seg" id="lang" style="min-width:180px">
           <button type="button" data-lang="de" ${pressedAttrs(s.lang !== 'en')} lang="de">Deutsch</button>
           <button type="button" data-lang="en" ${pressedAttrs(s.lang === 'en')} lang="en">English</button>
@@ -55,10 +55,10 @@ export function viewSettings() {
       </div>
     </section>
     <nav class="list">
-      <a href="#/settings/backup"><span>${esc(t('settings.backup'))}</span><span class="val">${icon('chevron', 18)}</span></a>
+      <a href="#/settings/backup"><span>${t('settings.backup')}</span><span class="val">${icon('chevron', 18)}</span></a>
     </nav>
-    ${standalone() ? '' : `<p class="muted small center">${esc(t('settings.install'))}</p>`}
-    <p class="muted small center">Language Trainer v2</p>`;
+    ${standalone() ? '' : html`<p class="muted small center">${t('settings.install')}</p>`}
+    <p class="muted small center">Language Trainer v2</p>`);
 
   bindLearnCard(viewSettings);
   $$('#lang button').forEach((b) => b.addEventListener('click', () => { store.setSettings({ lang: b.dataset.lang }); route(); }));
@@ -88,12 +88,12 @@ export function viewSettings() {
 function bindTest() {
   $('#test').addEventListener('click', async () => {
     if ($('#key')) store.setApiKey($('#key').value);
-    $('#testres').innerHTML = `<div class="loading">…</div>`;
+    setHtml($('#testres'), html`<div class="loading">…</div>`);
     try {
       const r = await gemini.testKey();
       if ($('#model')) fillModels($('#model'));
-      $('#testres').innerHTML = `<div class="notice ok">${esc(t('settings.testOk', { m: r.model }))}</div>`;
-    } catch (e) { $('#testres').innerHTML = errorBox(e); }
+      setHtml($('#testres'), html`<div class="notice ok">${t('settings.testOk', { m: r.model })}</div>`);
+    } catch (e) { setHtml($('#testres'), errorBox(e)); }
   });
 }
 
@@ -102,21 +102,21 @@ function bindTest() {
 let models = [];
 function fillModels(sel) {
   const cur = store.getSettings().model;
-  sel.innerHTML = textModels([...models, cur, RECOMMENDED_MODEL]).map((n) => `<option value="${esc(n)}"${n === cur ? ' selected' : ''}>${esc(n)}${n === RECOMMENDED_MODEL ? ` ${esc(t('settings.recommended'))}` : ''}</option>`).join('');
+  setHtml(sel, textModels([...models, cur, RECOMMENDED_MODEL]).map((n) => html`<option value="${n}"${n === cur ? ' selected' : ''}>${n}${n === RECOMMENDED_MODEL ? ` ${t('settings.recommended')}` : ''}</option>`));
 }
 
 // Settings › Advanced: which Gemini model to use.
 export function viewAdvanced() {
   titleEl.textContent = t('settings.advanced');
-  main.innerHTML = `
+  setHtml(main, html`
     <section class="card form">
-      <label>${esc(t('settings.model'))}
+      <label>${t('settings.model')}
         <select id="model"></select>
       </label>
-      <p class="muted small">${esc(t('settings.advancedHelp'))}</p>
-      <button class="btn" id="test">${esc(t('settings.test'))}</button>
+      <p class="muted small">${t('settings.advancedHelp')}</p>
+      <button class="btn" id="test">${t('settings.test')}</button>
       <div id="testres"></div>
-    </section>`;
+    </section>`);
   const sel = $('#model');
   fillModels(sel);
   sel.addEventListener('change', (e) => { store.setSettings({ model: e.target.value }); toast(t('settings.saved')); });
@@ -132,17 +132,17 @@ export function viewAdvanced() {
 // Settings › Backup: export, import and deleting everything.
 export function viewBackup() {
   titleEl.textContent = t('settings.backup');
-  main.innerHTML = `
+  setHtml(main, html`
     <section class="card form">
-      <p class="muted small">${esc(t(accountSynced() ? 'settings.backupHelpSynced' : 'settings.backupHelp'))}</p>
+      <p class="muted small">${t(accountSynced() ? 'settings.backupHelpSynced' : 'settings.backupHelp')}</p>
       <p class="muted small" id="storage"></p>
       <div class="actions">
-        <button class="btn" id="export">${esc(t('settings.export'))}</button>
-        <label class="btn" for="importfile">${esc(t('settings.import'))}</label>
+        <button class="btn" id="export">${t('settings.export')}</button>
+        <label class="btn" for="importfile">${t('settings.import')}</label>
         <input id="importfile" type="file" accept="application/json,.json" class="hidden">
       </div>
     </section>
-    <button class="btn danger" id="reset">${esc(t('settings.reset'))}</button>`;
+    <button class="btn danger" id="reset">${t('settings.reset')}</button>`);
   $('#export').addEventListener('click', exportBackup);
   showStorage();
   $('#importfile').addEventListener('change', async (e) => {

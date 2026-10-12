@@ -4,7 +4,7 @@
 // answer on show is not lost. Reports become GitHub issues (see js/report.js).
 import * as sync from '../sync.js';
 import { t, lang } from '../i18n.js';
-import { main, titleEl, esc, $, toast, errorBox } from './dom.js';
+import { html, setHtml, main, titleEl, $, toast, errorBox } from './dom.js';
 import { mountSheet, sheetHead } from './sheet.js';
 import { L, ui } from './context.js';
 import { routeName, go } from '../router.js';
@@ -26,16 +26,16 @@ export function openReport() {
   const cap = capture();
   const canCapture = capturable(cap.screen);
   const preview = cap.screenTextValue + (cap.exercise ? `\n\n${t('report.exercise')}:\n${cap.exercise}` : '');
-  const { el, close } = mountSheet(`<form class="sheet report">
+  const { el, close } = mountSheet(html`<form class="sheet report">
     ${sheetHead(t('report.title'))}
-    <label>${esc(t('report.what'))}
-      <textarea name="text" rows="4" maxlength="${TEXT_MAX}" required placeholder="${esc(t('report.placeholder'))}"></textarea></label>
-    ${canCapture ? `<label class="check"><input type="checkbox" name="capture" checked> <span>${esc(t('report.capture'))}</span></label>
-    <details class="more"><summary>${esc(t('report.preview'))}</summary><pre class="report-preview">${esc(preview)}</pre></details>`
-    : `<p class="muted small">${esc(t('report.noCapture'))}</p>`}
-    <p class="muted small">${esc(t('report.public'))}</p>
+    <label>${t('report.what')}
+      <textarea name="text" rows="4" maxlength="${TEXT_MAX}" required placeholder="${t('report.placeholder')}"></textarea></label>
+    ${canCapture ? html`<label class="check"><input type="checkbox" name="capture" checked> <span>${t('report.capture')}</span></label>
+    <details class="more"><summary>${t('report.preview')}</summary><pre class="report-preview">${preview}</pre></details>`
+    : html`<p class="muted small">${t('report.noCapture')}</p>`}
+    <p class="muted small">${t('report.public')}</p>
     <div id="reportres"></div>
-    <button type="submit" class="btn primary wide">${esc(t('report.send'))}</button>
+    <button type="submit" class="btn primary wide">${t('report.send')}</button>
   </form>`, { redraw: false });
   $('[data-act=cancel]', el).addEventListener('click', close);
   $('[name=capture]', el)?.addEventListener('change', (e) => { $('details.more', el).hidden = !e.target.checked; });
@@ -46,9 +46,9 @@ export function openReport() {
     if (!text) return;
     const btn = $('button[type=submit]', el);
     const res = $('#reportres', el);
-    if (navigator.onLine === false) { res.innerHTML = errorBox(t('sync.err.network')); return; }
+    if (navigator.onLine === false) { setHtml(res, errorBox(t('sync.err.network'))); return; }
     btn.disabled = true;
-    res.innerHTML = '';
+    setHtml(res, '');
     const Lx = L();
     const report = buildReport({
       ...cap, text, capture: canCapture && form.get('capture') === 'on',
@@ -59,7 +59,7 @@ export function openReport() {
         new Promise((_, no) => setTimeout(() => no(new Error(t('report.timeout'))), SEND_TIMEOUT))]);
     } catch (err) {
       btn.disabled = false;
-      res.innerHTML = errorBox(err);
+      setHtml(res, errorBox(err));
       return;
     }
     close();
@@ -69,10 +69,10 @@ export function openReport() {
 
 // Signed out (or not invited yet): say why reports can't be sent, with a way to sign in.
 function signInFirst() {
-  const { el, close } = mountSheet(`<div class="sheet">
+  const { el, close } = mountSheet(html`<div class="sheet">
     ${sheetHead(t('report.title'))}
-    <p>${esc(t('report.signIn'))}</p>
-    <button type="button" class="btn primary wide" id="gosettings">${esc(t('sync.signIn'))}</button>
+    <p>${t('report.signIn')}</p>
+    <button type="button" class="btn primary wide" id="gosettings">${t('sync.signIn')}</button>
   </div>`, { redraw: false });
   $('[data-act=cancel]', el).addEventListener('click', close);
   $('#gosettings', el).addEventListener('click', () => { close(); go('settings'); });

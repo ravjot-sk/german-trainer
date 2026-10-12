@@ -4,7 +4,7 @@ import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { lemmaOf, isSentence, wordTitle } from '../languages.js';
-import { esc, $, $$, toast, errorBox, waitBox, inputAttrs } from './dom.js';
+import { html, setHtml, $, $$, toast, errorBox, waitBox, inputAttrs } from './dom.js';
 import { L, code, langName } from './context.js';
 import { tl, jt } from './text.js';
 import { openSheet, sheetHead } from './sheet.js';
@@ -21,11 +21,11 @@ const SUGGEST_COUNT = 8;
 function openSuggest(onAdded) {
   const c = code();
   let found = [];
-  openSheet(`
+  openSheet(html`
     ${sheetHead(t('suggest.title'))}
-    <p class="muted small">${esc(t('suggest.help', { l: langName(), level: L().level }))}</p>
-    <div class="inline"><input name="topic" id="topic" ${inputAttrs} placeholder="${esc(t('suggest.topic'))}">
-      <button type="button" class="btn small" id="sgo">${esc(t('suggest.go'))}</button></div>
+    <p class="muted small">${t('suggest.help', { l: langName(), level: L().level })}</p>
+    <div class="inline"><input name="topic" id="topic" ${inputAttrs} placeholder="${t('suggest.topic')}">
+      <button type="button" class="btn small" id="sgo">${t('suggest.go')}</button></div>
     <div id="slist"></div>
     <button type="submit" class="btn primary wide hidden" id="sadd"></button>`, {
     onSave: () => {
@@ -60,18 +60,18 @@ function openSuggest(onAdded) {
         seen.add(key);
         return true;
       });
-      if (!found.length) { list.innerHTML = `<p class="muted">${esc(t('suggest.none'))}</p>`; return; }
-      list.innerHTML = `<ul class="suggest">${found.map((w, i) => `<li><label>
+      if (!found.length) { setHtml(list, html`<p class="muted">${t('suggest.none')}</p>`); return; }
+      setHtml(list, html`<ul class="suggest">${found.map((w, i) => html`<li><label>
         <input type="checkbox" value="${i}" checked>
-        <div><b ${tl(c)}>${jt(wordTitle(w), w, c)}</b>${w.reading ? ` <span class="muted small" ${tl(c)}>${esc(w.reading)}</span>` : ''}
-          <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))} · ${esc(w.meaning)}</div>
-          ${w.example ? `<div class="small" ${tl(c)}>${jt(w.example, w, c)}</div>` : ''}</div>
-      </label></li>`).join('')}</ul>`;
+        <div><b ${tl(c)}>${jt(wordTitle(w), w, c)}</b>${w.reading ? html` <span class="muted small" ${tl(c)}>${w.reading}</span>` : ''}
+          <div class="muted small">${t(`pos.${w.pos || 'other'}`)} · ${w.meaning}</div>
+          ${w.example ? html`<div class="small" ${tl(c)}>${jt(w.example, w, c)}</div>` : ''}</div>
+      </label></li>`)}</ul>`);
       $$('#slist input', sheet).forEach((x) => x.addEventListener('change', count));
       $('#sadd', sheet).classList.remove('hidden');
       count();
     } catch (e) {
-      list.innerHTML = gemini.isCancel(e) ? '' : errorBox(e);
+      setHtml(list, gemini.isCancel(e) ? '' : errorBox(e));
     } finally {
       go.disabled = false;
       go.textContent = t(found.length ? 'suggest.again' : 'suggest.go');

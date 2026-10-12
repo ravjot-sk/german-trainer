@@ -7,9 +7,9 @@ import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { practicePool, newInPool } from '../session.js';
 import { segmentsFor, cutChunks, toHtml } from '../furigana.js';
-import { main, titleEl, esc, $, $$, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
+import { html, raw, setHtml, main, titleEl, $, $$, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
 import { gem, code, langName, cats, sessionArgs, ui } from '../ui/context.js';
-import { tl, furiMode, jt, readingLine, toneLabel, bindNatural } from '../ui/text.js';
+import { tl, furiMode, jt, gapped, readingLine, toneLabel, bindNatural } from '../ui/text.js';
 import { go } from '../router.js';
 import { logTaskMistakes, topUpPractice, advance, nextRound, retryPrepare, waitTag, saveSession, clearSession, resumeSession } from './runtime.js';
 import { promote, isCancel } from '../gemini.js';
@@ -34,19 +34,19 @@ export function viewSession() {
 
   // Practice has no end to show progress towards: it counts answers and right ones instead.
   const top = ui.session.practice
-    ? `<div class="grow"></div>
-      <span class="count" aria-label="${esc(t('practice.score', { c: ui.session.correct, n: ui.session.answered }))}">✓ ${ui.session.correct}/${ui.session.answered}</span>`
-    : `<div class="progress"><div style="width:${Math.round((idx / tasks.length) * 100)}%"></div></div>
-      <span class="count" aria-label="${esc(t('session.of', { i: idx + 1, n: tasks.length }))}">${idx + 1}/${tasks.length}</span>`;
-  main.innerHTML = `
+    ? html`<div class="grow"></div>
+      <span class="count" aria-label="${t('practice.score', { c: ui.session.correct, n: ui.session.answered })}">✓ ${ui.session.correct}/${ui.session.answered}</span>`
+    : html`<div class="progress"><div style="width:${Math.round((idx / tasks.length) * 100)}%"></div></div>
+      <span class="count" aria-label="${t('session.of', { i: idx + 1, n: tasks.length })}">${idx + 1}/${tasks.length}</span>`;
+  setHtml(main, html`
     <div class="session-top">
-      <button class="icon-btn" id="quit" aria-label="${esc(t('session.quit'))}">${icon('close', 24)}</button>
+      <button class="icon-btn" id="quit" aria-label="${t('session.quit')}">${icon('close', 24)}</button>
       ${top}
-      <button class="icon-btn report" id="sessreport" aria-label="${esc(t('report.title'))}">${icon('bug', 22)}</button>
+      <button class="icon-btn report" id="sessreport" aria-label="${t('report.title')}">${icon('bug', 22)}</button>
     </div>
     <section class="card exercise" id="ex"></section>
     <div class="dock" id="dock"></div>
-  `;
+  `);
   // The header (with its report icon) is hidden during a session, so the session has its own.
   $('#sessreport').addEventListener('click', openReport);
   $('#quit').addEventListener('click', async () => {
@@ -65,16 +65,16 @@ function renderSessionEnd() {
   // round (everything once) to offer new words.
   const empty = s.practice && !s.tasks.length;
   if (s.practice && !empty && !s.ended) return renderRoundEnd();
-  main.innerHTML = `
+  setHtml(main, html`
     <section class="card hero end">
       <div class="hero-num">${empty ? '📭' : '🎉'}</div>
-      <h2>${esc(t(empty ? 'practice.empty' : s.practice ? 'practice.done' : 'session.done'))}</h2>
-      ${empty ? `<p class="muted">${esc(t('practice.emptyHelp'))}</p>`
-        : `<p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>`}
-      ${s.mistakesLogged ? `<p class="muted small">${esc(t('session.mistakesLogged', { n: s.mistakesLogged }))}</p>` : ''}
-      ${empty && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
-      <button class="btn primary big" id="home">${esc(t('session.backHome'))}</button>
-    </section>`;
+      <h2>${t(empty ? 'practice.empty' : s.practice ? 'practice.done' : 'session.done')}</h2>
+      ${empty ? html`<p class="muted">${t('practice.emptyHelp')}</p>`
+        : html`<p>${t('session.summary', { c: s.correct, n: s.answered })}</p>`}
+      ${s.mistakesLogged ? html`<p class="muted small">${t('session.mistakesLogged', { n: s.mistakesLogged })}</p>` : ''}
+      ${empty && gem() ? html`<button class="btn" data-suggest>${icon('sparkle', 18)} ${t('suggest.open')}</button>` : ''}
+      <button class="btn primary big" id="home">${t('session.backHome')}</button>
+    </section>`);
   $('#home').addEventListener('click', () => { ui.session = null; clearSession(); go('today'); });
   bindSuggest(main);
 }
@@ -84,18 +84,18 @@ function renderSessionEnd() {
 function renderRoundEnd() {
   const s = ui.session;
   const waiting = newInPool(practicePool({ ...sessionArgs(), focus: s.focus }));
-  const mix = waiting ? `<button class="btn primary" id="mixnew">${icon('plus', 18)} ${esc(t('practice.mixNew', { n: Math.min(waiting, store.getSettings().newPerDay ?? 8) }))}</button>`
-    : gem() ? `<button class="btn primary" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : '';
-  main.innerHTML = `
+  const mix = waiting ? html`<button class="btn primary" id="mixnew">${icon('plus', 18)} ${t('practice.mixNew', { n: Math.min(waiting, store.getSettings().newPerDay ?? 8) })}</button>`
+    : gem() ? html`<button class="btn primary" data-suggest>${icon('sparkle', 18)} ${t('suggest.open')}</button>` : '';
+  setHtml(main, html`
     <section class="card hero end">
       <div class="hero-num">🎉</div>
-      <h2>${esc(t('practice.roundDone'))}</h2>
-      <p>${esc(t('session.summary', { c: s.correct, n: s.answered }))}</p>
-      <p class="muted">${esc(t(mix ? 'practice.roundHelp' : 'practice.roundHelpNoNew'))}</p>
+      <h2>${t('practice.roundDone')}</h2>
+      <p>${t('session.summary', { c: s.correct, n: s.answered })}</p>
+      <p class="muted">${t(mix ? 'practice.roundHelp' : 'practice.roundHelpNoNew')}</p>
       ${mix}
-      <button class="btn" id="again">${esc(t('practice.nextRound'))}</button>
-      <button class="btn text" id="home">${esc(t('session.backHome'))}</button>
-    </section>`;
+      <button class="btn" id="again">${t('practice.nextRound')}</button>
+      <button class="btn text" id="home">${t('session.backHome')}</button>
+    </section>`);
   const round = (withNew) => { nextRound(withNew); viewSession(); };
   $('#mixnew')?.addEventListener('click', () => round(true));
   $('#again').addEventListener('click', () => round(false));
@@ -109,43 +109,43 @@ async function renderTask(task) {
   const w = task.word;
   let body = '';
   if (task.kind === 'recall') {
-    body = `
-      <div class="ex-label">${esc(t('ex.recall', { l: langName() }))}</div>
-      <div class="prompt">${esc(w.meaning)}</div>
-      <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${styleNote(w)}</div>
+    body = html`
+      <div class="ex-label">${t('ex.recall', { l: langName() })}</div>
+      <div class="prompt">${w.meaning}</div>
+      <div class="muted small">${t(`pos.${w.pos || 'other'}`)}${styleNote(w)}</div>
       ${recallBoxes(w)}`;
   } else if (task.kind === 'say') {
-    body = `
-      <div class="ex-label">${esc(t('ex.say', { l: langName() }))}</div>
-      <div class="prompt">${esc(w.meaning)}</div>
-      <div class="muted small"><span class="chip">${esc(toneLabel(w.tone))}</span> ${esc(t(`tone.${w.tone || 'everyday'}.help`))}</div>
-      <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
+    body = html`
+      <div class="ex-label">${t('ex.say', { l: langName() })}</div>
+      <div class="prompt">${w.meaning}</div>
+      <div class="muted small"><span class="chip">${toneLabel(w.tone)}</span> ${t(`tone.${w.tone || 'everyday'}.help`)}</div>
+      <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}"></textarea>`;
   } else if (task.kind === 'order') {
     task.parts = chunksFor(w);
     const furi = code() === 'ja' && furiMode() !== 'off' ? cutChunks(segmentsFor(lemmaOf(w), w), task.parts) : null;
-    task.pool = shuffled(task.parts.map((p, i) => ({ p, i, html: furi ? `<span class="furi">${toHtml(furi[i])}</span>` : esc(p) })));
+    task.pool = shuffled(task.parts.map((p, i) => ({ p, i, html: furi ? html`<span class="furi">${raw(toHtml(furi[i]))}</span>` : html`${p}` })));
     task.built = [];
-    body = `
-      <div class="ex-label">${esc(t('ex.order'))}</div>
-      <div class="prompt">${esc(w.meaning)}</div>
-      <div class="built" id="built" ${tl()}><span class="muted small">${esc(t('ex.orderHint'))}</span></div>
+    body = html`
+      <div class="ex-label">${t('ex.order')}</div>
+      <div class="prompt">${w.meaning}</div>
+      <div class="built" id="built" ${tl()}><span class="muted small">${t('ex.orderHint')}</span></div>
       <div class="pool" id="pool" ${tl()}></div>
       <input type="hidden" id="a1">`;
   } else if (task.kind === 'gap') {
     // A word's sentence comes from its pool; a task shown again in the same session keeps it.
     const gap = task.gap || (isSentence(w) ? gapFor(w) : pickGap(store.getWord(w.id) || w, task.item.reps || 0));
     task.gap = gap;
-    body = `
-      <div class="ex-label">${esc(t(isSentence(w) ? 'ex.sgap' : 'ex.gap'))}</div>
-      <div class="prompt sentence" ${tl()}>${jt(gap.sentence, w).replace('___', '<span class="gap">___</span>')}</div>
-      <div class="muted small">${esc(t('ex.meaning'))}: ${esc(w.meaning)}</div>
-      <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}">`;
+    body = html`
+      <div class="ex-label">${t(isSentence(w) ? 'ex.sgap' : 'ex.gap')}</div>
+      <div class="prompt sentence" ${tl()}>${gapped(gap.sentence, w)}</div>
+      <div class="muted small">${t('ex.meaning')}: ${w.meaning}</div>
+      <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}">`;
   } else if (task.kind === 'write') {
-    body = `
-      <div class="ex-label">${esc(t('ex.write'))}</div>
+    body = html`
+      <div class="ex-label">${t('ex.write')}</div>
       <div class="prompt" ${tl()}>${jt(wordTitle(w), w)}</div>${readingLine(w)}
-      <div class="muted small">${esc(w.meaning)}</div>
-      <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
+      <div class="muted small">${w.meaning}</div>
+      <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}"></textarea>`;
   } else if (task.kind === 'rule') {
     if (!(await generated(task, 'ex'))) return;
     body = ruleBody(task);
@@ -153,22 +153,22 @@ async function renderTask(task) {
     if (!(await generated(task, 'drill'))) return;
     const d = task.drill;
     const isGap = task.drillKind === 'gapfill';
-    body = `
-      <div class="ex-label">${esc(t('ex.drill', { c: categoryLabel(task.category, lang(), cats()) }))}</div>
-      <div class="instruction">${esc(d.instruction)}</div>
-      ${d.prompt ? `<div class="prompt sentence" ${tl()}>${jt(d.prompt, d).replace('___', '<span class="gap">___</span>')}</div>` : ''}
-      ${isGap ? `<input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}">`
-        : `<textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`}`;
+    body = html`
+      <div class="ex-label">${t('ex.drill', { c: categoryLabel(task.category, lang(), cats()) })}</div>
+      <div class="instruction">${d.instruction}</div>
+      ${d.prompt ? html`<div class="prompt sentence" ${tl()}>${gapped(d.prompt, d)}</div>` : ''}
+      ${isGap ? html`<input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}">`
+        : html`<textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}"></textarea>`}`;
   }
 
-  ex.innerHTML = `${body}
-    <div id="feedback"></div>`;
-  $('#dock').innerHTML = `
-    <button class="btn primary" id="check">${esc(t('session.check'))}</button>
+  setHtml(ex, html`${body}
+    <div id="feedback"></div>`);
+  setHtml($('#dock'), html`
+    <button class="btn primary" id="check">${t('session.check')}</button>
     <div class="dock-row">
-      <button class="btn text" id="dontKnow">${esc(t('session.dontKnow'))}</button>
-      <button class="btn text" id="skip">${esc(t('session.skip'))}</button>
-    </div>`;
+      <button class="btn text" id="dontKnow">${t('session.dontKnow')}</button>
+      <button class="btn text" id="skip">${t('session.skip')}</button>
+    </div>`);
 
   $('#ex input.answer, #ex textarea.answer')?.focus({ preventScroll: true });
   if (task.kind === 'order') bindOrder(task);
@@ -207,17 +207,17 @@ async function generated(task, key) {
   if (!task[key] && !error) {
     promote(waitTag(task));
     const signal = waitBox(ex, t('session.loading'));
-    $('#dock').innerHTML = '';
+    setHtml($('#dock'), '');
     const cancelled = new Promise((resolve) => signal.addEventListener('abort', () => resolve('cancel')));
     if (await Promise.race([task[`${key}Promise`], cancelled]) === 'cancel') error = { kind: 'cancel' };
     if (ui.session?.tasks[ui.session.idx] !== task) return false; // user moved on
   }
   error ||= task[`${key}Error`];
   if (error || !task[key]) {
-    ex.innerHTML = isCancel(error) ? ''
-      : `${errorBox(error || t('session.genFailed'))}<p class="muted">${esc(t('session.genFailed'))}</p>`;
-    $('#dock').innerHTML = `<button class="btn primary" id="next">${esc(t('session.next'))}</button>
-      <div class="dock-row"><button class="btn text" id="regen">${esc(t('common.retry'))}</button><span></span></div>`;
+    setHtml(ex, isCancel(error) ? ''
+      : html`${errorBox(error || t('session.genFailed'))}<p class="muted">${t('session.genFailed')}</p>`);
+    setHtml($('#dock'), html`<button class="btn primary" id="next">${t('session.next')}</button>
+      <div class="dock-row"><button class="btn text" id="regen">${t('common.retry')}</button><span></span></div>`);
     $('#next').addEventListener('click', () => { ui.session.idx++; viewSession(); });
     $('#regen').addEventListener('click', () => { retryPrepare(task); viewSession(); });
     return false;
@@ -228,29 +228,29 @@ async function generated(task, key) {
 // The exercise for a rule at its rung. Every rung shows which rule is being practised.
 function ruleBody(task) {
   const { rule, ex: e } = task;
-  const head = `<div class="ex-label">${esc(t('ex.rule', { c: categoryLabel(rule.category, lang(), cats()) }))} · ${esc(t('rule.rung', { n: task.item.rung || 2 }))}</div>
-    <div class="rule-name">${esc(rule.name)}</div>`;
+  const head = html`<div class="ex-label">${t('ex.rule', { c: categoryLabel(rule.category, lang(), cats()) })} · ${t('rule.rung', { n: task.item.rung || 2 })}</div>
+    <div class="rule-name">${rule.name}</div>`;
   switch (task.ruleKind) {
     case 'pair': {
       task.order ||= Math.random() < 0.5 ? [e.correct, e.wrong] : [e.wrong, e.correct];
-      return `${head}<div class="instruction">${esc(t('ex.pair'))}</div>
-        <div class="choices">${task.order.map((x) => `<button type="button" class="choice" data-v="${esc(x)}" ${tl()}>${jt(x, e)}</button>`).join('')}</div>
+      return html`${head}<div class="instruction">${t('ex.pair')}</div>
+        <div class="choices">${task.order.map((x) => html`<button type="button" class="choice" data-v="${x}" ${tl()}>${jt(x, e)}</button>`)}</div>
         <input type="hidden" id="a1">`;
     }
     case 'gap':
-      return `${head}<div class="instruction">${esc(t('ex.ruleGap'))}</div>
-        <div class="prompt sentence" ${tl()}>${jt(e.sentence, e).replace('___', '<span class="gap">___</span>')}</div>
-        <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}">`;
+      return html`${head}<div class="instruction">${t('ex.ruleGap')}</div>
+        <div class="prompt sentence" ${tl()}>${gapped(e.sentence, e)}</div>
+        <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}">`;
     case 'transform':
-      return `${head}<div class="instruction">${esc(e.instruction)}</div>
-        ${e.items.map((x, i) => `<div class="tf-item"><div class="sentence" ${tl()}>${jt(x.prompt, e)}</div>
-          <input class="answer" id="${i ? `t${i}` : 'a1'}" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></div>`).join('')}`;
+      return html`${head}<div class="instruction">${e.instruction}</div>
+        ${e.items.map((x, i) => html`<div class="tf-item"><div class="sentence" ${tl()}>${jt(x.prompt, e)}</div>
+          <input class="answer" id="${i ? `t${i}` : 'a1'}" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}"></div>`)}`;
     case 'spot':
-      return `${head}<div class="instruction">${esc(t('ex.spot'))}</div>
-        <textarea class="answer" id="a1" rows="5" ${inputAttrs} ${tl()}>${esc(e.text)}</textarea>`;
+      return html`${head}<div class="instruction">${t('ex.spot')}</div>
+        <textarea class="answer" id="a1" rows="5" ${inputAttrs} ${tl()}>${e.text}</textarea>`;
     default:
-      return `${head}<div class="instruction">${esc(e.instruction)}</div>
-        <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${esc(t('ex.yourAnswer'))}"></textarea>`;
+      return html`${head}<div class="instruction">${e.instruction}</div>
+        <textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}"></textarea>`;
   }
 }
 
@@ -258,11 +258,11 @@ function ruleBody(task) {
 function bindOrder(task) {
   const draw = () => {
     const used = new Set(task.built.map((x) => x.i));
-    $('#built').innerHTML = task.built.length
-      ? task.built.map((x, k) => `<button type="button" class="chunk placed" data-k="${k}">${x.html}</button>`).join('')
-      : `<span class="muted small">${esc(t('ex.orderHint'))}</span>`;
-    $('#pool').innerHTML = task.pool.map((x, k) =>
-      `<button type="button" class="chunk" data-p="${k}" ${used.has(x.i) ? 'disabled' : ''}>${x.html}</button>`).join('');
+    setHtml($('#built'), task.built.length
+      ? task.built.map((x, k) => html`<button type="button" class="chunk placed" data-k="${k}">${x.html}</button>`)
+      : html`<span class="muted small">${t('ex.orderHint')}</span>`);
+    setHtml($('#pool'), task.pool.map((x, k) =>
+      html`<button type="button" class="chunk" data-p="${k}" ${used.has(x.i) ? 'disabled' : ''}>${x.html}</button>`));
     $('#a1').value = joinChunks(task.built.map((x) => x.p));
     $$('#pool .chunk').forEach((b) => b.addEventListener('click', () => {
       if (task.state.phase !== 'answer') return;
@@ -281,17 +281,17 @@ function bindOrder(task) {
 // The register note, except "neutral", which next to "Nomen" reads like a grammatical gender.
 function styleNote(w) {
   const r = (w.register || '').trim();
-  return r && !/^neutral\b/i.test(r) ? ` · ${esc(t('edit.register'))}: ${esc(r)}` : '';
+  return r && !/^neutral\b/i.test(r) ? html` · ${t('edit.register')}: ${r}` : '';
 }
 
 // German nouns get labelled boxes for the article, the word and the plural. The labels stay
 // visible while typing, unlike placeholders.
 function recallBoxes(w) {
-  const input = (id, hint) => `<input class="answer" id="${id}" ${inputAttrs} ${tl()} placeholder="${esc(hint)}">`;
+  const input = (id, hint) => html`<input class="answer" id="${id}" ${inputAttrs} ${tl()} placeholder="${hint}">`;
   if (w.pos !== 'noun' || recLang(w) !== 'de' || !w.article) return input('a1', recallHint(w));
-  const box = (label, html) => `<label class="answer-field"><span class="field-label">${esc(label)}</span>${html}</label>`;
-  return `<div class="row2">${box(t('edit.article'), input('art', 'der/die/das'))}${box(t('ex.word'), input('a1', t('ex.word')))}</div>`
-    + (needsPlural(w) ? box(t('ex.plural'), input('a2', t('ex.plural'))) : '');
+  const box = (label, field) => html`<label class="answer-field"><span class="field-label">${label}</span>${field}</label>`;
+  return html`<div class="row2">${box(t('edit.article'), input('art', 'der/die/das'))}${box(t('ex.word'), input('a1', t('ex.word')))}</div>${
+    needsPlural(w) ? box(t('ex.plural'), input('a2', t('ex.plural'))) : ''}`;
 }
 
 // What to type in recall: German nouns with article, other languages' nouns with article
@@ -319,7 +319,7 @@ async function onCheck(task) {
     // The answer stays, so checking again is one tap on the same button.
     task.state.phase = 'answer';
     buttons.forEach((b) => (b.disabled = false));
-    fb.innerHTML = isCancel(e) ? '' : errorBox(e);
+    setHtml(fb, isCancel(e) ? '' : errorBox(e));
     return;
   }
   task.state = feedbackState(result, a1, a2);
@@ -345,7 +345,8 @@ async function onRecheck(task) {
   if (st.phase !== 'feedback' || st.rechecked) return;
   st.phase = 'checking';
   const fb = $('#feedback');
-  const shown = fb.innerHTML;
+  // The page's own markup, put back as it was.
+  const shown = raw(fb.innerHTML);
   $$('#dock button').forEach((b) => (b.disabled = true));
   let result;
   try {
@@ -353,7 +354,7 @@ async function onRecheck(task) {
   } catch (e) {
     if (ui.session?.tasks[ui.session.idx] !== task) return;
     st.phase = 'feedback';
-    fb.innerHTML = shown + (isCancel(e) ? '' : errorBox(e));
+    setHtml(fb, html`${shown}${isCancel(e) ? '' : errorBox(e)}`);
     $$('#dock button').forEach((b) => (b.disabled = false));
     return;
   }
@@ -366,19 +367,19 @@ function showFeedback(task, canOverride) {
   const { grade, feedback, almostKey, dontKnow, rechecked } = task.state;
   const cls = dontKnow ? 'shown' : grade === 'correct' ? 'ok' : grade === 'almost' ? 'almost' : 'bad';
   const label = dontKnow ? t('session.hereIsAnswer') : grade === 'correct' ? t('session.correct') : grade === 'almost' ? t(almostKey || 'session.almost') : t('session.wrong');
-  $('#feedback').innerHTML = `<div class="result ${cls}"><div class="result-title">${esc(label)}</div>
-    ${rechecked ? `<div class="muted small">${esc(t('session.rechecked'))}</div>` : ''}${feedback}</div>
-    ${englishButton(task)}`;
+  setHtml($('#feedback'), html`<div class="result ${cls}"><div class="result-title">${label}</div>
+    ${rechecked ? html`<div class="muted small">${t('session.rechecked')}</div>` : ''}${feedback}</div>
+    ${englishButton(task)}`);
   bindNatural($('#feedback'));
   bindEnglish(task);
   $$('#ex .chunk').forEach((b) => (b.disabled = true));
   const recheck = !dontKnow && !rechecked && gem();
-  $('#dock').innerHTML = `
-    <button class="btn primary" id="next">${esc(t('session.next'))}</button>
-    ${recheck || canOverride ? `<div class="dock-row">
-      ${recheck ? `<button class="btn text" id="recheck">${esc(t('session.recheck'))}</button>` : '<span></span>'}
-      ${canOverride ? `<button class="btn text" id="override">${esc(t('session.iWasRight'))}</button>` : ''}
-    </div>` : ''}`;
+  setHtml($('#dock'), html`
+    <button class="btn primary" id="next">${t('session.next')}</button>
+    ${recheck || canOverride ? html`<div class="dock-row">
+      ${recheck ? html`<button class="btn text" id="recheck">${t('session.recheck')}</button>` : html`<span></span>`}
+      ${canOverride ? html`<button class="btn text" id="override">${t('session.iWasRight')}</button>` : ''}
+    </div>` : ''}`);
   $('#recheck')?.addEventListener('click', () => onRecheck(task));
   $('#override')?.addEventListener('click', () => { task.state.grade = 'correct'; next(task); });
   $('#next').addEventListener('click', () => next(task));

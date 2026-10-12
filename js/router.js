@@ -2,7 +2,7 @@
 // this module imports none of them and any screen can import go() and route().
 import { t, lang } from './i18n.js';
 import { icon } from './icons.js';
-import { main, esc, $, $$ } from './ui/dom.js';
+import { html, setHtml, main, $, $$ } from './ui/dom.js';
 import { L, code, langName } from './ui/context.js';
 import { furiMode } from './ui/text.js';
 
@@ -60,7 +60,7 @@ function updatePill(name) {
   const show = !!cur?.level && PILL_ROUTES.includes(name);
   pill.classList.toggle('hidden', !show);
   if (show) {
-    pill.innerHTML = `<span class="ellipsis">${esc(code().toUpperCase())} · ${esc(cur.level)}</span>${icon('down', 14)}`;
+    setHtml(pill, html`<span class="ellipsis">${code().toUpperCase()} · ${cur.level}</span>${icon('down', 14)}`);
     pill.title = `${langName()} · ${cur.level}`;
     pill.setAttribute('aria-label', t('settings.langSheet'));
   }

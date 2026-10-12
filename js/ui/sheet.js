@@ -3,12 +3,12 @@
 import { t } from '../i18n.js';
 import { icon } from '../icons.js';
 import { route } from '../router.js';
-import { esc, $, $$ } from './dom.js';
+import { html, setHtml, $, $$ } from './dom.js';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 let sheetCount = 0;
 
-// Shows the panel's HTML over a backdrop and returns the backdrop and its close function.
+// Shows the panel's HTML (built with html`…`) over a backdrop and returns the backdrop and its close function.
 // redraw: false leaves the page as it was, for sheets that change nothing on it.
 // onClose runs however it closes. While it is open, everything behind it is inert and Tab
 // stays inside it; closing hands focus back to what opened it, or redraws in place.
@@ -16,7 +16,7 @@ export function mountSheet(panelHtml, { redraw = true, onClose } = {}) {
   const opener = document.activeElement;
   const back = document.createElement('div');
   back.className = 'sheet-backdrop';
-  back.innerHTML = panelHtml;
+  setHtml(back, panelHtml);
   const panel = back.firstElementChild;
   const title = $('h2', panel);
   if (title) title.id ||= `sheet-title-${++sheetCount}`;
@@ -56,11 +56,11 @@ export function mountSheet(panelHtml, { redraw = true, onClose } = {}) {
 export function confirmSheet(text, { ok, danger = true } = {}) {
   return new Promise((resolve) => {
     let answer = false;
-    const { el, close } = mountSheet(`<div class="sheet confirm">
-      <h2>${esc(text)}</h2>
+    const { el, close } = mountSheet(html`<div class="sheet confirm">
+      <h2>${text}</h2>
       <div class="actions">
-        <button type="button" class="btn" data-act="cancel">${esc(t('edit.cancel'))}</button>
-        <button type="button" class="btn ${danger ? 'danger-solid' : 'primary'}" data-act="ok">${esc(ok)}</button>
+        <button type="button" class="btn" data-act="cancel">${t('edit.cancel')}</button>
+        <button type="button" class="btn ${danger ? 'danger-solid' : 'primary'}" data-act="ok">${ok}</button>
       </div>
     </div>`, { redraw: false, onClose: () => resolve(answer) });
     $('[data-act=cancel]', el).addEventListener('click', close);
@@ -70,8 +70,8 @@ export function confirmSheet(text, { ok, danger = true } = {}) {
 
 // Opens a bottom sheet with a form; onSave gets the form fields. Either returning false
 // keeps the sheet open (onDelete may answer later, after asking).
-export function openSheet(html, { onSave, onDelete }) {
-  const { el, close } = mountSheet(`<form class="sheet">${html}</form>`);
+export function openSheet(body, { onSave, onDelete }) {
+  const { el, close } = mountSheet(html`<form class="sheet">${body}</form>`);
   $('[data-act=cancel]', el).addEventListener('click', close);
   $('[data-act=delete]', el)?.addEventListener('click', async () => { if (await onDelete()) close(); });
   $('form', el).addEventListener('submit', (e) => {
@@ -83,7 +83,7 @@ export function openSheet(html, { onSave, onDelete }) {
 
 // Sheet title with a close button (it cancels), and the fields most edits don't need.
 export function sheetHead(title) {
-  return `<div class="sheet-head"><h2>${esc(title)}</h2>
-    <button type="button" class="icon-btn" data-act="cancel" aria-label="${esc(t('edit.cancel'))}">${icon('close', 22)}</button></div>`;
+  return html`<div class="sheet-head"><h2>${title}</h2>
+    <button type="button" class="icon-btn" data-act="cancel" aria-label="${t('edit.cancel')}">${icon('close', 22)}</button></div>`;
 }
-export const moreFields = (html) => `<details class="more"><summary>${esc(t('edit.more'))} ${icon('down', 16)}</summary><div>${html}</div></details>`;
+export const moreFields = (body) => html`<details class="more"><summary>${t('edit.more')} ${icon('down', 16)}</summary><div>${body}</div></details>`;
