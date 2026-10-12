@@ -44,8 +44,8 @@ export function viewToday() {
       <div class="hero-label">${esc(t('today.due'))}</div>
       <div class="hero-num">${s.total}</div>
       <div class="chips">
-        <span class="stat"><b>${s.words}</b> ${esc(t('today.words'))}${s.newWords ? ` · ${esc(t('today.newShort', { n: s.newWords }))}` : ''}</span>
-        ${s.sentences ? stat(s.sentences, t('today.sentences')) : ''}
+        <span class="stat"><b>${s.words}</b> ${esc(t(s.words === 1 ? 'today.word' : 'today.words'))}${s.newWords ? ` · ${esc(t('today.newShort', { n: s.newWords }))}` : ''}</span>
+        ${s.sentences ? stat(s.sentences, t(s.sentences === 1 ? 'today.sentence' : 'today.sentences')) : ''}
         ${stat(s.grammar, t('today.drills'))}
       </div>
       ${s.total ? `<button class="btn primary big" id="start">${esc(t('today.start'))}</button>`
