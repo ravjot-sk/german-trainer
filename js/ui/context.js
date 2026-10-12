@@ -5,6 +5,7 @@ import { canUseGemini } from '../gemini.js';
 import { categoriesFor, drillableIds } from '../categories.js';
 import { catKey, parseCatKey, displayName } from '../languages.js';
 import { chunksFor } from '../check.js';
+import { SESSION_KEY } from '../resume.js';
 
 export const gem = () => canUseGemini();
 
@@ -46,6 +47,7 @@ export const ui = {
 // Forgets screen state that belongs to the previous language.
 export function resetViews() {
   ui.session = null;
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* nothing kept */ }
   ui.lastLookup = null;
   ui.lastCorrection = null;
   ui.correctOpen = false;

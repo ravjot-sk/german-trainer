@@ -1,9 +1,11 @@
 // Settings, and its Advanced (Gemini model) and Backup pages.
 import * as store from '../store.js';
 import * as gemini from '../gemini.js';
+import { textModels, RECOMMENDED_MODEL } from '../gemclient.js';
 import { t, lang } from '../i18n.js';
 import { icon } from '../icons.js';
-import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs } from '../ui/dom.js';
+import { main, titleEl, esc, $, $$, toast, errorBox, inputAttrs, pressedAttrs, choose } from '../ui/dom.js';
+import { confirmSheet } from '../ui/sheet.js';
 import { code, resetViews } from '../ui/context.js';
 import { furiMode } from '../ui/text.js';
 import { route } from '../router.js';
@@ -24,7 +26,7 @@ export function viewSettings() {
       <p class="muted small">${esc(t('settings.learningHelp'))}</p>
       ${code() === 'ja' ? `<div class="row-label"><span>${esc(t('settings.furigana'))}</span>
         <div class="seg" id="furi" style="min-width:210px">${['tap', 'always', 'off'].map((v) =>
-          `<button type="button" data-v="${v}" class="${furiMode() === v ? 'on' : ''}">${esc(t(`settings.furigana.${v}`))}</button>`).join('')}</div></div>
+          `<button type="button" data-v="${v}" ${pressedAttrs(furiMode() === v)}>${esc(t(`settings.furigana.${v}`))}</button>`).join('')}</div></div>
       <p class="muted small">${esc(t('settings.furiganaHelp'))}</p>` : ''}
     </section>
     <div class="group-label">${esc(t('sync.title'))}</div>
@@ -47,8 +49,8 @@ export function viewSettings() {
     <section class="card form">
       <div class="row-label"><span>${esc(t('settings.language'))}</span>
         <div class="seg" id="lang" style="min-width:180px">
-          <button data-lang="de" class="${s.lang !== 'en' ? 'on' : ''}">Deutsch</button>
-          <button data-lang="en" class="${s.lang === 'en' ? 'on' : ''}">English</button>
+          <button type="button" data-lang="de" ${pressedAttrs(s.lang !== 'en')} lang="de">Deutsch</button>
+          <button type="button" data-lang="en" ${pressedAttrs(s.lang === 'en')} lang="en">English</button>
         </div>
       </div>
     </section>
@@ -62,7 +64,7 @@ export function viewSettings() {
   $$('#lang button').forEach((b) => b.addEventListener('click', () => { store.setSettings({ lang: b.dataset.lang }); route(); }));
   $$('#furi button').forEach((b) => b.addEventListener('click', () => {
     store.setSettings({ furigana: b.dataset.v });
-    $$('#furi button').forEach((x) => x.classList.toggle('on', x === b));
+    choose($$('#furi button'), b);
     document.body.classList.toggle('furi-tap', furiMode() === 'tap');
   }));
   $('#key').addEventListener('change', (e) => { store.setApiKey(e.target.value); toast(t('settings.saved')); });
@@ -89,35 +91,41 @@ function bindTest() {
     $('#testres').innerHTML = `<div class="loading">…</div>`;
     try {
       const r = await gemini.testKey();
-      if ($('#model')) $('#model').value = r.model;
+      if ($('#model')) fillModels($('#model'));
       $('#testres').innerHTML = `<div class="notice ok">${esc(t('settings.testOk', { m: r.model }))}</div>`;
     } catch (e) { $('#testres').innerHTML = errorBox(e); }
   });
 }
 
+// The models in the dropdown: the ones the key can use once loaded, and always the saved and
+// the recommended one.
+let models = [];
+function fillModels(sel) {
+  const cur = store.getSettings().model;
+  sel.innerHTML = textModels([...models, cur, RECOMMENDED_MODEL]).map((n) => `<option value="${esc(n)}"${n === cur ? ' selected' : ''}>${esc(n)}${n === RECOMMENDED_MODEL ? ` ${esc(t('settings.recommended'))}` : ''}</option>`).join('');
+}
+
 // Settings › Advanced: which Gemini model to use.
 export function viewAdvanced() {
   titleEl.textContent = t('settings.advanced');
-  const s = store.getSettings();
   main.innerHTML = `
     <section class="card form">
       <label>${esc(t('settings.model'))}
-        <div class="inline"><input id="model" list="models" ${inputAttrs} value="${esc(s.model)}">
-        <button class="btn small" id="loadmodels">${esc(t('settings.loadModels'))}</button></div>
-        <datalist id="models"></datalist>
+        <select id="model"></select>
       </label>
       <p class="muted small">${esc(t('settings.advancedHelp'))}</p>
       <button class="btn" id="test">${esc(t('settings.test'))}</button>
       <div id="testres"></div>
     </section>`;
-  $('#model').addEventListener('change', (e) => { store.setSettings({ model: e.target.value.trim() || 'gemini-flash-latest' }); toast(t('settings.saved')); });
-  $('#loadmodels').addEventListener('click', async () => {
-    try {
-      const names = await gemini.listModels();
-      $('#models').innerHTML = names.map((n) => `<option value="${esc(n)}">`).join('');
-      $('#testres').innerHTML = `<p class="muted small">${esc(names.join(', '))}</p>`;
-    } catch (e) { $('#testres').innerHTML = errorBox(e); }
-  });
+  const sel = $('#model');
+  fillModels(sel);
+  sel.addEventListener('change', (e) => { store.setSettings({ model: e.target.value }); toast(t('settings.saved')); });
+  if (gemini.canUseGemini()) {
+    gemini.listModels().then((names) => {
+      models = names;
+      if (document.contains(sel)) fillModels(sel);
+    }).catch((e) => console.warn('models', e));
+  }
   bindTest();
 }
 
@@ -145,8 +153,9 @@ export function viewBackup() {
       toast(t('settings.imported', { w: r.words, m: r.mistakes }));
     } catch (err) { toast(err.message); }
   });
-  $('#reset').addEventListener('click', () => {
-    if (confirm(t(accountSynced() ? 'settings.confirmResetSynced' : 'settings.confirmReset'))) { store.resetData(); resetViews(); toast('OK'); }
+  $('#reset').addEventListener('click', async () => {
+    if (!(await confirmSheet(t(accountSynced() ? 'settings.confirmResetSynced' : 'settings.confirmReset'), { ok: t('settings.reset') }))) return;
+    store.resetData(); resetViews(); toast('OK');
   });
 }
 

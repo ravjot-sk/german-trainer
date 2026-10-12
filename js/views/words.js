@@ -4,7 +4,7 @@ import { t } from '../i18n.js';
 import { isNew } from '../srs.js';
 import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
-import { main, titleEl, esc, $, $$, inputAttrs, pref, setPref } from '../ui/dom.js';
+import { main, titleEl, esc, $, $$, inputAttrs, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
 import { gem, code, ui } from '../ui/context.js';
 import { tl, toneLabel, fmtDate } from '../ui/text.js';
 import { bindSuggest } from './suggest.js';
@@ -40,7 +40,7 @@ export function viewWords() {
       <button class="btn" id="add" aria-label="${esc(t('words.add'))}">${icon('plus', 22)}</button>
     </div>
     ${all.some(isSentence) ? `<div class="seg" id="wfilter">${['all', 'words', 'sentences'].map((f) =>
-      `<button type="button" data-v="${f}" class="${f === show ? 'on' : ''}">${esc(t(`words.filter.${f}`))}</button>`).join('')}</div>` : ''}
+      `<button type="button" data-v="${f}" ${pressedAttrs(f === show)}>${esc(t(`words.filter.${f}`))}</button>`).join('')}</div>` : ''}
     <div id="wlist"></div>`;
   const draw = () => {
     const q = ui.wordQuery.toLowerCase();
@@ -56,7 +56,7 @@ export function viewWords() {
   $$('#wfilter button').forEach((b) => b.addEventListener('click', () => {
     show = b.dataset.v;
     setPref('wordFilter', show);
-    $$('#wfilter button').forEach((x) => x.classList.toggle('on', x === b));
+    choose($$('#wfilter button'), b);
     draw();
   }));
   $('#search').addEventListener('input', (e) => { ui.wordQuery = e.target.value; draw(); });

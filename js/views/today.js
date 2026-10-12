@@ -4,11 +4,11 @@ import { t } from '../i18n.js';
 import { summarizeDue, practicePool, PRACTICE_FOCUS } from '../session.js';
 import { dayStart } from '../srs.js';
 import { icon } from '../icons.js';
-import { main, titleEl, esc, $, $$, pref, setPref } from '../ui/dom.js';
+import { main, titleEl, esc, $, $$, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
 import { gem, L, code, langName, sessionArgs, ui } from '../ui/context.js';
 import { route, go } from '../router.js';
 import { learnCard, bindLearnCard } from './learncard.js';
-import { startPractice } from '../practice/runtime.js';
+import { startPractice, startSession } from '../practice/runtime.js';
 import { bindSuggest } from './suggest.js';
 import { sortedStats, catList } from './profile.js';
 
@@ -60,7 +60,7 @@ export function viewToday() {
     ${notes.join('')}
     ${weakSpots()}
   `;
-  $('#start')?.addEventListener('click', () => { ui.session = null; go('session'); });
+  $('#start')?.addEventListener('click', () => { startSession(); go('session'); });
   bindPracticeCard();
 }
 
@@ -78,7 +78,7 @@ function practiceCard(practised) {
     <div class="card-head"><h3>${esc(t('practice.title'))}</h3></div>
     <p class="muted small">${esc(t('practice.help'))}</p>
     ${focuses.length > 1 ? `<div class="seg wrap" id="pfocus">${focuses.map((f) =>
-      `<button type="button" data-v="${f}" class="${f === cur ? 'on' : ''}">${esc(t(`practice.focus.${f}`))}</button>`).join('')}</div>` : ''}
+      `<button type="button" data-v="${f}" ${pressedAttrs(f === cur)}>${esc(t(`practice.focus.${f}`))}</button>`).join('')}</div>` : ''}
     <button class="btn primary" id="practice">${esc(t('practice.start'))}</button>
     ${few && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
     ${practised ? `<p class="muted small">${esc(t('practice.doneToday', { n: practised }))}</p>` : ''}
@@ -88,7 +88,7 @@ function practiceCard(practised) {
 function bindPracticeCard() {
   $$('#pfocus button').forEach((b) => b.addEventListener('click', () => {
     setPref('practiceFocus', b.dataset.v);
-    $$('#pfocus button').forEach((x) => x.classList.toggle('on', x === b));
+    choose($$('#pfocus button'), b);
   }));
   $('#practice')?.addEventListener('click', () => {
     startPractice($('#pfocus .on')?.dataset.v || 'mix');

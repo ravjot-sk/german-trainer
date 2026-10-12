@@ -227,7 +227,7 @@ Tap the ⚙️ gear (top right).
 | Sprache der App | Switch the app's own buttons and explanations between German and English |
 | Konto & Synchronisierung | Sign in to keep your data the same on all your devices (invite only, see below) |
 | Gemini-API-Schlüssel | Your API key (see step 2 above) |
-| Erweitert → Gemini-Modell | Which Gemini model to use. The default works, and **Modelle laden** shows the others |
+| Erweitert → Gemini-Modell | Which Gemini model to use. The list shows the models your key can use; **gemini-flash-lite-latest** is the recommended default |
 | Neue Wörter pro Tag | How many new words join your session each day |
 | Sicherung | Export your data to a file, or import it again |
 
@@ -247,9 +247,12 @@ exercises that need Gemini wait until you're back online.
 
 **Something not working?**
 - *"Bitte zuerst den Gemini-Schlüssel eintragen"*: add your key in Settings.
-- *"Gemini-Fehler: …"*: tap **Schlüssel testen** in Settings. If the model isn't found, open **Erweitert**,
-  tap **Modelle laden** and pick a "flash" model.
-- *The app looks out of date*: close it and open it again. Updates load in the background.
+- *"Gemini-Fehler: …"*: tap **Schlüssel testen** in Settings. If the model isn't found, open **Erweitert**
+  and pick another model from the list.
+- *Gemini is slow or busy*: every Gemini step can be stopped with **Abbrechen**, and after an error or 30
+  seconds without an answer **Nochmal versuchen** asks again. What you typed stays.
+- *The app looks out of date*: updates download in the background. When one is ready, a bar says **Neue
+  Version, tippen zum Laden**; otherwise it is used the next time the app starts.
 
 **Found a bug?** Tap the 🐞 icon at the top (it's in the session bar during practice), say what went wrong
 and tap **Senden**. Leave **Bildschirm mitsenden** ticked so the report includes what was on screen (your
@@ -358,6 +361,7 @@ The tests also run automatically on every pull request and every push to `main` 
 | `js/stats.js` | The mistake profile's numbers (pure, tested) |
 | `js/background.js` | Gemini work done in the background: furigana, rule exercise sets, gap sentences |
 | `js/gemini.js` | All Gemini prompts and their JSON response schemas |
+| `js/gemclient.js` | Gemini requests: time limit, retries when Google is busy, foreground-first queue |
 | `js/session.js` | Builds the daily mixed session |
 | `js/srs.js` | Spaced-repetition scheduler (SM-2 variant) |
 | `js/check.js` | Local answer checking and the correction diff |
@@ -372,7 +376,7 @@ The tests also run automatically on every pull request and every push to `main` 
 | `js/firebase-config.js` | Firebase project config (`null` turns accounts off) |
 | `firestore.rules` | Security rules: invite-only allowlist and invite codes, each user sees only their own data |
 | `js/i18n.js` | German and English UI text |
-| `sw.js` | Service worker for offline use |
+| `sw.js` | Service worker: the app opens from the cached version, updates download in the background |
 
 The app is hosted on GitHub Pages from the `main` branch. Anything merged to `main` goes live within a
 minute or two.

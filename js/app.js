@@ -35,11 +35,38 @@ $('#back').addEventListener('click', () => go($('#back').dataset.to || 'today'))
 $('#langpill').addEventListener('click', openLangSheet);
 navigator.storage?.persist?.().catch(() => {});
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').then(watchUpdates).catch(() => {});
+}
+
+// The app runs from the cached version (sw.js). A newer one, once downloaded, is offered in a
+// bar; one that was already waiting when the app starts is switched to straight away.
+// Pending saves are written first, since switching reloads the page.
+function watchUpdates(reg) {
+  let switching = false;
+  const apply = async () => {
+    if (switching || !reg.waiting) return;
+    switching = true;
+    await localdb.flushAll().catch(() => {});
+    reg.waiting.postMessage('skipWaiting');
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (switching) location.reload(); });
+  const bar = $('#updatebar');
+  bar.textContent = t('app.update');
+  bar.addEventListener('click', apply);
+  const offer = () => { if (reg.waiting && navigator.serviceWorker.controller) bar.classList.remove('hidden'); };
+  reg.addEventListener('updatefound', () => {
+    const w = reg.installing;
+    w?.addEventListener('statechange', () => { if (w.state === 'installed') offer(); });
+  });
+  if (reg.waiting && navigator.serviceWorker.controller) apply();
+  // A home-screen app coming back from the background doesn't reload, so it checks then.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reg.update().catch(() => {});
+  });
 }
 // Changes merged in from another device: refresh the overview pages (not forms or sessions).
 store.onChange(({ remote } = {}) => {
-  if (remote && ['today', 'profile'].includes(routeName())) route();
+  if (remote && ['today', 'profile'].includes(routeName())) route({ keepScroll: true });
 });
 sync.onState(showSyncState);
 // Saving: pending writes go out when the app is sent to the background, and a failed save
