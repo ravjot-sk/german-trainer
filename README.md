@@ -2,12 +2,14 @@
 
 **Turn the words you look up and the mistakes you make into daily practice, in German, Japanese or any other language.**
 
-Language Trainer is for learners who understand a language better than they can *produce* it. It is a
+Language Trainer is for learners who understand a language better than they can *speak or write* it. It is a
 dictionary, a writing corrector and a daily trainer in one. Every word you look up and every mistake you make
-comes back as an exercise until you can produce it correctly yourself. German and Japanese are built in, and
-Gemini sets up any other language you add.
+comes back as an exercise until you can produce it correctly yourself.
 
 👉 **Open the app: [ravjot-sk.github.io/german-trainer](https://ravjot-sk.github.io/german-trainer/)**
+
+The app started as a German trainer, which is why the link says *german-trainer*. It now works for any language.
+Its buttons and explanations are in German at first; you can switch them to English (step 2 below).
 
 <table>
   <tr>
@@ -18,7 +20,7 @@ Gemini sets up any other language you add.
   </tr>
   <tr>
     <td align="center">Look up</td>
-    <td align="center">Correct</td>
+    <td align="center">Write</td>
     <td align="center">Practise</td>
     <td align="center">Track</td>
   </tr>
@@ -26,56 +28,155 @@ Gemini sets up any other language you add.
 
 ---
 
-## Get started in 3 steps
+## What you need
 
-### 1. Install it on your iPhone
+- **An iPhone**, Android phone or computer with a web browser. Nothing to download from an app store.
+- **A Google account**, to get a free Gemini key (step 4). Gemini is Google's AI, and it does the lookups,
+  corrections and exercises.
+- **An invite code** only if you want to sign in and sync your words between devices (step 5). Ask Ravjot
+  for one. You can use the app without it.
+
+## Set it up
+
+### Step 1: Put the app on your home screen
+
+**iPhone**
 
 1. Open the [app link](https://ravjot-sk.github.io/german-trainer/) in **Safari**.
-2. Tap the **Share** button, then **Zum Home-Bildschirm** (Add to Home Screen).
-3. Open the app from your home screen. It now runs full-screen, like a normal app.
+2. Tap the **Share** button (the square with an arrow pointing up). On some iPhones you first tap **⋯** at
+   the bottom right to find it.
+3. Scroll down and tap **Add to Home Screen** (on a German iPhone: **Zum Home-Bildschirm**), then **Add**.
+4. Open the app from its new icon. It now runs full-screen, like a normal app.
 
-On a computer, just open the link in any browser.
+**Android**
 
-### 2. Add a free Gemini API key
+1. Open the [app link](https://ravjot-sk.github.io/german-trainer/) in **Chrome**.
+2. Tap the **⋮** menu (top right), then **Add to Home screen** or **Install app**.
 
-The app uses Google's Gemini AI to look up words and correct your German. You need your own key, and the
-free tier is enough for personal use.
+**Computer:** just open the link in any browser and bookmark it.
 
-1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with a Google account.
-2. Click **Create API key** and copy it.
-3. In the app, tap the ⚙️ gear (top right) and paste the key under **Gemini-API-Schlüssel**.
-4. Tap **Schlüssel testen**. A green message means you're ready.
+### Step 2: Switch the app to English (optional)
 
-Your key is stored only on your device and is sent only to Google.
+Tap the ⚙️ gear (top right). Under **App**, find **Sprache der App** and tap **English**. The steps below
+give the German name first and the English name in brackets.
 
-### 3. Choose your language and level
+### Step 3: Choose your language and level
 
-The first time you open the app, pick the language you're learning and your level (A1–C2, or JLPT N5–N1
-for Japanese). Nothing is preset: every exercise, example and explanation is pitched at the level you choose,
-and you can change it any time in Settings.
+The first time you open the app, it asks **Welche Sprache lernst du?** (Which language are you learning?) and
+**Wie gut ist dein …?** (How good is your …?). Pick your language and your level: A1 (beginner) to C2 (near
+native), or JLPT N5 to N1 for Japanese. Every exercise, example and explanation is pitched at that level.
+You can change it any time in Settings.
 
-- **German and Japanese** are built in, each with a fixed list of grammar categories based on research into
-  learners' mistakes: German on the MERLIN learner corpus, Japanese on the NAIST Goyo Corpus.
-- **Any other language:** choose **+ Andere Sprache …** and type its name, for example *Spanish*. Gemini sets
-  it up once (articles, readings, and its grammar categories, worked out from a fixed checklist of grammar
-  areas). Because that list is generated, the app notes that it may be incomplete.
-- You can learn several languages. Words, mistakes and progress are kept separate for each one; switch in
-  Settings or with the language pill (for example **DE · B2**) at the top. Your levels sync with your account; which language is active is chosen on each device.
+German and Japanese are built in. For any other language, choose **+ Andere Sprache …** (+ Another language)
+and type its name, for example *Spanish*. More on this in [Languages](#languages) below.
 
-**Japanese:** type with the iPhone Japanese keyboard. Words are saved with their kana reading, and in recall
-the kanji form is correct while typing only the reading counts as *almost*. Lookups also accept romaji.
-Words, example sentences, saved sentences and drills show furigana above the kanji. In **Settings › Furigana**
-choose *Tap* (readings appear when you tap the text, so you try reading first; the default), *Always* or *Off*.
-Sentences saved before furigana existed get theirs from Gemini the first time they come up.
+### Step 4: Get a free Gemini key and add it
 
-### 4. Use it every day
+The app talks to Gemini with your own personal key. It is free; you don't need to enter a credit card.
 
-- **During the day:** look up words when you meet them, and paste in text you've written.
-- **Once a day:** open **Heute** and do your session. It takes about 10 minutes.
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with your Google account.
+   The first time, accept the terms.
+2. Tap **Create API key**. If it asks for a project, pick the one it suggests.
+3. Tap the copy icon next to the long key that appears (it starts with *AIza*).
+4. In the app, tap the ⚙️ gear and paste the key into **Gemini-API-Schlüssel** (Gemini API key). Tap
+   **Anzeigen** (Show) if you want to check it pasted completely.
+5. Tap **Schlüssel testen** (Test key). A green message such as *Funktioniert mit …* (Works with …) means
+   you're ready.
+
+**Good to know about the key**
+
+- **Cost:** the free plan allows a limited number of requests per day, which is plenty for normal personal use.
+  If you reach it, the app says the daily limit is reached and it works again the next day.
+- **Privacy:** the key stays on your device; the app only sends it to Google with each request. The words and
+  texts you look up or have corrected go to Google's Gemini. On the free plan Google may use what you send to
+  improve its products, so don't paste anything private.
+- **Keep it to yourself:** anyone with your key can use your free allowance. If it leaks, delete it in
+  AI Studio and create a new one.
+
+### Step 5: Create an account to sync (optional)
+
+Without an account, everything stays on this one device. With an account, your words, mistakes and progress
+are the same on all your devices, and they are safe if you lose your phone.
+
+1. Ask Ravjot for an **invite code**.
+2. Tap the ⚙️ gear. Under **Konto & Synchronisierung** (Account & sync), enter your email and a password of at
+   least 6 characters, and the code under **Einladungscode** (Invite code). Tap **Konto erstellen**
+   (Create account).
+3. You get an email with a confirmation link. Open it (check your spam folder if it isn't there), then come
+   back to the app and tap **Ich habe bestätigt** (I have confirmed). Syncing starts.
+4. On your other devices, set up steps 1 to 4, then tap **Anmelden** (Sign in) with the same email and password.
+
+- *Forgot your password?* Tap **Passwort vergessen?** (Forgot password?) and follow the email.
+- *"Not invited yet"?* Enter a code there and tap **Code einlösen** (Use code), or ask Ravjot to invite you and
+  then tap **Erneut prüfen** (Check again).
+- Your Gemini key is never synced; add it on each device.
 
 ---
 
-## What each screen does
+## Using it every day
+
+- **During the day:** look up words when you meet them (**Suchen**), and paste in texts you've written to get
+  them corrected (**Schreiben**). Every word and mistake is saved automatically.
+- **Once a day:** open **Heute** (Today) and tap **Sitzung starten** (Start session). It takes about 10 minutes.
+  Want more? **Üben** (Practise) on the same screen goes on as long as you like.
+
+### Languages
+
+- You can learn several languages. Words, mistakes and progress are kept separate for each one. Switch with the
+  language pill at the top (for example **DE · B2**) or in Settings.
+- **German and Japanese** each have a fixed list of grammar areas based on research into learners' mistakes
+  (German on the MERLIN learner corpus, Japanese on the NAIST Goyo Corpus).
+- **Other languages** are set up once by Gemini. Because their list of grammar areas is generated, the app
+  notes that it may be incomplete.
+- **Japanese:** type with the iPhone Japanese keyboard; lookups also accept romaji. Words are saved with their
+  kana reading, and in recall the kanji form is correct while typing only the reading counts as *almost*.
+  Furigana (readings above the kanji) appear when you tap the text; change this in **Settings › Furigana**
+  (*Tap*, *Always* or *Off*).
+
+---
+
+## Problems and questions
+
+**"Bitte zuerst den Gemini-Schlüssel eintragen"** (Please add your Gemini key first): do step 4.
+
+**"Gemini-Fehler: …"** (Gemini error): tap the ⚙️ gear, then **Schlüssel testen** (Test key). If it says the
+key is not valid, copy it again from AI Studio. If the model isn't found, open **Erweitert** (Advanced) and pick
+another model from the list.
+
+**"Gemini ist gerade ausgelastet"** (Gemini is busy) or nothing happens for a while: Google is busy. Tap
+**Abbrechen** (Cancel) or **Nochmal versuchen** (Try again). What you typed stays.
+
+**"Das Tageslimit … ist erreicht"** (daily limit reached): your free allowance is used up for today. Recall, gap
+fill and word order exercises still work; everything else works again tomorrow.
+
+**No internet?** Recall, gap fill and word order work offline. Lookups, corrections and exercises that need
+Gemini wait until you're back online.
+
+**A bar says "Neue Version, tippen zum Laden"** (New version, tap to load): an update is ready. Tap it, or it is
+used the next time you open the app. A practice session you are in the middle of is kept.
+
+**Where is my data?** On your device, inside the app. If you are signed in, it is also kept in your private
+account, which only you can read.
+
+**How do I not lose my data?**
+- If you're signed in, your account is your backup.
+- If you're not signed in, your data lives only on this phone. Deleting the app from your home screen or
+  clearing Safari's website data deletes it. Save a backup now and then: ⚙️ → **Sicherung** (Backup) →
+  **Exportieren** (Export). **Importieren** (Import) brings it back.
+- **Abmelden** (Sign out) removes your data from that device; it stays in your account. If the app warns that
+  changes haven't been uploaded yet, wait until you're online before signing out.
+
+**Found a bug?** Tap the bug icon at the top (during practice it's in the top bar of the session), describe what
+went wrong and tap **Senden** (Send). Leave **Bildschirm mitsenden** (Include the screen) ticked so the report
+includes what was on screen. Reports become public issues in this repository, without your name or email. You
+need to be signed in to send one.
+
+---
+
+## What each screen does, in detail
+
+The tabs at the bottom are **Heute** (Today), **Suchen** (Look up), **Schreiben** (Write) and **Wörter**
+(Words). In German, the Suchen and Schreiben screens are titled **Nachschlagen** and **Korrigieren**.
 
 ### 🔍 Suchen (Look up)
 
@@ -98,7 +199,7 @@ learning) and pick a tone:
 You get the translation, a one-line note on what makes it sound that way, and the useful words in it. Tap
 a word to save it too. The sentence is saved automatically and joins your daily practice.
 
-### ✏️ Schreiben (Correct)
+### ✏️ Schreiben (Write)
 
 Paste or write anything in the language you're learning: an email, a chat message, a practice paragraph.
 You get back:
@@ -116,7 +217,7 @@ phrasing and why. That's a suggestion, not a mistake. Tap **Zum Üben speichern*
 After a correction the result comes first and your text folds into one line; tap it to edit and correct again,
 or tap **Neuer Text** to start over.
 
-### ✅ Heute (Today)
+### ✅ Heute (Today) and how practice works
 
 Shows what's due today and your three weakest grammar areas (tap **Ganzes Fehlerprofil** for the full
 profile, see below). Your daily session mixes vocabulary and grammar. The app decides what's due using spaced repetition: things
@@ -223,164 +324,22 @@ Tap the ⚙️ gear (top right).
 
 | Setting | What it does |
 |---|---|
-| Ich lerne / Mein Niveau | The language you're practising and your level in it; add another language here |
-| Sprache der App | Switch the app's own buttons and explanations between German and English |
-| Konto & Synchronisierung | Sign in to keep your data the same on all your devices (invite only, see below) |
-| Gemini-API-Schlüssel | Your API key (see step 2 above) |
-| Erweitert → Gemini-Modell | Which Gemini model to use. The list shows the models your key can use; **gemini-flash-lite-latest** is the recommended default |
-| Neue Wörter pro Tag | How many new words join your session each day |
-| Sicherung | Export your data to a file, or import it again |
+| Ich lerne / Mein Niveau (Learning / My level) | The language you're practising and your level in it; add another language here |
+| Neue Wörter pro Tag (New words per day) | How many new words join your session each day |
+| Konto & Synchronisierung (Account & sync) | Sign in to keep your data the same on all your devices (step 5) |
+| Gemini-API-Schlüssel (Gemini API key) | Your key (step 4) |
+| Erweitert (Advanced) → Gemini-Modell | Which Gemini model to use. **gemini-flash-lite-latest** is the recommended default |
+| Sprache der App (App language) | Switch the app's buttons and explanations between German and English |
+| Sicherung (Backup) | Export your data to a file, or import it again |
 
 ---
 
-## Good to know
+## For the app owner and developers
 
-**Where is my data?** On your device, in the app itself. If you sign in, it is also kept in your private
-account so your other devices get it too. The text you send for lookups and corrections goes to Gemini.
-Your Gemini key never leaves the device.
-
-**Back up now and then.** Use **Einstellungen → Sicherung → Exportieren** to save a backup file. You can
-**import** that file again later. If you're signed in, your account is already a backup.
-
-**Offline?** Recall, gap fill and word order work without internet. Lookups, corrections and
-exercises that need Gemini wait until you're back online.
-
-**Something not working?**
-- *"Bitte zuerst den Gemini-Schlüssel eintragen"*: add your key in Settings.
-- *"Gemini-Fehler: …"*: tap **Schlüssel testen** in Settings. If the model isn't found, open **Erweitert**
-  and pick another model from the list.
-- *Gemini is slow or busy*: every Gemini step can be stopped with **Abbrechen**, and after an error or 30
-  seconds without an answer **Nochmal versuchen** asks again. What you typed stays.
-- *The app looks out of date*: updates download in the background. When one is ready, a bar says **Neue
-  Version, tippen zum Laden**; otherwise it is used the next time the app starts.
-
-**Found a bug?** Tap the 🐞 icon at the top (it's in the session bar during practice), say what went wrong
-and tap **Senden**. Leave **Bildschirm mitsenden** ticked so the report includes what was on screen (your
-answer and what the app marked right or wrong) and the exercise's data; untick it to send only your text.
-Reports become public issues in this repository, without your name or email. You need to be signed in.
-
----
-
-## Accounts and sync
-
-Accounts are optional and invite only. Without one, the app works exactly as before, with data on the
-device only.
-
-1. In **Einstellungen → Konto & Synchronisierung**, enter your email and a password. If you were given
-   an invite code, enter it under **Einladungscode**. Tap **Konto erstellen**.
-2. Open the confirmation link in the email you get, then tap **Ich habe bestätigt** in the app. Your
-   invite code is used at this point and sync starts.
-3. If you had no code (or it didn't work), the app says you're not invited yet. Enter a code there and
-   tap **Code einlösen**, or ask the app's owner to invite your email and tap **Erneut prüfen**.
-4. On your other devices, tap **Anmelden** with the same email and password.
-
-The first time you sign in, everything already on that device is added to your account. Changes you make
-offline are sent once you're back online. **Abmelden** removes your data from that device; it stays in your
-account and comes back when you sign in again.
-
-### Setting up Firebase (app owner, one time)
-
-Sync uses a free Firebase project. Until it's set up, the account card says accounts aren't set up yet.
-
-1. Go to [console.firebase.google.com](https://console.firebase.google.com), sign in with your Google
-   account and create a project (Google Analytics is not needed).
-2. **Build → Authentication → Get started → Sign-in method → Email/Password**: turn on the first switch
-   (Email/Password, not the email link) and save.
-3. **Build → Firestore Database → Create database**: pick a location near you (for example
-   `europe-west3`, Frankfurt) and start in **production mode**.
-4. In Firestore, open the **Rules** tab, replace everything with the contents of
-   [`firestore.rules`](firestore.rules), and tap **Publish**. Do this again whenever `firestore.rules`
-   changes (it did when languages were added).
-5. **Project settings (⚙️) → General → Your apps → Web (`</>`)**: register an app called German Trainer
-   (no Firebase Hosting). Copy the `firebaseConfig` values it shows into
-   [`js/firebase-config.js`](js/firebase-config.js) in place of `null`, and push that to `main`. These
-   values aren't secret; the rules decide who can read what.
-
-**Inviting yourself:** in **Firestore Database → Data**, start a collection called `allowlist` (first
-time only), then add a document whose **Document ID** is your email address in lowercase, for example
-`ravi@example.com`. Give it any field, for example `name` = your name. You can invite anyone else the
-same way, but invite codes (below) are easier.
-
-**Making yourself an admin** (one time): create your account in the app first. Then in
-**Authentication → Users**, copy the **User UID** of your account. In **Firestore Database → Data**,
-start a collection called `admins` and add a document whose **Document ID** is that UID, with any
-field, for example `name` = your name. Nothing about you goes into the code. Reopen Settings and an
-**Einladungscodes** section appears below your account.
-
-**Invite codes:** in **Einladungscodes**, choose how many people may use a code (1 for one person, more
-for a group), tap **Neuen Code erstellen** and send the code (it's copied for you). Anyone who enters it
-when creating their account, or later on the "not invited" screen, is added to `allowlist` with the
-code they used. The list shows how often each code has been used. **Löschen** stops a code; people who
-already joined keep access.
-
-**Removing someone:** delete their document in `allowlist`.
-
-Everyone's data is private: each person can only read and write their own, and Firebase's free plan is
-plenty for a small group.
-
-### Bug reports to GitHub issues (app owner, one time)
-
-Reports sent from the app wait in Firestore (`bugReports`, which users can add to but not read). Every
-hour, the **Bug reports to issues** GitHub Action opens one issue per report, labelled `user-report`, and
-deletes the report from Firestore. Until the secret below is added, the Action runs but does nothing.
-
-1. Publish the current [`firestore.rules`](firestore.rules) (step 4 above).
-2. **Project settings (⚙️) → Service accounts → Generate new private key**. This downloads a JSON file.
-3. On GitHub: **Settings → Secrets and variables → Actions → New repository secret**, named
-   `FIREBASE_SERVICE_ACCOUNT`, with the whole content of that file as its value. Then delete the file.
-4. To try it, open **Actions → Bug reports to issues → Run workflow**. Tick **dry run** to only print the
-   issues in the log without creating or deleting anything.
-
-The key gives full access to the Firebase project, so keep it only in that secret. An issue shows the
-reporter as the first 8 characters of their user id, which you can look up under **Authentication**.
-GitHub pauses scheduled Actions in a repository with no activity for 60 days; **Actions** then shows a
-button to turn it back on.
-
----
-
-## For developers
-
-Plain HTML, CSS and JavaScript modules. There is no build step, and the app has no dependencies (ESLint is only a development tool). The Firebase SDK is
-loaded from Google's CDN only when sync is configured.
-
-```sh
-npm start   # serve locally at http://localhost:8080
-npm run lint   # ESLint: undefined and unused names (run npm install once first)
-npm test    # unit tests: scheduler, answer checking, languages, session building, sync merging
-```
-
-The linter and the tests also run automatically on every pull request and every push to `main` (`.github/workflows/tests.yml`).
-
-| File | What's in it |
-|---|---|
-| `js/app.js` | Starts the app: registers the screens and page-wide listeners |
-| `js/router.js` | Hash routing, the tab bar and the language pill |
-| `js/views/` | One file per screen: Today, Look up, Words, Write (`correct.js`), Profile, Settings, the account card, word editor and suggestions |
-| `js/practice/` | The session: `runtime.js` (tasks and what happens after an answer), `render.js` (the session screen), `grade.js` (checking answers) |
-| `js/ui/` | Shared helpers: DOM (`dom.js`), active language and screen state (`context.js`), shared HTML (`text.js`), bottom sheets (`sheet.js`) |
-| `js/answer.js` | Grading rule exercises, and what is saved and requeued after an answer (pure, tested) |
-| `js/stats.js` | The mistake profile's numbers (pure, tested) |
-| `js/background.js` | Gemini work done in the background: furigana, rule exercise sets, gap sentences |
-| `js/gemini.js` | All Gemini prompts and their JSON response schemas |
-| `js/gemclient.js` | Gemini requests: time limit, retries when Google is busy, foreground-first queue |
-| `js/session.js` | Builds the daily mixed session |
-| `js/srs.js` | Spaced-repetition scheduler (SM-2 variant) |
-| `js/check.js` | Local answer checking and the correction diff |
-| `js/languages.js` | Built-in languages (German, Japanese), levels, and per-language helpers |
-| `js/categories.js` | The fixed grammar categories for each language, and how old categories map onto them |
-| `js/rules.js` | Grammar rules: the five-step exercise ladder, exercise pool, and data migration |
-| `js/ruleseeds.js` | Starting rules per category (Profile deutsch for German, JLPT lists for Japanese) |
-| `js/store.js` | Local storage: `words`, `mistakes`, `reviewItems`, `reviews`, `languages` |
-| `js/sync.js` | Accounts and sync: mirrors local data to Firestore `users/{uid}/…` and merges other devices' changes |
-| `js/syncmerge.js` | Merge rules: per-record "latest edit wins", deletes as tombstones |
-| `js/invites.js` | Invite code format |
-| `js/firebase-config.js` | Firebase project config (`null` turns accounts off) |
-| `firestore.rules` | Security rules: invite-only allowlist and invite codes, each user sees only their own data |
-| `js/i18n.js` | German and English UI text |
-| `sw.js` | Service worker: the app opens from the cached version, updates download in the background |
-
-The app is hosted on GitHub Pages from the `main` branch. Anything merged to `main` goes live within a
-minute or two.
+- [docs/SETUP.md](docs/SETUP.md): one-time setup of Firebase (accounts and sync), admin access, invite codes
+  and bug reports.
+- [docs/DEVELOPING.md](docs/DEVELOPING.md): running the app locally, tests, how the code is organised, and
+  how it is published.
 
 ## License
 
