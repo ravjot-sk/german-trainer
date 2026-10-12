@@ -7,8 +7,7 @@ import { addSet, topUpList } from './rules.js';
 import { lemmaOf } from './languages.js';
 import { poolOf, addToPool, refillList } from './gappool.js';
 import { missing, strip, poolTexts } from './furigana.js';
-import { gem, L, code } from './ui/context.js';
-import { furiMode } from './ui/text.js';
+import { gem, L, code, furiMode } from './appstate.js';
 
 // Everything here waits behind what the learner is doing (see gemini.js).
 const BG = { background: true };

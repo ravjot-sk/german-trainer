@@ -9,8 +9,8 @@ import { gem, L, code, langName, sessionArgs } from '../ui/context.js';
 import { route, go } from '../router.js';
 import { learnCard, bindLearnCard } from './learncard.js';
 import { startPractice, startSession } from '../practice/runtime.js';
-import { bindSuggest } from './suggest.js';
-import { sortedStats, catList } from './profile.js';
+import { bindSuggest } from '../ui/suggest.js';
+import { sortedStats, catList } from '../ui/catlist.js';
 
 export function viewToday() {
   titleEl.textContent = t('today.title');

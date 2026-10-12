@@ -1,19 +1,16 @@
 // The language being learnt and whether Gemini can be used, as every screen sees them.
 import * as store from '../store.js';
 import { t, lang } from '../i18n.js';
-import { canUseGemini } from '../gemini.js';
-import { categoriesFor, drillableIds } from '../categories.js';
+import { drillableIds } from '../categories.js';
 import { catKey, parseCatKey, displayName } from '../languages.js';
 import { chunksFor } from '../check.js';
 import { SESSION_KEY } from '../resume.js';
+import { gem, L, code, cats } from '../appstate.js';
 
-export const gem = () => canUseGemini();
+export { gem, L, code, cats };
 
-// The language being learnt (null until one is chosen) and its name in the interface language.
-export const L = () => store.activeLanguage();
-export const code = () => L()?.code || 'de';
+// The language's name in the interface language.
 export const langName = (x = L()) => displayName(x, lang());
-export const cats = (x = L()) => categoriesFor(x);
 
 // Why a feature that needs Gemini can't run right now.
 export const noGemini = () => t(store.getApiKey() ? 'err.offline' : 'err.noKey');

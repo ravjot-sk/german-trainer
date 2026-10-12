@@ -11,12 +11,13 @@ import { segmentsFor, toHtml } from '../furigana.js';
 import { icon } from '../icons.js';
 import { esc, $$, toast } from './dom.js';
 import { code, cats, gem } from './context.js';
+import { furiMode } from '../appstate.js';
 
 // Marks text in the language being learnt, so iOS picks the right glyphs (Japanese kanji,
 // not Chinese) and right-to-left text runs the right way.
 export const tl = (c = code()) => `lang="${esc(c)}" dir="auto"`;
 // Furigana over Japanese kanji: 'tap' (shown when the text is tapped), 'always' or 'off'.
-export const furiMode = () => store.getSettings().furigana || 'tap';
+export { furiMode };
 // Text in the language being learnt, with furigana when the record has it for exactly this text.
 export function jt(text, rec, c = code()) {
   const segs = c === 'ja' && furiMode() !== 'off' ? segmentsFor(text, rec) : null;

@@ -18,13 +18,20 @@ const TRIMMED_KEY = 'gt.reviewsTrimmed';
 const DEFAULT_SETTINGS = { lang: 'de', model: 'gemini-flash-lite-latest', newPerDay: 8, newSentencesPerDay: 3, newMistakesPerDay: 4 };
 
 const dataSlot = slot('data', DATA_KEY);
-// Until ready() has loaded from IndexedDB, the data from localStorage (none once it has moved).
-const early = !dataSlot.moved();
-let data = early ? load() : emptyData();
-let settings = loadSettings();
-// Older data moves onto the current grammar categories once.
-if (early && migrateData(data, touch)) save();
+// Nothing is read on import, so the store (and everything that uses it) loads in Node too.
+let data = emptyData();
+let settings = { ...DEFAULT_SETTINGS };
 const listeners = new Set();
+
+// Reads the settings and, until ready() has loaded from IndexedDB, the data from localStorage
+// (none once it has moved). The app calls this first, before anything uses the store.
+export function init() {
+  settings = loadSettings();
+  const early = !dataSlot.moved();
+  data = early ? load() : emptyData();
+  // Older data moves onto the current grammar categories once.
+  if (early && migrateData(data, touch)) save();
+}
 
 function emptyData() {
   return { words: [], mistakes: [], reviewItems: [], reviews: [], languages: [] };

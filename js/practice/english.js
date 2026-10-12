@@ -9,7 +9,7 @@ import { poolOf } from '../gappool.js';
 import { esc, $, errorBox, waitBox } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
 import { tl } from '../ui/text.js';
-import { writeExamples } from './grade.js';
+import { writeExamples } from './feedback.js';
 
 const filled = (s, a) => (s || '').replace('___', a || '');
 const one = (text, en = '', save = null) => ({ text: (text || '').trim(), en: en || '', save });

@@ -15,8 +15,9 @@ import { viewCorrect } from './views/correct.js';
 import { viewProfile } from './views/profile.js';
 import { viewSettings, viewAdvanced, viewBackup } from './views/settings.js';
 import { showSyncState } from './views/account.js';
-import { openReport } from './views/report.js';
+import { openReport } from './ui/report.js';
 
+store.init();
 registerRoutes({ today: viewToday, session: viewSession, lookup: viewLookup, correct: viewCorrect,
   words: viewWords, profile: viewProfile, settings: viewSettings,
   'settings/advanced': viewAdvanced, 'settings/backup': viewBackup });

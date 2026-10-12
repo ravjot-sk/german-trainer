@@ -1,30 +1,18 @@
-// Checking an answer in a session, the feedback shown after it, and the answer shown when the
-// learner doesn't know it.
-import * as store from '../store.js';
+// Checking an answer in a session: locally where the app can, otherwise with Gemini. The
+// feedback it shows is drawn in feedback.js.
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { compare, compareAny, compareExact, checkRecall, checkGap, needsPlural, stripArticle } from '../check.js';
 import { recLang, lemmaOf, wordTitle, isSentence } from '../languages.js';
-import { icon } from '../icons.js';
-import { poolOf } from '../gappool.js';
-import { esc, $, waitBox } from '../ui/dom.js';
+import { $, waitBox } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
-import { tl, jt, furiShown, toneLabel, diffHtml, correctionHtml, naturalBlock } from '../ui/text.js';
-import { ruleCompare, transformGrade, strictGrade, isExact, fixPairs } from '../answer.js';
+import { ruleCompare, transformGrade, strictGrade, isExact } from '../answer.js';
+import * as show from './feedback.js';
 
 // The check under way: its Abbrechen stops every Gemini call it makes (see gradeTask).
 let ctl = null;
 const call = () => ({ signal: ctl?.signal });
 const grading = (fb) => { waitBox(fb, t('session.grading'), '', ctl || undefined); };
-const para = (x) => (x ? `<p>${esc(x)}</p>` : '');
-
-// A wrong answer the app checked itself, corrected: what the learner wrote with the wrong
-// words crossed out and the right ones marked. parts: [answer, right answer(s)].
-function fixHtml(grade, parts, c) {
-  const pairs = fixPairs(grade, parts);
-  return pairs.length ? `<div class="your-fix"><div class="muted small">${esc(t('session.yourFix'))}</div>
-    ${pairs.map(([a, e]) => `<div class="sentence" ${tl(c)}>${diffHtml(a, e)}</div>`).join('')}</div>` : '';
-}
 
 // Gemini's verdict on an answer the app checked itself, for "Check again".
 async function judged(fb, args) {
@@ -66,7 +54,7 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
     }
     canOverride = grade !== 'correct';
     const parts = [r.main !== 'correct' && [a1, r.target], r.plural && r.plural !== 'correct' && [stripArticle(a2), r.pluralTarget]];
-    html = para(verdict) + fixHtml(grade, parts.filter(Boolean), recLang(w)) + wordReveal(w);
+    html = show.checked(verdict, grade, parts.filter(Boolean), recLang(w), show.wordReveal(w));
   } else if (task.kind === 'order') {
     grade = compare(a1, lemmaOf(w));
     if (recheck) {
@@ -74,7 +62,7 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
         shown: task.parts.join(' | '), expected: lemmaOf(w), answer: a1, recheck }));
     }
     canOverride = grade !== 'correct';
-    html = para(verdict) + fixHtml(grade, [[a1, lemmaOf(w)]], recLang(w)) + sentenceReveal(w);
+    html = show.checked(verdict, grade, [[a1, lemmaOf(w)]], recLang(w), show.sentenceReveal(w));
   } else if (task.kind === 'say') {
     if (gem()) {
       grading(fb);
@@ -82,15 +70,11 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
       mistakes = r.mistakes || [];
       grade = r.correct && !mistakes.length ? 'correct' : 'wrong';
       verdict = r.feedback || '';
-      html = `${para(r.feedback)}
-        ${correctionHtml(a1, r.correctedText, mistakes)}
-        ${r.toneHint ? `<div class="tip"><b>${esc(t('ex.toneTip', { tone: toneLabel(w.tone) }))}</b> ${esc(r.toneHint)}</div>` : ''}
-        ${sentenceReveal(w)}
-        ${grade === 'correct' ? naturalBlock(r.natural, r.naturalReason) : ''}`;
+      html = show.sayHtml(w, a1, r, mistakes, grade);
     } else {
       grade = compare(a1, lemmaOf(w));
       canOverride = grade !== 'correct';
-      html = fixHtml(grade, [[a1, lemmaOf(w)]], recLang(w)) + sentenceReveal(w);
+      html = show.checked('', grade, [[a1, lemmaOf(w)]], recLang(w), show.sentenceReveal(w));
     }
   } else if (task.kind === 'gap') {
     if (isSentence(w)) {
@@ -114,7 +98,7 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
       }
     }
     canOverride = grade !== 'correct';
-    html = para(verdict) + fixHtml(grade, [[a1, [task.gap.answer, ...(task.gap.acceptable || [])]]]) + gapReveal(task);
+    html = show.checked(verdict, grade, [[a1, [task.gap.answer, ...(task.gap.acceptable || [])]]], undefined, show.gapReveal(task));
   } else if (task.kind === 'rule') {
     ({ grade, html, canOverride, mistakes, verdict } = await checkRule(task, a1, fb, recheck));
   } else if (task.kind === 'write') {
@@ -128,8 +112,7 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
     // The learner's own sentence, corrected, becomes one of the word's gap sentences when
     // they move on.
     if (r.usesWordCorrectly && r.gapSentence) ownGap = { sentence: r.gapSentence, answer: r.gapAnswer, acceptable: r.gapAcceptable };
-    html = `${para(r.feedback)}${correctionHtml(a1, r.correctedText, mistakes)}
-      ${naturalBlock(r.natural, r.naturalReason)}`;
+    html = show.writeHtml(a1, r, mistakes);
   } else if (task.kind === 'drill') {
     const d = task.drill;
     if (task.drillKind === 'gapfill') {
@@ -138,16 +121,14 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
         ({ grade, verdict } = await judged(fb, { instruction: d.instruction, shown: d.prompt, expected: d.answer, answer: a1, recheck }));
       }
       canOverride = grade !== 'correct';
-      html = para(verdict) + fixHtml(grade, [[a1, [d.answer, ...(d.acceptableAnswers || [])]]]) + drillReveal(task);
+      html = show.checked(verdict, grade, [[a1, [d.answer, ...(d.acceptableAnswers || [])]]], undefined, show.drillReveal(task));
     } else {
       grading(fb);
       const r = await gemini.gradeAnswer({ instruction: d.instruction, prompt: d.prompt, model: d.answer, answer: a1, category: task.category, recheck }, call());
       mistakes = r.mistakes || [];
       grade = r.correct ? 'correct' : 'wrong';
       verdict = r.feedback || '';
-      html = `${para(r.feedback)}
-        ${correctionHtml(a1, r.correctedText, mistakes)}
-        ${drillReveal(task)}`;
+      html = show.graded(a1, r, mistakes, show.drillReveal(task));
     }
   }
   return { grade, html, canOverride, mistakes, almostKey, verdict, ownGap, corrected, natural };
@@ -165,7 +146,7 @@ async function checkRule(task, a1, fb, recheck) {
       ({ grade, verdict } = await judged(fb, { instruction: `Pick the sentence that is correct${about}.`,
         shown: task.order.join(' / '), expected: e.correct, answer: a1, recheck }));
     }
-    html = para(verdict) + fixHtml(grade, [[a1, e.correct]]) + ruleReveal(task);
+    html = show.checked(verdict, grade, [[a1, e.correct]], undefined, show.ruleReveal(task));
   } else if (task.ruleKind === 'gap') {
     grade = ruleCompare(rule, a1, [e.answer, ...(e.acceptable || [])]);
     if (recheck) {
@@ -173,7 +154,7 @@ async function checkRule(task, a1, fb, recheck) {
         shown: e.sentence, expected: e.answer, answer: a1, recheck }));
     }
     canOverride = grade !== 'correct';
-    html = para(verdict) + fixHtml(grade, [[a1, [e.answer, ...(e.acceptable || [])]]]) + ruleReveal(task);
+    html = show.checked(verdict, grade, [[a1, [e.answer, ...(e.acceptable || [])]]], undefined, show.ruleReveal(task));
   } else if (task.ruleKind === 'transform') {
     const answers = e.items.map((_, i) => $(i ? `#t${i}` : '#a1').value);
     const rights = e.items.map((x) => [x.answer, ...(x.acceptable || [])]);
@@ -210,13 +191,7 @@ async function checkRule(task, a1, fb, recheck) {
     verdict = notes.filter(Boolean).join(' ');
     canOverride = grade !== 'correct';
     task.answerText = answers.join(' / ');
-    // A right sentence shows the model answer; a wrong one shows the learner's answer corrected.
-    const line = (x, i) => {
-      const [fix] = fixPairs(grades[i], [[answers[i], rights[i]]]);
-      return fix ? diffHtml(...fix) : jt(x.answer, e);
-    };
-    html = `<div class="reveal">${e.items.map((x, i) => `<div class="tf-result ${grades[i] === 'correct' ? 'ok' : 'bad'}">
-      ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${line(x, i)}</span></div>${why(notes[i])}`).join('')}${why(e.explanation)}</div>`;
+    html = show.transformHtml(e, grades, answers, rights, notes);
   } else if (task.ruleKind === 'spot') {
     grade = isExact(rule) ? compareExact(a1, e.corrected) : compare(a1, e.corrected);
     if ((grade !== 'correct' || recheck) && gem()) {
@@ -227,99 +202,15 @@ async function checkRule(task, a1, fb, recheck) {
       verdict = r.feedback || '';
     }
     canOverride = grade !== 'correct' && !gem();
-    // The learner's answer corrected replaces the corrected exercise text, which would otherwise
-    // look like a second correction of their answer.
-    const fix = fixHtml(grade, [[a1, e.corrected]]);
-    html = para(verdict) + (fix ? fix + why(e.explanation) : ruleReveal(task));
+    html = show.spotHtml(verdict, grade, a1, task);
   } else {
     grading(fb);
     const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: '', model: e.model, answer: a1, category: rule.category, rule, recheck }, call());
     mistakes = r.mistakes || [];
     grade = r.correct ? 'correct' : 'wrong';
     verdict = r.feedback || '';
-    html = `${para(r.feedback)}
-      ${correctionHtml(a1, r.correctedText, mistakes)}
-      ${ruleReveal(task)}`;
+    html = show.graded(a1, r, mistakes, show.ruleReveal(task));
   }
   grade = strictGrade(rule, grade);
-  return { grade, html: html + (grade === 'correct' ? '' : ruleLine(rule)), canOverride, mistakes, verdict };
-}
-
-// The answer to a task, for "I don't know": the same answer a checked task shows.
-export function revealFor(task) {
-  const w = task.word;
-  switch (task.kind) {
-    case 'recall': return wordReveal(w);
-    case 'order':
-    case 'say': return sentenceReveal(w);
-    case 'gap': return gapReveal(task);
-    case 'write': return writeReveal(w);
-    case 'rule': return ruleReveal(task) + ruleLine(task.rule);
-    case 'drill': return drillReveal(task);
-    default: return '';
-  }
-}
-
-const why = (x) => (x ? `<div class="muted small">${esc(x)}</div>` : '');
-const ruleLine = (rule) => (rule.statement ? `<div class="tip"><b>${esc(rule.name)}</b> ${esc(rule.statement)}</div>` : '');
-
-function ruleReveal(task) {
-  const e = task.ex;
-  switch (task.ruleKind) {
-    case 'pair': return `<div class="reveal"><div class="sentence" ${tl()}>${jt(e.correct, e)}</div>${why(e.explanation)}</div>`;
-    case 'gap': return `<div class="reveal"><b ${tl()}>${esc(e.answer)}</b><div class="sentence" ${tl()}>${jt(e.sentence.replace('___', e.answer), e)}</div>${why(e.explanation)}</div>`;
-    case 'transform': return `<div class="reveal">${e.items.map((x) => `<div class="sentence" ${tl()}>${jt(x.answer, e)}</div>`).join('')}${why(e.explanation)}</div>`;
-    case 'spot': return `<div class="reveal"><div class="sentence" ${tl()}>${diffHtml(e.text, e.corrected)}</div>${why(e.explanation)}</div>`;
-    default: return `<div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${jt(e.model, e)}</div>${why(e.explanation)}</div>`;
-  }
-}
-
-function drillReveal(task) {
-  const d = task.drill;
-  if (task.drillKind === 'gapfill') {
-    return `<div class="reveal"><b ${tl()}>${esc(d.answer)}</b>${d.prompt ? `<div class="sentence" ${tl()}>${jt(d.prompt.replace('___', d.answer), d)}</div>` : ''}
-      ${why(d.explanation)}</div>`;
-  }
-  return `<div class="reveal"><div class="muted small">${esc(t('session.answer'))}</div><div class="sentence" ${tl()}>${jt(d.answer, d)}</div>
-    ${why(d.explanation)}</div>`;
-}
-
-function gapReveal(task) {
-  const g = task.gap;
-  return `<div class="reveal" ${tl()}><b>${esc(g.answer)}</b><div class="sentence">${jt(g.sentence.replace('___', g.answer), task.word)}</div>
-    ${g.translation ? `<div class="muted small" lang="en">${esc(g.translation)}</div>` : ''}</div>`;
-}
-
-// Sentences with the word, for "I don't know" in the write exercise.
-export function writeExamples(w, n = 3) {
-  const own = [w.example, ...poolOf(store.getWord(w.id) || w).map((e) => e.sentence.replace('___', e.answer))];
-  return [...new Set(own.map((x) => (x || '').trim()).filter(Boolean))].slice(0, n);
-}
-
-function writeReveal(w) {
-  const c = recLang(w);
-  const list = writeExamples(w);
-  return `<div class="reveal">
-    <div class="kv"><span>${esc(t('ex.word'))}</span><b ${tl(c)}>${jt(wordTitle(w), w, c)}</b></div>
-    ${list.length ? `<div class="muted small">${esc(t('session.examples'))}</div>` : ''}
-    ${list.map((x) => `<div class="sentence" ${tl(c)}>${jt(x, w, c)}</div>`).join('')}
-  </div>`;
-}
-
-function sentenceReveal(w) {
-  return `<div class="reveal"><div class="muted small">${esc(t('ex.saved'))} · ${esc(toneLabel(w.tone))}</div>
-    <div class="sentence" ${tl(recLang(w))}>${jt(lemmaOf(w), w, recLang(w))}${w.reading && !furiShown(w) ? `<div class="reading">${esc(w.reading)}</div>` : ''}</div>
-    ${w.toneNote ? `<div class="muted small">${esc(w.toneNote)}</div>` : ''}</div>`;
-}
-
-function wordReveal(w) {
-  const forms = w.verbForms || w.forms;
-  const c = recLang(w);
-  return `<div class="reveal">
-    <div class="kv"><span>${esc(t('session.answer'))}</span><b ${tl(c)}>${jt(wordTitle(w), w, c)}</b></div>
-    ${w.reading ? `<div class="kv"><span>${esc(t('edit.reading'))}</span><span ${tl(c)}>${esc(w.reading)}</span></div>` : ''}
-    ${needsPlural(w) ? `<div class="kv"><span>${esc(t('ex.plural'))}</span><b ${tl(c)}>${esc(w.plural)}</b></div>` : ''}
-    ${forms ? `<div class="kv"><span>${esc(t('edit.forms'))}</span><span ${tl(c)}>${esc(forms)}</span></div>` : ''}
-    ${w.example ? `<div class="sentence" ${tl(c)}>${jt(w.example, w, c)}</div>` : ''}
-  </div>`;
+  return { grade, html: html + (grade === 'correct' ? '' : show.ruleLine(rule)), canOverride, mistakes, verdict };
 }
