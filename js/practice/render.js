@@ -13,11 +13,12 @@ import { tl, furiMode, jt, readingLine, toneLabel, bindNatural } from '../ui/tex
 import { go } from '../router.js';
 import { logTaskMistakes, topUpPractice, advance, nextRound, retryPrepare, waitTag, saveSession, clearSession, resumeSession } from './runtime.js';
 import { promote, isCancel } from '../gemini.js';
-import { gradeTask, revealFor } from './grade.js';
+import { gradeTask } from './grade.js';
+import { revealFor } from './feedback.js';
 import { englishButton, bindEnglish } from './english.js';
 import { pickGap, poolOf, addToPool, gapLevel } from '../gappool.js';
-import { bindSuggest } from '../views/suggest.js';
-import { openReport } from '../views/report.js';
+import { bindSuggest } from '../ui/suggest.js';
+import { openReport } from '../ui/report.js';
 import { confirmSheet } from '../ui/sheet.js';
 
 export function viewSession() {

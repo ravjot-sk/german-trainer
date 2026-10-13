@@ -4,10 +4,10 @@ import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { lemmaOf, isSentence, wordTitle } from '../languages.js';
-import { esc, $, $$, toast, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
-import { L, code, langName } from '../ui/context.js';
-import { tl, jt } from '../ui/text.js';
-import { openSheet, sheetHead } from '../ui/sheet.js';
+import { esc, $, $$, toast, errorBox, waitBox, inputAttrs } from './dom.js';
+import { L, code, langName } from './context.js';
+import { tl, jt } from './text.js';
+import { openSheet, sheetHead } from './sheet.js';
 
 // Gemini proposes words at the learner's level; they are shown ticked, and the learner
 // unticks any they don't want before adding them.

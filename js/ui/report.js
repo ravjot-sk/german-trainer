@@ -4,9 +4,9 @@
 // answer on show is not lost. Reports become GitHub issues (see js/report.js).
 import * as sync from '../sync.js';
 import { t, lang } from '../i18n.js';
-import { main, titleEl, esc, $, toast, errorBox } from '../ui/dom.js';
-import { mountSheet, sheetHead } from '../ui/sheet.js';
-import { L, ui } from '../ui/context.js';
+import { main, titleEl, esc, $, toast, errorBox } from './dom.js';
+import { mountSheet, sheetHead } from './sheet.js';
+import { L, ui } from './context.js';
 import { routeName, go } from '../router.js';
 import { screenText, exerciseData, buildReport, capturable, TEXT_MAX } from '../report.js';
 

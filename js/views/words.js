@@ -7,7 +7,7 @@ import { icon } from '../icons.js';
 import { main, titleEl, esc, $, $$, inputAttrs, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
 import { gem, code, ui } from '../ui/context.js';
 import { tl, toneLabel, fmtDate } from '../ui/text.js';
-import { bindSuggest } from './suggest.js';
+import { bindSuggest } from '../ui/suggest.js';
 import { openEditor } from './editor.js';
 
 export function wordRows(list) {
