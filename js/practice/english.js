@@ -5,13 +5,14 @@ import * as store from '../store.js';
 import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { isSentence } from '../languages.js';
+import { fillGap } from '../check.js';
 import { poolOf } from '../gappool.js';
 import { html, raw, setHtml, $, errorBox, waitBox } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
 import { tl } from '../ui/text.js';
 import { writeExamples } from './feedback.js';
 
-const filled = (s, a) => (s || '').replace('___', a || '');
+const filled = (s, a) => fillGap(s, a || '');
 const one = (text, en = '', save = null) => ({ text: (text || '').trim(), en: en || '', save });
 
 // The sentences in the language being learnt that the answered task showed:

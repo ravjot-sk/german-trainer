@@ -3,6 +3,7 @@ import * as store from '../store.js';
 import { t, lang } from '../i18n.js';
 import { joinArticle, needsPlural, gapFor, chunksFor, joinChunks, shuffled } from '../check.js';
 import { categoryLabel } from '../categories.js';
+import { ruleText } from '../rules.js';
 import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { practicePool, newInPool } from '../session.js';
@@ -229,7 +230,7 @@ async function generated(task, key) {
 function ruleBody(task) {
   const { rule, ex: e } = task;
   const head = html`<div class="ex-label">${t('ex.rule', { c: categoryLabel(rule.category, lang(), cats()) })} · ${t('rule.rung', { n: task.item.rung || 2 })}</div>
-    <div class="rule-name">${rule.name}</div>`;
+    <div class="rule-name">${ruleText(rule, lang()).name}</div>`;
   switch (task.ruleKind) {
     case 'pair': {
       task.order ||= Math.random() < 0.5 ? [e.correct, e.wrong] : [e.wrong, e.correct];

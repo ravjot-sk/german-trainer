@@ -2,7 +2,8 @@
 // grammar is taught: German from the Profile deutsch grammar inventory (CEFR levels),
 // Japanese from the JLPT grammar lists (N levels). Gemini reuses one of these keys when a
 // mistake fits it and names a new rule otherwise. Keys only ever grow: a key in use must not
-// be renamed, or its mistakes lose their rule.
+// be renamed, or its mistakes lose their rule. How each is shown to the learner is in seedtext.js.
+import { SEED_TEXT } from './seedtext.js';
 
 export const SEEDS = {
   de: {
@@ -185,10 +186,26 @@ export const SEEDS = {
   },
 };
 
-// Text for a prompt: the seed rules of one language, by category.
+// Text for a prompt: the seed rules of one language as one flat list, each with its category
+// in brackets. A list grouped by category invites picking the category first and then the
+// closest rule in it, which is how a "zu" mistake ended up under damit/um zu (#30).
 export function seedGuide(code) {
   const s = SEEDS[code];
   if (!s) return '';
-  return Object.entries(s).map(([cat, list]) =>
-    `${cat}:\n${list.map(([k, en, lvl]) => `  - ${k} (${lvl}): ${en}`).join('\n')}`).join('\n');
+  return Object.entries(s).flatMap(([cat, list]) => list.map(([k, en, lvl]) => `- ${k}: ${en} [${cat}] (${lvl})`)).join('\n');
+}
+
+// The standard rule with this key, or null. Keys are unique within a language.
+// Returns { category, key, level, statementEn, text: { en: { name, statement }, de: { name, statement } } }.
+export function seedRule(code, key) {
+  for (const [category, list] of Object.entries(SEEDS[code] || {})) {
+    const hit = list.find(([k]) => k === key);
+    if (!hit) continue;
+    const [enName, deName, deStatement] = SEED_TEXT[code]?.[key] || [key.replace(/_/g, ' '), key.replace(/_/g, ' '), hit[1]];
+    return {
+      category, key, level: hit[2], statementEn: hit[1],
+      text: { en: { name: enName, statement: hit[1] }, de: { name: deName, statement: deStatement } },
+    };
+  }
+  return null;
 }

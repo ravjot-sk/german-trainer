@@ -54,6 +54,7 @@ export default {
   'session.wrong': 'Noch nicht.',
   'session.answer': 'Lösung',
   'session.yourFix': 'Deine Antwort, korrigiert',
+  'session.yourAnswer': 'Deine Antwort',
   'session.iWasRight': 'Ich lag richtig',
   'session.dontKnow': 'Weiß ich nicht',
   'session.hereIsAnswer': 'Hier ist die Lösung',
@@ -231,6 +232,8 @@ export default {
   'rule.solid': 'Sitzt',
   'rule.meta': '{n} Fehler · zuletzt {d}',
   'rule.rung': 'Stufe {n} von 5',
+  'rule.delete': 'Regel löschen',
+  'rule.confirmDelete': 'Diese Regel löschen? Deine Fehler bleiben im Profil.',
 
   'settings.language': 'Sprache der App',
   'settings.learning': 'Ich lerne',
