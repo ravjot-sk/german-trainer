@@ -5,8 +5,8 @@ import { isCurated } from '../categories.js';
 import { html, setHtml, main, titleEl } from '../ui/dom.js';
 import { L, code, langName } from '../ui/context.js';
 import { mistakeList } from '../ui/text.js';
-import { sortedStats, catList } from '../ui/catlist.js';
-import { classifyOldMistakes } from '../background.js';
+import { sortedStats, catList, bindRuleDelete } from '../ui/catlist.js';
+import { classifyOldMistakes, recheckRules } from '../background.js';
 import { writingMistakes } from '../stats.js';
 import { routeName } from '../router.js';
 
@@ -16,7 +16,9 @@ const generatedNote = () => (L() && !isCurated(code()) ? html`<p class="muted sm
 export function viewProfile() {
   titleEl.textContent = t('profile.title');
   // Older mistakes get their rules in the background; the profile redraws when they arrive.
-  classifyOldMistakes(() => { if (routeName() === 'profile') viewProfile(); });
+  const redraw = () => { if (routeName() === 'profile') viewProfile(); };
+  classifyOldMistakes(redraw);
+  recheckRules(redraw);
   const stats = sortedStats();
   if (!stats.length) {
     setHtml(main, html`${generatedNote()}<p class="muted center">${t('profile.empty')}</p>`);
@@ -26,4 +28,5 @@ export function viewProfile() {
   setHtml(main, html`${generatedNote()}
     <section class="card">${catList(stats, { withRules: true })}</section>
     ${recentMistakes.length ? html`<div class="group-label">${t('profile.recent')}</div><section class="card">${mistakeList(recentMistakes)}</section>` : ''}`);
+  bindRuleDelete(main);
 }

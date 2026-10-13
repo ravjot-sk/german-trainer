@@ -1,7 +1,7 @@
 // Gemini features for grammar practice: drills for a category, exercise sets for a rule, and
 // sorting older mistakes into categories and rules. ask/read pairs as in words.js.
 import { categoriesFor, categoryGuide, categoryLabel } from '../categories.js';
-import { KINDS } from '../rules.js';
+import { KINDS, rulePrompt } from '../rules.js';
 import { wordTitle } from '../languages.js';
 import { parse as parseFurigana } from '../furigana.js';
 import { S, STR, hasFurigana, furiganaOf, collectFurigana, isGerman, levelText, explainLang, ruleProps, ruleRules } from './shared.js';
@@ -50,63 +50,117 @@ Write the instruction in ${explainLang(c)}. Keep sentences natural and everyday 
   },
 };
 
-// One set of exercises per rule, one for each rung of the ladder (see rules.js). Each set
-// trains the rule itself: new sentences every time, the learner's own mistakes only as a hint
-// of what goes wrong. list: [{ rule, examples: [mistake] }]. Returns one set per rule, in order.
+// Exercises for rules, the kinds each rule needs next (see rules.js). Each set trains the
+// rule itself, in new sentences. The learner's own wrong sentences are not sent: a small model
+// quotes what it is shown, which is how an exercise came to explain a misspelling the learner
+// never saw in it (#31). A rule of the learner's own gets its pattern and the corrected
+// sentence instead. list: [{ rule, kinds, examples: [correct sentence] }]. Returns one set per
+// rule, in order.
+const KIND_TEXT = (name) => ({
+  pair: `pair: correct follows the rule; wrong is the same ${name} sentence breaking it the way learners do. Nothing else differs.`,
+  gap: `gap: write full first (a correct ${name} sentence), then pick answer (the words in full that the rule decides, one connected piece), then sentence: full with answer replaced by ___, everything else exactly as in full, commas included. The gap is where answer stands in full. Optionally the base form in brackets right after the gap.`,
+  transform: `transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (another tense, a subordinate clause, a noun phrase …) so that the result needs the rule. Different verbs or nouns in each item. answer is the model result, acceptable other correct results.`,
+  spot: `spot: write corrected first (2 or 3 correct ${name} sentences), then text: the same with 1 or 2 mistakes against this rule put in and nothing else changed.`,
+  produce: 'produce: an instruction to write one new sentence that needs the rule, in a new situation (give the situation and, if useful, a word to use). model is one model sentence.',
+});
+
+const GAP_EXAMPLE = {
+  de: `Example gap for "zu + infinitive after hoffen":
+  full "Sie hofft, ihre Prüfung zu bestehen." answer "zu bestehen" sentence "Sie hofft, ihre Prüfung ___ (bestehen)."
+  NOT "Sie hofft ___ (bestehen) ihre Prüfung." (no filling makes that a correct sentence).`,
+};
+
+const EXPLAIN_EXAMPLE = {
+  de: `Good: "Nach »hoffen« steht zu + Infinitiv am Satzende, mit Komma."
+Bad: "Man schreibt es mit kurzem u und ohne Dehnungs-e." (an invented reason about sounds)`,
+};
+
 export const ruleExercises = {
   ask(c, list) {
     const { L } = c;
     const name = L.english;
-    const lines = list.map(({ rule, examples = [] }, i) => `${i + 1}. ${rule.name}${rule.statement ? `: ${rule.statement}` : ''} (category ${categoryLabel(rule.category, 'en', categoriesFor(L))}${rule.level ? `, level ${rule.level}` : ''})${examples.length
-      ? `\n   The learner got it wrong like this: ${examples.slice(0, 3).map((m) => `"${m.original}" instead of "${m.corrected}"`).join('; ')}` : ''}`).join('\n');
-    const prompt = `Write grammar exercises for a ${name} learner at ${levelText(L)}. Each exercise must train exactly the rule named, in fresh everyday sentences (work, travel, friends, home, news) with vocabulary that suits the learner's level. Never reuse the learner's own sentences.
-For each rule below, write one exercise of each kind:
-- pair: two versions of the same ${name} sentence that differ only where the rule decides. correct follows the rule, wrong breaks it the way learners do.
-- gap: one sentence with "___" exactly where the rule decides (e.g. the auxiliary, the ending, the particle, the comma). answer is the exact text for the gap; acceptable lists other fully correct fillings. If the gap needs a base form to be fair, put it in brackets after the gap, e.g. "___ (passieren)".
-- transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (into another tense, into a subordinate clause, into a noun phrase …) so that the result needs the rule. Use different verbs or nouns in each item. answer is the model result, acceptable other correct results.
-- spot: a short text of 2 or 3 ${name} sentences with 1 or 2 mistakes against this rule and no other mistakes. corrected is the same text with only those mistakes fixed.
-- produce: an instruction to write one new sentence that needs the rule, in a situation the learner has not seen (give the situation and, if useful, a word to use). model is one model sentence.
-Write instructions and explanations in ${explainLang(c)}. Give each kind a one-line explanation of the rule as it applies there.
+    const kinds = KIND_TEXT(name);
+    const lines = list.map(({ rule, kinds: want, examples = [] }, i) => {
+      const p = rulePrompt(rule);
+      const head = `${i + 1}. [${rule.category}/${rule.key}] ${p.standard ? p.statement : `${p.name}${p.statement ? `: ${p.statement}` : ''}`}${p.level ? ` (${p.level})` : ''}`;
+      const extra = p.standard ? '' : `${p.pattern ? `\n   Pattern: ${p.pattern}` : ''}${examples.length ? `\n   Correct example: ${examples.slice(0, 2).map((x) => `"${x}"`).join('; ')}` : ''}`;
+      return `${head}${extra}\n   Write: ${want.join(', ')}`;
+    }).join('\n');
+    const used = KINDS.filter((k) => list.some((x) => x.kinds.includes(k)));
+    const prompt = `Write grammar exercises for a ${name} learner at ${levelText(L)}. Each set trains ONE rule, given by its statement. Use fresh everyday sentences (work, travel, friends, home, news) with vocabulary that suits the learner's level, and vary the verbs and nouns; never build the exercises around one single word.
+
+For each rule, write the kinds listed under it:
+${used.map((k) => `- ${kinds[k]}`).join('\n')}
+${used.includes('gap') && GAP_EXAMPLE[L.code] ? `${GAP_EXAMPLE[L.code]}\n` : ''}
+Each exercise also gets trigger and explanation. trigger: the word or words in this exercise that make the rule apply. explanation: in ${explainLang(c, { simpler: true })}, one sentence of at most 20 words: why the rule applies here, naming the trigger, in the rule's own terms (case, verb position, comma, ß after a long vowel …). Never explain with sounds or letters unless the rule is about them. Never mention a wrong form that is not in this exercise. If unsure, say the rule statement in simple words.
+${EXPLAIN_EXAMPLE[L.code] || ''}
 
 Rules:
 ${lines}`;
     const alt = { type: 'ARRAY', items: STR };
-    return { prompt, temperature: 0.9, schema: S({
-      sets: { type: 'ARRAY', items: S({
-        pair: S({ correct: STR, wrong: STR, explanation: STR }),
-        gap: S({ sentence: { type: 'STRING', description: 'Contains ___ once.' }, answer: STR, acceptable: alt, explanation: STR }),
-        transform: S({ instruction: STR, items: { type: 'ARRAY', items: S({ prompt: STR, answer: STR, acceptable: alt }) }, explanation: STR }),
-        spot: S({ text: STR, corrected: STR, explanation: STR }),
-        produce: S({ instruction: STR, model: STR, explanation: STR }),
-      }) },
+    const why = { trigger: { type: 'STRING', description: 'The word or words in this exercise that make the rule apply.' }, explanation: STR };
+    const shapes = {
+      pair: S({ correct: STR, wrong: STR, ...why }),
+      gap: S({
+        full: { type: 'STRING', description: 'The complete correct sentence, with normal punctuation.' },
+        answer: { type: 'STRING', description: 'The words from full that the rule decides, copied exactly; one connected piece of full.' },
+        sentence: { type: 'STRING', description: 'full with answer replaced by ___ (once). Everything else exactly as in full. Optionally the base form in brackets right after the gap.' },
+        acceptable: alt, ...why,
+      }),
+      transform: S({ instruction: STR, items: { type: 'ARRAY', items: S({ prompt: STR, answer: STR, acceptable: alt }) }, ...why }),
+      spot: S({ corrected: STR, text: STR, ...why }),
+      produce: S({ instruction: STR, model: STR, ...why }),
+    };
+    return { prompt, temperature: 0.6, schema: S({
+      sets: { type: 'ARRAY', items: S(Object.fromEntries(used.map((k) => [k, shapes[k]])), []) },
     }) };
   },
   read(r, c, list) {
-    return list.map((_, i) => {
-      const set = r.sets?.[i] || {};
-      for (const k of KINDS) if (set[k]) set[k].id = `${Date.now().toString(36)}${i}${k}`;
+    return list.map(({ kinds }, i) => {
+      const got = r.sets?.[i] || {};
+      const set = {};
+      for (const k of kinds) {
+        if (!got[k]) continue;
+        set[k] = { ...got[k], id: `${Date.now().toString(36)}${i}${k}` };
+      }
       return set;
     });
   },
 };
 
-// Sorts older mistakes into the current categories and gives each its rule. list: mistakes.
-// Returns one { category, rule, ruleName, ruleStatement, ruleLevel } per mistake, in order.
+// Sorts mistakes into the current categories and gives each its rule: older mistakes saved
+// before rules existed, and those of rules that look wrongly filed (background.recheckRules).
+// list: mistakes. Returns one { rulePattern, rule, category, ruleName, ruleStatement, ruleLevel }
+// per mistake, in order. Each answer repeats the mistake's words, so a reply that skipped or
+// merged one is noticed instead of giving every later mistake the wrong rule.
 export const classifyMistakes = {
   ask(c, list) {
     const { L } = c;
     const cats = categoriesFor(L);
     const prompt = `These are mistakes a ${L.english} learner at ${levelText(L)} made in writing, with their corrections.
-For each one, pick its category from this fixed list and name the grammar rule it breaks.
+For each one, in the same order, copy its wrong words into original, name the pattern, then the rule, then pick its category from this fixed list.
 ${categoryGuide(cats)}
 
 ${ruleRules(c)}
 
 Mistakes:
-${list.map((m, i) => `${i + 1}. wrote "${m.original}" instead of "${m.corrected}"${m.fullSentence ? ` in "${m.fullSentence}"` : ''}${m.explanation ? ` (${m.explanation})` : ''}`).join('\n')}`;
-    return { prompt, schema: S({
-      mistakes: { type: 'ARRAY', items: S({ category: { type: 'STRING', enum: cats.map((x) => x.id) }, ...ruleProps(c) }) },
+${list.map((m, i) => `${i + 1}. wrote "${m.original}" instead of "${m.corrected}"${m.fullSentence ? ` in "${m.fullSentence}"` : ''}${m.correctedSentence ? ` (corrected: "${m.correctedSentence}")` : ''}${m.explanation ? ` (${m.explanation})` : ''}`).join('\n')}`;
+    const { rulePattern, rule, ...rest } = ruleProps(c);
+    return { prompt, temperature: 0.2, schema: S({
+      mistakes: { type: 'ARRAY', items: S({
+        original: { type: 'STRING', description: 'The wrong words of this mistake, copied exactly.' },
+        rulePattern, rule,
+        category: { type: 'STRING', enum: cats.map((x) => x.id) },
+        ...rest,
+      }) },
     }) };
   },
-  read: (r, c, list) => list.map((_, i) => r.mistakes?.[i] || null),
+  read(r, c, list) {
+    const got = r.mistakes || [];
+    const n = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (got.length !== list.length || got.some((x, i) => n(x?.original) !== n(list[i].original))) {
+      throw new Error('classifyMistakes: answers out of order');
+    }
+    return got;
+  },
 };

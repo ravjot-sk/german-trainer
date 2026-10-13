@@ -10,7 +10,7 @@ import { nextExercise, kindOf } from '../rules.js';
 import { isSentence } from '../languages.js';
 import { afterGap } from '../gappool.js';
 import { gem, code, sessionArgs, ui } from '../ui/context.js';
-import { fillFurigana, latestItem, generateRuleSets, topUpRules, classifyOldMistakes, refillGaps } from '../background.js';
+import { fillFurigana, latestItem, generateRuleSets, topUpRules, classifyOldMistakes, recheckRules, refillGaps } from '../background.js';
 import { ownMistake, followUpIds, answerRecord, requeueAt } from '../answer.js';
 import { snapshotOf, restoreSession, SESSION_KEY } from '../resume.js';
 
@@ -50,6 +50,7 @@ export function startSession() {
   refillGaps();
   topUpRules();
   classifyOldMistakes();
+  recheckRules();
 }
 
 // The running session is kept on this device (not synced) after every step, so it can carry
@@ -135,6 +136,7 @@ export function startPractice(focus) {
   refillGaps();
   topUpRules();
   classifyOldMistakes();
+  recheckRules();
 }
 
 // The next practice round goes through everything again (at its new level), with words not

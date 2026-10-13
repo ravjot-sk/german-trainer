@@ -65,7 +65,6 @@ test('suggestWords: entries without a lemma are dropped', () => {
 test('lists keep their order and length when Gemini returns too few', () => {
   assert.deepEqual(words.gapSentences.read({ words: [{ sentences: [{ sentence: 'a ___' }] }] }, de, [{}, {}]), [[{ sentence: 'a ___' }], []]);
   assert.deepEqual(words.translateTexts.read({ translations: [' one '] }, de, ['eins', 'zwei']), ['one', '']);
-  assert.deepEqual(grammar.classifyMistakes.read({ mistakes: [{ category: 'x' }] }, de, [{}, {}]), [{ category: 'x' }, null]);
   assert.deepEqual(words.annotate.read({ texts: ['{水|みず}', 'wrong'] }, null, ['水', '日']), ['{水|みず}']);
 });
 
@@ -114,7 +113,9 @@ test('translateSentence: a kept sentence stays exactly as typed and an unknown t
 });
 
 test('ruleExercises: every exercise gets an id, missing sets become empty', () => {
-  const sets = grammar.ruleExercises.read({ sets: [{ pair: { correct: 'a', wrong: 'b' }, gap: { sentence: '___' } }] }, de, [{}, {}]);
+  const sets = grammar.ruleExercises.read({ sets: [{ pair: { correct: 'a', wrong: 'b' }, gap: { sentence: '___' }, spot: { text: 'x' } }] }, de,
+    [{ kinds: ['pair', 'gap'] }, { kinds: ['gap'] }]);
+  assert.equal(sets[0].spot, undefined, 'only the kinds asked for are kept');
   assert.ok(sets[0].pair.id && sets[0].gap.id && sets[0].pair.id !== sets[0].gap.id);
   assert.deepEqual(sets[1], {});
 });
@@ -126,4 +127,49 @@ test('setupLanguage: rejects a bad code and tidies the articles', () => {
   assert.equal(r.code, 'es');
   assert.equal(r.english, 'Spanisch');
   assert.deepEqual(r.articles, ['el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas']);
+});
+
+// Without propertyOrdering Gemini writes fields alphabetically, so a mistake's category came
+// before its rule (#30).
+test('schemas keep their field order: pattern, then rule, then category', () => {
+  const { schema } = sentences.correctText.ask(de, 'x');
+  const m = schema.properties.mistakes.items;
+  const order = m.propertyOrdering;
+  assert.ok(order.indexOf('correctedSentence') < order.indexOf('rulePattern'));
+  assert.ok(order.indexOf('rulePattern') < order.indexOf('rule') && order.indexOf('rule') < order.indexOf('category'));
+  const c = grammar.classifyMistakes.ask(de, [{ original: 'a', corrected: 'b' }]).schema.properties.mistakes.items.propertyOrdering;
+  assert.deepEqual(c.slice(0, 4), ['original', 'rulePattern', 'rule', 'category']);
+});
+
+test('rule keys: standard rules listed flat with their category, typos get none, real cases as examples', () => {
+  const { prompt } = sentences.correctText.ask(de, 'x');
+  assert.match(prompt, /- zu_infinitive: Infinitive with zu .* \[verb_complex\] \(B1\)/);
+  assert.match(prompt, /"Herauseforderung" → "Herausforderung": rulePattern "typo", rule ""/);
+  assert.match(prompt, /not damit_um_zu/);
+  assert.match(prompt, /a missing or extra umlaut/);
+});
+
+test('classifyMistakes: answers that come back out of order are not used', () => {
+  const list = [{ original: 'a' }, { original: 'b' }];
+  assert.deepEqual(grammar.classifyMistakes.read({ mistakes: [{ original: 'A', rule: 'x' }, { original: 'b', rule: '' }] }, de, list).map((x) => x.rule), ['x', '']);
+  assert.throws(() => grammar.classifyMistakes.read({ mistakes: [{ original: 'b' }] }, de, list));
+  assert.throws(() => grammar.classifyMistakes.read({ mistakes: [{ original: 'b' }, { original: 'a' }] }, de, list));
+});
+
+test('ruleExercises: no wrong sentences of the learner, only the kinds needed, a full sentence per gap', () => {
+  const std = { lang: 'de', category: 'spelling', key: 'ss_eszett', name: 'Rechtschreibung', statement: 'Wörter richtig schreiben.' };
+  const own = { lang: 'de', category: 'case', key: 'nach_hause', name: 'nach Hause', statement: 'Für den Heimweg sagt man nach Hause.', pattern: 'nach Hause for going home' };
+  const ask = grammar.ruleExercises.ask(de, [
+    { rule: std, kinds: ['gap', 'transform'], examples: [] },
+    { rule: own, kinds: ['spot'], examples: ['Ich gehe nach Hause.'] },
+  ]);
+  assert.match(ask.prompt, /1\. \[spelling\/ss_eszett\] ß after a long vowel or diphthong, ss after a short vowel \(A2\)/, 'the standard statement, not the stored one');
+  assert.doesNotMatch(ask.prompt, /Rechtschreibung|Wörter richtig/);
+  assert.match(ask.prompt, /Pattern: nach Hause for going home\n {3}Correct example: "Ich gehe nach Hause\."/);
+  assert.match(ask.prompt, /NOT "Sie hofft ___ \(bestehen\) ihre Prüfung\."/);
+  assert.match(ask.prompt, /at B1 level/, 'explanations one level simpler');
+  assert.equal(ask.temperature, 0.6);
+  const sets = ask.schema.properties.sets.items;
+  assert.deepEqual(Object.keys(sets.properties), ['gap', 'transform', 'spot']);
+  assert.deepEqual(sets.properties.gap.propertyOrdering.slice(0, 3), ['full', 'answer', 'sentence']);
 });

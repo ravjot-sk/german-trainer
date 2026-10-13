@@ -138,6 +138,11 @@ export function needsPlural(word) {
 // unusable and leave a word with a single sentence to repeat.
 export const gapMark = (s) => String(s || '').replace(/＿+|_{3,}/g, '___');
 
+// A base form in brackets right after the gap ("___ (bestehen)") is a hint for the learner
+// only. It goes when the answer is filled in, or the solution reads "zu bestehen (bestehen)".
+export const stripHint = (s) => String(s || '').replace(/___\s*[(（][^)）]*[)）]/, '___');
+export const fillGap = (s, answer) => stripHint(s).replace('___', answer ?? '');
+
 // Gap sentence for a word: the stored one, or a best-effort local guess.
 export function gapFor(word) {
   const stored = gapMark(word.gapSentence);
@@ -221,6 +226,21 @@ export function wordDiff(a, b) {
   while (i < n) push('del', x[i++]);
   while (j < m) push('add', y[j++]);
   return out;
+}
+
+// How many separate places two texts differ in, and how many words changed there.
+export function diffSize(a, b) {
+  let hunks = 0, words = 0, open = false;
+  for (const p of wordDiff(a, b)) {
+    if (p.type === 'same') {
+      if (p.text.trim()) open = false;
+      continue;
+    }
+    if (!open) hunks++;
+    open = true;
+    words += p.text.split(/\s+/).filter(Boolean).length;
+  }
+  return { hunks, words };
 }
 
 // For rules where case and punctuation are the point (capitalisation, commas, spelling):

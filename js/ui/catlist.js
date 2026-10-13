@@ -3,9 +3,11 @@
 import * as store from '../store.js';
 import { t, lang } from '../i18n.js';
 import { categoryLabel } from '../categories.js';
-import { status as ruleStatus } from '../rules.js';
+import { status as ruleStatus, ruleText } from '../rules.js';
 import { categoryStats, byRecent, writingMistakes } from '../stats.js';
-import { html } from './dom.js';
+import { html, $$ } from './dom.js';
+import { confirmSheet } from './sheet.js';
+import { route } from '../router.js';
 import { code, cats } from './context.js';
 import { tl, fmtPast } from './text.js';
 
@@ -34,11 +36,27 @@ function ruleList(category) {
     return { item, ms, st: ruleStatus(item), last: ms[0]?.createdAt || 0 };
   }).sort((a, b) => order[a.st] - order[b.st] || b.last - a.last);
   if (!rules.length) return '';
-  return html`<ul class="rules">${rules.map(({ item, ms, st, last }) => html`
+  return html`<ul class="rules">${rules.map(({ item, ms, st, last }) => {
+    const text = ruleText(item.rule, lang());
+    return html`
     <li><details>
-      <summary><span class="rule-title">${item.rule.name}</span><span class="status ${st}">${t(`rule.${st}`)}</span></summary>
+      <summary><span class="rule-title">${text.name}</span><span class="status ${st}">${t(`rule.${st}`)}</span></summary>
       <div class="muted small">${t('rule.meta', { n: ms.length, d: last ? fmtPast(last) : '–' })}${item.rule.level ? html` · ${item.rule.level}` : ''}</div>
-      ${item.rule.statement ? html`<p class="small">${item.rule.statement}</p>` : ''}
+      ${text.statement ? html`<p class="small">${text.statement}</p>` : ''}
       ${ms.slice(0, 3).map((m) => html`<div class="fix small" ${tl()}><del>${m.original}</del> → <ins>${m.corrected}</ins></div>`)}
-    </details></li>`)}</ul>`;
+      <button type="button" class="btn danger small" data-del-rule="${item.id}">${t('rule.delete')}</button>
+    </details></li>`;
+  })}</ul>`;
+}
+
+// "Regel löschen" under a rule: asks first, then removes the rule on every device. Its
+// mistakes stay in the profile.
+export function bindRuleDelete(root) {
+  for (const b of $$('[data-del-rule]', root)) {
+    b.addEventListener('click', async () => {
+      if (!(await confirmSheet(t('rule.confirmDelete'), { ok: t('rule.delete') }))) return;
+      store.deleteRule(b.dataset.delRule);
+      route({ keepScroll: true });
+    });
+  }
 }

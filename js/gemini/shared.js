@@ -6,7 +6,10 @@ import { categoriesFor, categoryGuide, NO_RULES } from '../categories.js';
 import { seedGuide } from '../ruleseeds.js';
 import { parse as parseFurigana } from '../furigana.js';
 
-export const S = (props, required) => ({ type: 'OBJECT', properties: props, required: required || Object.keys(props) });
+// propertyOrdering makes Gemini write the fields in the order listed. Without it the REST API
+// writes them alphabetically, so a mistake's category came before its sentence and its rule,
+// and fields meant to be thought through first came last (#30).
+export const S = (props, required) => ({ type: 'OBJECT', properties: props, required: required || Object.keys(props), propertyOrdering: Object.keys(props) });
 export const STR = { type: 'STRING' };
 
 // Furigana for Japanese texts, as {kanji|reading} markup (see furigana.js).
@@ -31,9 +34,14 @@ export function collectFurigana(r, pairs) {
 export const isGerman = (L) => L.code === 'de';
 export const levelText = (L) => `${L.level} level`;
 
-export function explainLang({ L, ui }) {
-  if (ui === 'en') return 'English';
-  return isGerman(L) ? `German (simple, clear German at ${levelText(L)})` : 'German (simple, clear German)';
+// simpler: one level below the learner's, for explanations that must be quick to read.
+const CEFR = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+export function explainLang({ L, ui }, { simpler = false } = {}) {
+  if (ui === 'en') return simpler ? 'plain, simple English' : 'English';
+  if (!isGerman(L)) return 'German (simple, clear German)';
+  const i = CEFR.indexOf(L.level);
+  const level = simpler && i > 0 ? `${CEFR[i - 1]} level` : levelText(L);
+  return `German (simple, clear German at ${level})`;
 }
 
 // Other right fillings of a word's gap, so a correct answer in another form isn't marked wrong.
@@ -83,42 +91,68 @@ export function gapProps(L, of) {
   };
 }
 
+// Facts first, then the reasoning, then the decisions: Gemini writes fields in this order,
+// so it has written the corrected sentence and named the pattern before it picks a rule and
+// a category.
 function mistakeSchema(c) {
   const wp = wordProps(c.L);
   const keep = ['lemma', 'article', 'reading', 'pos', 'meaning', 'plural', 'verbForms', 'forms', 'recallAnswer'];
   const toLearn = Object.fromEntries(keep.filter((k) => wp[k]).map((k) => [k, wp[k]]));
+  const { rulePattern, rule, ...ruleRest } = ruleProps(c);
   return S({
     original: { type: 'STRING', description: 'The wrong words exactly as the learner wrote them.' },
     corrected: { type: 'STRING', description: 'The corrected words.' },
-    explanation: { type: 'STRING', description: 'One-line explanation.' },
-    category: { type: 'STRING', enum: categoriesFor(c.L).map((x) => x.id) },
     sentence: { type: 'STRING', description: 'The full original sentence containing the mistake, verbatim.' },
     correctedSentence: { type: 'STRING', description: 'That sentence fully corrected.' },
-    ...ruleProps(c),
+    explanation: { type: 'STRING', description: 'One-line explanation.' },
+    rulePattern, rule,
+    category: { type: 'STRING', enum: categoriesFor(c.L).map((x) => x.id) },
+    ...ruleRest,
     wordToLearn: S(toLearn, ['lemma', 'pos', 'meaning']),
-  }, ['original', 'corrected', 'explanation', 'category', 'sentence', 'correctedSentence', 'rule', 'ruleName', 'ruleStatement', 'ruleLevel']);
+  }, ['original', 'corrected', 'sentence', 'correctedSentence', 'explanation', 'rulePattern', 'rule', 'category', 'ruleName', 'ruleStatement', 'ruleLevel']);
 }
 
-// The grammar rule a mistake breaks. Shared by mistake records and classifyMistakes.
+// The grammar rule a mistake breaks. Shared by mistake records and classifyMistakes; the
+// pattern comes first so the rule is chosen after it is named.
 export function ruleProps(c) {
   const { L } = c;
   return {
-    rule: { type: 'STRING', description: `snake_case English key of the one grammar rule this mistake breaks (see "Rules for rule keys"). Empty for ${NO_RULES.join(', ')}.` },
-    ruleName: { type: 'STRING', description: `Short name of that rule in ${explainLang(c)}, at most 6 words, e.g. "${isGerman(L) ? 'Perfekt mit sein bei Zustandswechsel' : 'は und が'}". Empty if rule is empty.` },
-    ruleStatement: { type: 'STRING', description: `The rule itself in one short sentence in ${explainLang(c)}, general enough to apply to other sentences. Empty if rule is empty.` },
-    ruleLevel: { type: 'STRING', description: `The level at which the rule is usually taught (${L.code === 'ja' ? 'JLPT N5 to N1, e.g. "N4"' : 'CEFR A1 to C2, e.g. "B1"'}). Empty if rule is empty.` },
+    rulePattern: { type: 'STRING', description: 'English, at most 12 words: the general pattern behind this mistake, as it would apply to other words and sentences. "typo" if it is a one-off misspelling of one word.' },
+    rule: { type: 'STRING', description: `The key of the one rule this mistake breaks (see "Rules for rule keys"), or "" for a typo and for ${NO_RULES.join(', ')}.` },
+    ruleName: { type: 'STRING', description: `Only for a new key: a short name of the rule in ${explainLang(c)}, at most 6 words, e.g. "${isGerman(L) ? 'Perfekt mit sein bei Zustandswechsel' : 'は und が'}". Otherwise "".` },
+    ruleStatement: { type: 'STRING', description: `Only for a new key: the rule in one short sentence in ${explainLang(c)}, general enough to apply to other sentences. Otherwise "".` },
+    ruleLevel: { type: 'STRING', description: `Only for a new key: the level at which the rule is usually taught (${L.code === 'ja' ? 'JLPT N5 to N1, e.g. "N4"' : 'CEFR A1 to C2, e.g. "B1"'}). Otherwise "".` },
   };
 }
 
-// How Gemini names rules: reuse a key the learner already has, else one of the starting
-// rules, else a new one of the same grain.
+// Worked examples from real misfiled mistakes (#30, #31). A small model follows a few
+// concrete cases better than any amount of description.
+const RULE_EXAMPLES = {
+  de: `Examples:
+- "Herauseforderung" → "Herausforderung": rulePattern "typo", rule "".
+- "schon" → "schön" (missing umlaut): rulePattern "typo", rule "".
+- "Strasse" → "Straße": rulePattern "ß after a long vowel", rule "ss_eszett".
+- "Sie hofft die Prüfung bestehen" → "Sie hofft, die Prüfung zu bestehen": rulePattern "zu + infinitive after hoffen", rule "zu_infinitive" (not damit_um_zu: there is no purpose and no damit or um).
+- "Ich gehe in die Stadt, damit ich einkaufe" → "…, um einzukaufen": rulePattern "um … zu when the subject is the same", rule "damit_um_zu".`,
+  ja: `Examples:
+- "勉境" → "勉強" (wrong kanji in one word): rulePattern "typo", rule "".
+- "私が学生です" → "私は学生です": rulePattern "topic marked with は", rule "wa_vs_ga".`,
+};
+
+// How Gemini names rules: a standard rule only when its text describes this exact mistake,
+// a rule the learner already has when it is the same pattern, else a new one of the same grain.
 export function ruleRules({ L, rules: mine }) {
   const seeds = seedGuide(L.code);
-  return `Rules for rule keys:
-- A rule is one specific, teachable grammar point (narrower than the category), e.g. "perfekt_sein_movement_change", not "verbs".
-- Two mistakes that break the same rule must get the same key, even in different sentences.
-${mine.length ? `- The learner already has these rules. Reuse the key when the mistake is the same rule:\n${mine.map((r) => `  - ${r.category}/${r.key}: ${r.name}`).join('\n')}\n` : ''}${seeds ? `- Otherwise prefer one of these standard rules when it fits:\n${seeds}\n` : ''}- Only when none fits, make a new key of the same grain.
-- The rule's category must be the mistake's category. For ${NO_RULES.join(', ')} leave rule, ruleName, ruleStatement and ruleLevel empty.`;
+  return `Rules for rule keys (fill rulePattern first, then rule, then category):
+- A rule is a grammar or spelling pattern that would also cause mistakes in OTHER words or sentences, narrower than the category (e.g. "perfekt_sein_movement_change", not "verbs"). rulePattern names that pattern in plain English.
+- A typo has no rule: one word misspelt with no pattern behind it (letters swapped, missing, extra or wrong${isGerman(L) ? ', a missing or extra umlaut' : ''}). Then rulePattern is "typo", rule, ruleName, ruleStatement and ruleLevel are "", and the category is spelling. The mistake is still recorded.
+${seeds ? `- Standard rules (key: what it says [category]). Use a key ONLY if its text, read literally, describes this exact mistake. A rule about a similar topic, or in the same category, is wrong.
+${seeds}
+` : ''}${mine.length ? `- The learner's rules (category/key: name). Reuse one only if it is exactly the same pattern:
+${mine.map((r) => `  - ${r.category}/${r.key}: ${r.name}`).join('\n')}
+` : ''}- If nothing fits exactly, make a new snake_case key for the pattern, as narrow as the ones above, and fill ruleName, ruleStatement and ruleLevel.
+- category: for a standard rule, the category in its brackets; otherwise the category from the list that fits the pattern. For ${NO_RULES.join(', ')}, rule is "".
+${RULE_EXAMPLES[L.code] || ''}`;
 }
 
 // The three tones a sentence can be translated into. Shared with the app (labels) and tests.

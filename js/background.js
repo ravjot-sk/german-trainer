@@ -3,8 +3,9 @@
 // sentences. Each keeps track of what it already asked for during this app start.
 import * as store from './store.js';
 import * as gemini from './gemini.js';
-import { addSet, topUpList } from './rules.js';
+import { addSet, topUpList, kindsToAsk, mistakeWords, suspectRule } from './rules.js';
 import { lemmaOf } from './languages.js';
+import { fillGap } from './check.js';
 import { poolOf, addToPool, refillList } from './gappool.js';
 import { missing, strip, poolTexts } from './furigana.js';
 import { gem, L, code, furiMode } from './appstate.js';
@@ -40,29 +41,34 @@ export async function fillFurigana(recs, redraw) {
 
 export const latestItem = (item) => store.reviewItems().find((r) => r.id === item.id) || item;
 
-// Generates one exercise set per rule in one Gemini call and adds it to each rule's pool.
-// A rule already being generated for shares that call. In the background, the call is tagged
-// with the rules' ids (see gemini.promote).
+// Generates exercises for rules (the kind each rule needs now and the next one) and adds them
+// to each rule's pool, at most RULES_PER_CALL rules per Gemini call so each exercise gets
+// care. A rule already being generated for shares that call. In the background, the call is
+// tagged with the rules' ids (see gemini.promote).
+const RULES_PER_CALL = 3;
 const generating = new Map();
 export function generateRuleSets(items, { background = false } = {}) {
   const todo = items.filter((it) => !generating.has(it.id));
   const waits = items.filter((it) => generating.has(it.id)).map((it) => generating.get(it.id));
-  if (todo.length) {
-    const lang = code();
+  const lang = code();
+  for (let i = 0; i < todo.length; i += RULES_PER_CALL) {
+    const batch = todo.slice(i, i + RULES_PER_CALL);
     const run = (async () => {
-      const call = { background, tags: todo.map((it) => it.id) };
-      const sets = await gemini.ruleExercises(todo.map((it) => ({
+      const call = { background, tags: batch.map((it) => it.id) };
+      const own = batch.map((it) => store.ruleMistakes(it));
+      const sets = await gemini.ruleExercises(batch.map((it, j) => ({
         rule: it.rule,
-        examples: store.mistakes(lang).filter((m) => m.rule === it.rule.key && m.category === it.rule.category).slice(0, 3),
+        kinds: kindsToAsk(it),
+        examples: [...new Set(own[j].map((m) => m.correctedSentence).filter(Boolean))].slice(0, 2),
       })), call);
       if (lang === 'ja' && furiMode() !== 'off') await addFurigana(sets, call);
-      todo.forEach((it, i) => {
+      batch.forEach((it, j) => {
         const cur = latestItem(it);
-        if (sets[i]) store.updateReviewItem(addSet(cur, sets[i]));
+        if (sets[j]) store.updateReviewItem(addSet(cur, sets[j], { learnerWords: mistakeWords(own[j]) }));
       });
     })();
-    todo.forEach((it) => generating.set(it.id, run));
-    run.finally(() => todo.forEach((it) => generating.delete(it.id))).catch(() => {});
+    batch.forEach((it) => generating.set(it.id, run));
+    run.finally(() => batch.forEach((it) => generating.delete(it.id))).catch(() => {});
     waits.push(run);
   }
   return Promise.all(waits);
@@ -75,7 +81,7 @@ async function addFurigana(sets, call) {
   for (const set of sets) {
     for (const ex of Object.values(set || {})) {
       if (!ex || typeof ex !== 'object') continue;
-      texts.push(ex.correct, ex.wrong, ex.sentence, ex.sentence && ex.answer ? ex.sentence.replace('___', ex.answer) : '',
+      texts.push(ex.correct, ex.wrong, ex.sentence, ex.sentence && ex.answer ? fillGap(ex.sentence, ex.answer) : '',
         ex.text, ex.corrected, ex.model, ...(ex.items || []).flatMap((x) => [x.prompt, x.answer]));
     }
   }
@@ -115,6 +121,43 @@ export async function classifyOldMistakes(redraw) {
     console.warn('classify mistakes', e);
   } finally {
     classifying = false;
+  }
+}
+
+// Rules filed before Gemini's choices were checked, which look wrongly filed (rules.suspectRule),
+// get their mistakes sorted again once, with the same prompt and checks as new mistakes.
+// Mistakes move to the rule named now, or to none; rules left empty go (store.refileRules).
+let rechecking = false;
+const recheckAsked = new Set();
+export async function recheckRules(redraw) {
+  if (rechecking || !gem() || !L()?.level) return;
+  const lang = code();
+  const old = store.ruleItems(lang).filter((it) => !it.verified && !recheckAsked.has(it.id));
+  if (!old.length) return;
+  const fine = [], suspect = [];
+  for (const it of old) (suspectRule(it, store.ruleMistakes(it)) ? suspect : fine).push(it);
+  if (fine.length) store.markRulesVerified(fine);
+  // Up to 30 mistakes per call, whole rules only.
+  const batch = [];
+  let count = 0;
+  for (const it of suspect) {
+    const n = store.ruleMistakes(it).length;
+    if (batch.length && count + n > 30) break;
+    batch.push(it);
+    count += n;
+  }
+  if (!batch.length) return;
+  batch.forEach((it) => recheckAsked.add(it.id));
+  const ms = batch.flatMap((it) => store.ruleMistakes(it));
+  rechecking = true;
+  try {
+    const got = ms.length ? await gemini.classifyMistakes(ms, BG) : [];
+    store.refileRules(batch, ms.map((m, i) => ({ id: m.id, r: got[i] })));
+    if (redraw) redraw();
+  } catch (e) {
+    console.warn('recheck rules', e);
+  } finally {
+    rechecking = false;
   }
 }
 

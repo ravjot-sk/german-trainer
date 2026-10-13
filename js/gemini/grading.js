@@ -1,6 +1,7 @@
 // Gemini features that judge the learner's answers in exercises. ask/read pairs as in words.js.
 import { lemmaOf, wordTitle } from '../languages.js';
 import { categoryLabel, categoriesFor } from '../categories.js';
+import { rulePrompt } from '../rules.js';
 import { S, GAP_ACCEPTABLE, explainLang, levelText, toneGuide, naturalProps, cleanNatural,
   correctionProps, correctionRules, cleanMistakes, recheckNote, recheckTemp } from './shared.js';
 
@@ -48,13 +49,14 @@ Judge whether the word is used correctly and naturally, and correct the sentence
 
 ${correctionRules(c)}
 Separately, if the sentence would sound clearly more natural phrased differently (still using the word), put that in natural.${recheckNote(recheck)}`;
+    // The verdict comes after the correction, as it did before fields kept their order.
     return { prompt, temperature: recheckTemp(recheck), schema: S({
+      ...correctionProps(c),
+      feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(c)}.` },
       usesWordCorrectly: { type: 'BOOLEAN' },
       gapSentence: { type: 'STRING', description: 'If the word is used correctly: the corrected sentence with the exact form of the word replaced by "___". Otherwise empty.' },
       gapAnswer: { type: 'STRING', description: 'The exact text replaced by ___, or empty.' },
       gapAcceptable: GAP_ACCEPTABLE,
-      feedback: { type: 'STRING', description: `One or two encouraging sentences in ${explainLang(c)}.` },
-      ...correctionProps(c),
       ...naturalProps(c),
     }) };
   },
@@ -86,7 +88,7 @@ correct is true when the learner's answer is a form of this word that makes the 
 export const gradeAnswer = {
   ask(c, { instruction, prompt: shown, model, answer, category, rule = null, recheck = null }) {
     const { L } = c;
-    const prompt = `A ${L.english} learner at ${levelText(L)} is doing a grammar exercise (focus: ${categoryLabel(category, 'en', categoriesFor(L))}${rule ? `, rule: ${rule.name}${rule.statement ? ` (${rule.statement})` : ''}` : ''}).
+    const prompt = `A ${L.english} learner at ${levelText(L)} is doing a grammar exercise (focus: ${categoryLabel(category, 'en', categoriesFor(L))}${rule ? `, rule: ${rulePrompt(rule).name}${rulePrompt(rule).statement ? ` (${rulePrompt(rule).statement})` : ''}` : ''}).
 Instruction: ${instruction}
 ${shown ? `Given: """${shown}"""` : ''}
 A model answer: """${model}"""

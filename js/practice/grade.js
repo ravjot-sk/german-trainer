@@ -7,6 +7,7 @@ import { recLang, lemmaOf, wordTitle, isSentence } from '../languages.js';
 import { html, $, waitBox } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
 import { ruleCompare, transformGrade, strictGrade, isExact } from '../answer.js';
+import { rulePrompt } from '../rules.js';
 import * as show from './feedback.js';
 
 // The check under way: its Abbrechen stops every Gemini call it makes (see gradeTask).
@@ -98,7 +99,10 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
       }
     }
     canOverride = grade !== 'correct';
-    view = show.checked(verdict, grade, [[a1, [task.gap.answer, ...(task.gap.acceptable || [])]]], undefined, show.gapReveal(task));
+    const rights = [task.gap.answer, ...(task.gap.acceptable || [])];
+    const reveal = recheck && grade === 'correct' && compareAny(a1, rights) !== 'correct'
+      ? show.ownReveal(a1, task.gap.sentence, '', w) : show.gapReveal(task);
+    view = show.checked(verdict, grade, [[a1, rights]], undefined, reveal);
   } else if (task.kind === 'rule') {
     ({ grade, html: view, canOverride, mistakes, verdict } = await checkRule(task, a1, fb, recheck));
   } else if (task.kind === 'write') {
@@ -139,7 +143,8 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
 async function checkRule(task, a1, fb, recheck) {
   const { rule, ex: e } = task;
   let grade = 'wrong', view = '', canOverride = false, mistakes = [], verdict = '';
-  const about = ` (rule: ${rule.name}${rule.statement ? `: ${rule.statement}` : ''})`;
+  const rp = rulePrompt(rule);
+  const about = ` (rule: ${rp.name}${rp.statement ? `: ${rp.statement}` : ''})`;
   if (task.ruleKind === 'pair') {
     grade = a1 === e.correct ? 'correct' : 'wrong';
     if (recheck) {
@@ -154,7 +159,12 @@ async function checkRule(task, a1, fb, recheck) {
         shown: e.sentence, expected: e.answer, answer: a1, recheck }));
     }
     canOverride = grade !== 'correct';
-    view = show.checked(verdict, grade, [[a1, [e.answer, ...(e.acceptable || [])]]], undefined, show.ruleReveal(task));
+    const rights = [e.answer, ...(e.acceptable || [])];
+    // A second check that accepts another answer shows that answer, not the stored solution
+    // (#30: the stored one was the broken sentence).
+    const reveal = recheck && grade === 'correct' && ruleCompare(rule, a1, rights) !== 'correct'
+      ? show.ownReveal(a1, e.sentence, e.explanation, e) : show.ruleReveal(task);
+    view = show.checked(verdict, grade, [[a1, rights]], undefined, reveal);
   } else if (task.ruleKind === 'transform') {
     const answers = e.items.map((_, i) => $(i ? `#t${i}` : '#a1').value);
     const rights = e.items.map((x) => [x.answer, ...(x.acceptable || [])]);
@@ -202,7 +212,7 @@ async function checkRule(task, a1, fb, recheck) {
       verdict = r.feedback || '';
     }
     canOverride = grade !== 'correct' && !gem();
-    view = show.spotHtml(verdict, grade, a1, task);
+    view = show.spotHtml(verdict, grade, a1, task, !!recheck);
   } else {
     grading(fb);
     const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: '', model: e.model, answer: a1, category: rule.category, rule, recheck }, call());

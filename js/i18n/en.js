@@ -54,6 +54,7 @@ export default {
   'session.wrong': 'Not yet.',
   'session.answer': 'Answer',
   'session.yourFix': 'Your answer, corrected',
+  'session.yourAnswer': 'Your answer',
   'session.iWasRight': 'I was right',
   'session.dontKnow': 'I don\'t know',
   'session.hereIsAnswer': 'Here\'s the answer',
@@ -231,6 +232,8 @@ export default {
   'rule.solid': 'Solid',
   'rule.meta': '{n} mistakes · last {d}',
   'rule.rung': 'Step {n} of 5',
+  'rule.delete': 'Delete rule',
+  'rule.confirmDelete': 'Delete this rule? Your mistakes stay in the profile.',
 
   'settings.language': 'App language',
   'settings.learning': 'Learning',

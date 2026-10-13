@@ -66,6 +66,8 @@ function persist({ remote = false } = {}) {
 function save() { dataSlot.save(data); }
 
 // A strictly increasing edit time, so an edit always counts as newer than the last sync.
+const uiLang = () => (settings.lang === 'en' ? 'en' : 'de');
+
 function touch(rec, now = Date.now()) {
   rec.updatedAt = Math.max(now, (rec.updatedAt || 0) + 1);
 }
@@ -203,8 +205,10 @@ export function getMistake(id) { return data.mistakes.find((m) => m.id === id); 
 export function addMistakes(list, source, code = 'de', now = Date.now()) {
   const added = [];
   for (const m of list) {
-    const category = migrateCategory(code, m.category || 'other');
-    const rule = ruleFrom({ ...m, category }, code);
+    let category = migrateCategory(code, m.category || 'other');
+    const rule = ruleFrom({ ...m, category }, code, uiLang());
+    // A standard rule decides the category, so the mistake is counted where its rule is.
+    if (rule) category = rule.category;
     const mistake = {
       id: uid(), lang: code, original: m.original || '', corrected: m.corrected || '',
       explanation: m.explanation || '', category,
@@ -243,7 +247,8 @@ export function setMistakeRule(id, r, now = Date.now()) {
   if (!m) return;
   const code = recLang(m);
   if (r?.category) m.category = migrateCategory(code, r.category);
-  const rule = r ? ruleFrom({ ...r, category: m.category }, code) : null;
+  const rule = r ? ruleFrom({ ...m, ...r, category: m.category }, code, uiLang()) : null;
+  if (rule) m.category = rule.category;
   m.rule = rule ? rule.key : '';
   m.ruleChecked = true;
   touch(m, now);
@@ -268,6 +273,64 @@ function ensureRule(rule, now, { fresh }) {
   if (!fresh && JSON.stringify(merged.rule) === JSON.stringify(cur.rule)) return;
   data.reviewItems[idx] = fresh ? afterMistake(merged, now) : merged;
   touch(data.reviewItems[idx], now);
+}
+
+// The mistakes filed under a rule.
+export const ruleMistakes = (item) => data.mistakes.filter((m) => m.rule === item.rule?.key && m.category === item.rule?.category && recLang(m) === item.rule?.lang);
+
+// Removes a rule everywhere (sync turns the gap into a deletion). Its mistakes stay in the
+// profile, without a rule.
+export function deleteRule(id, now = Date.now()) {
+  const item = data.reviewItems.find((r) => r.id === id);
+  if (!item) return;
+  for (const m of ruleMistakes(item)) {
+    m.rule = '';
+    touch(m, now);
+  }
+  data.reviewItems = data.reviewItems.filter((r) => r.id !== id);
+  persist();
+}
+
+// The re-check of older rules (background.recheckRules): each mistake moves to the rule
+// Gemini names now, or to none (moves: [{ id, r }] with r as from classifyMistakes). Rules
+// left without mistakes go; the rest are marked checked. A rule a mistake moves to keeps its
+// own place on the ladder, or starts new: nothing carries over from a wrongly filed rule.
+export function refileRules(items, moves, now = Date.now()) {
+  for (const { id, r } of moves) {
+    const m = getMistake(id);
+    if (!m) continue;
+    const code = recLang(m);
+    const rule = r ? ruleFrom({ ...m, ...r, category: migrateCategory(code, r.category || m.category) }, code, uiLang()) : null;
+    m.category = rule ? rule.category : migrateCategory(code, r?.category || m.category);
+    m.rule = rule ? rule.key : '';
+    m.ruleChecked = true;
+    touch(m, now);
+    if (rule) ensureRule(rule, now, { fresh: false });
+    if (m.category !== 'other') ensureReviewItem('category', catKey(code, m.category), now);
+  }
+  for (const it of items) {
+    const idx = data.reviewItems.findIndex((r) => r.id === it.id);
+    if (idx < 0) continue;
+    const cur = data.reviewItems[idx];
+    if (!ruleMistakes(cur).length) {
+      data.reviewItems.splice(idx, 1);
+      continue;
+    }
+    data.reviewItems[idx] = { ...cur, verified: true };
+    touch(data.reviewItems[idx], now);
+  }
+  persist();
+}
+
+// Marks rules that needed no re-check, so they are not looked at again.
+export function markRulesVerified(items, now = Date.now()) {
+  for (const it of items) {
+    const cur = data.reviewItems.find((r) => r.id === it.id);
+    if (!cur || cur.verified) continue;
+    cur.verified = true;
+    touch(cur, now);
+  }
+  persist();
 }
 
 export const ruleItems = (code) => data.reviewItems.filter((r) => r.itemType === 'rule' && r.rule?.lang === code);
