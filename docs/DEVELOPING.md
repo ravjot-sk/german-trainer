@@ -4,13 +4,16 @@ How the code is organised and how to run it. For using the app, see the [README]
 Firebase and the bug-report Action, see [SETUP.md](SETUP.md).
 
 
-Plain HTML, CSS and JavaScript modules. There is no build step and no dependencies. The Firebase SDK is
+Plain HTML, CSS and JavaScript modules. There is no build step, and the app has no dependencies (ESLint is only a development tool). The Firebase SDK is
 loaded from Google's CDN only when sync is configured.
 
 ```sh
 npm start   # serve locally at http://localhost:8080
+npm run lint   # ESLint: undefined and unused names (run npm install once first)
 npm test    # unit tests: scheduler, answer checking, languages, session building, sync merging
 ```
+
+The linter and the tests also run automatically on every pull request and every push to `main` (`.github/workflows/tests.yml`).
 
 | File | What's in it |
 |---|---|

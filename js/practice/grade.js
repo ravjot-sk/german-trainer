@@ -17,7 +17,6 @@ let ctl = null;
 const call = () => ({ signal: ctl?.signal });
 const grading = (fb) => { waitBox(fb, t('session.grading'), '', ctl || undefined); };
 const para = (x) => (x ? `<p>${esc(x)}</p>` : '');
-const numbered = (list) => list.map((x, i) => `${i + 1}. ${x}`).join('\n');
 
 // A wrong answer the app checked itself, corrected: what the learner wrote with the wrong
 // words crossed out and the right ones marked. parts: [answer, right answer(s)].
