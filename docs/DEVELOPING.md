@@ -9,7 +9,7 @@ loaded from Google's CDN only when sync is configured.
 
 ```sh
 npm start   # serve locally at http://localhost:8080
-npm run lint   # ESLint: undefined and unused names (run npm install once first)
+npm run lint   # ESLint: undefined and unused names, HTML set outside setHtml (run npm install once first)
 npm test    # unit tests: scheduler, answer checking, languages, session building, sync merging
 ```
 
@@ -22,6 +22,7 @@ The linter and the tests also run automatically on every pull request and every 
 | `js/views/` | One file per screen: Today, Look up, Words, Write (`correct.js`), Profile, Settings, the account card and word editor |
 | `js/practice/` | The session: `runtime.js` (tasks and what happens after an answer), `render.js` (the session screen), `grade.js` (checking answers), `feedback.js` (the feedback after an answer) |
 | `js/ui/` | Shared screen pieces: DOM (`dom.js`), screen state (`context.js`), shared HTML (`text.js`), bottom sheets (`sheet.js`), suggested words (`suggest.js`), the bug report sheet (`report.js`), the category list (`catlist.js`) |
+| `js/html.js` | The `html` template tag: every value put into a screen's HTML is escaped unless it is already HTML. Screens draw with `setHtml` (`ui/dom.js`); the linter rejects `innerHTML =` anywhere else |
 | `js/appstate.js` | The active language, whether Gemini can be used, the furigana setting: shared by screens and background jobs |
 | `js/answer.js` | Grading rule exercises, and what is saved and requeued after an answer (pure, tested) |
 | `js/stats.js` | The mistake profile's numbers (pure, tested) |

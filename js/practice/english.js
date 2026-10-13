@@ -6,7 +6,7 @@ import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { isSentence } from '../languages.js';
 import { poolOf } from '../gappool.js';
-import { esc, $, errorBox, waitBox } from '../ui/dom.js';
+import { html, raw, setHtml, $, errorBox, waitBox } from '../ui/dom.js';
 import { gem } from '../ui/context.js';
 import { tl } from '../ui/text.js';
 import { writeExamples } from './feedback.js';
@@ -54,7 +54,7 @@ function saveGap(w, gap, en) {
 export function englishButton(task) {
   const list = englishSources(task);
   if (!list.length || (!gem() && list.some((x) => !x.en))) return '';
-  return `<div id="english"><button type="button" class="btn small" id="showEnglish">${esc(t('session.english'))}</button></div>`;
+  return html`<div id="english"><button type="button" class="btn small" id="showEnglish">${t('session.english')}</button></div>`;
 }
 
 export function bindEnglish(task) {
@@ -65,7 +65,8 @@ export function bindEnglish(task) {
     for (const x of list) if (x.en) task.english[x.text] = x.en;
     const missing = list.filter((x) => !task.english[x.text]);
     if (missing.length) {
-      const shown = slot.innerHTML;
+      // The page's own markup, put back as it was.
+      const shown = raw(slot.innerHTML);
       const signal = waitBox(slot, t('session.translating'));
       try {
         const out = await gemini.translateTexts(missing.map((x) => x.text), { signal });
@@ -77,16 +78,16 @@ export function bindEnglish(task) {
       } catch (e) {
         if (task.state?.phase !== 'feedback' || !document.contains(slot)) return;
         // The button comes back, so tapping it again tries again.
-        slot.innerHTML = gemini.isCancel(e) ? shown : errorBox(e) + shown;
+        setHtml(slot, gemini.isCancel(e) ? shown : html`${errorBox(e)}${shown}`);
         bindEnglish(task);
         return;
       }
       if (!document.contains(slot)) return; // the learner moved on
     }
-    slot.innerHTML = `<div class="english">
-      <div class="english-title">${esc(t('session.englishTitle'))}</div>
-      ${list.map((x) => `<div class="english-pair"><div class="muted small" ${tl()}>${esc(x.text)}</div>
-        <div lang="en">${esc(task.english[x.text] || '—')}</div></div>`).join('')}
-    </div>`;
+    setHtml(slot, html`<div class="english">
+      <div class="english-title">${t('session.englishTitle')}</div>
+      ${list.map((x) => html`<div class="english-pair"><div class="muted small" ${tl()}>${x.text}</div>
+        <div lang="en">${task.english[x.text] || '—'}</div></div>`)}
+    </div>`);
   });
 }

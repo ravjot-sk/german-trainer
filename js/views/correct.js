@@ -4,7 +4,7 @@ import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { logMistakes } from '../actions.js';
 import { icon } from '../icons.js';
-import { main, titleEl, esc, $, toast, waitBox, retryBox } from '../ui/dom.js';
+import { html, setHtml, main, titleEl, $, toast, waitBox, retryBox } from '../ui/dom.js';
 import { code, langName, gem, ui } from '../ui/context.js';
 import { tl, diffHtml, mistakeList, naturalBlock, bindNatural } from '../ui/text.js';
 import { wordTitle } from '../languages.js';
@@ -14,17 +14,17 @@ export function viewCorrect() {
   titleEl.textContent = t('correct.title');
   const draft = sessionStorage.getItem('gt.draft') || '';
   const collapsed = ui.lastCorrection && !ui.correctOpen;
-  main.innerHTML = `
-    ${collapsed ? `<section class="card draft-row" id="reopen">
-        <div class="grow"><div class="muted small">${esc(t('correct.yourText'))}</div><div class="ellipsis" ${tl(ui.lastCorrection.lang)}>${esc(ui.lastCorrection.text)}</div></div>
+  setHtml(main, html`
+    ${collapsed ? html`<section class="card draft-row" id="reopen">
+        <div class="grow"><div class="muted small">${t('correct.yourText')}</div><div class="ellipsis" ${tl(ui.lastCorrection.lang)}>${ui.lastCorrection.text}</div></div>
         ${icon('down', 18)}
       </section>` : ''}
     <form class="card ${collapsed ? 'hidden' : ''}" id="cf">
-      <textarea id="text" rows="6" spellcheck="false" ${tl()} placeholder="${esc(t('correct.placeholder', { l: langName() }))}">${esc(draft)}</textarea>
-      <button class="btn primary" type="submit">${esc(t('correct.go'))}</button>
+      <textarea id="text" rows="6" spellcheck="false" ${tl()} placeholder="${t('correct.placeholder', { l: langName() })}">${draft}</textarea>
+      <button class="btn primary" type="submit">${t('correct.go')}</button>
     </form>
     <div id="cres">${ui.lastCorrection ? correctionResult(ui.lastCorrection) : ''}</div>
-    ${ui.lastCorrection ? `<button class="btn" id="newtext">${icon('plus', 18)} ${esc(t('correct.newText'))}</button>` : ''}`;
+    ${ui.lastCorrection ? html`<button class="btn" id="newtext">${icon('plus', 18)} ${t('correct.newText')}</button>` : ''}`);
   $('#reopen')?.addEventListener('click', () => { ui.correctOpen = true; viewCorrect(); $('#text').focus(); });
   $('#newtext')?.addEventListener('click', () => {
     sessionStorage.removeItem('gt.draft');
@@ -57,7 +57,7 @@ async function check(text) {
     if (routeName() === 'correct') { viewCorrect(); window.scrollTo(0, 0); }
   } catch (err) {
     if (!document.contains(res)) return;
-    if (gemini.isCancel(err)) res.innerHTML = '';
+    if (gemini.isCancel(err)) setHtml(res, '');
     else retryBox(res, err, () => check(text));
   }
 }
@@ -88,16 +88,16 @@ function bindRecheck() {
 }
 
 function correctionResult(c) {
-  return `<section class="card">
-    <div class="card-head"><h3>${esc(t('correct.result'))}</h3>
-      <button class="btn small text" id="copy">${icon('copy', 16)} ${esc(t('correct.copy'))}</button></div>
+  return html`<section class="card">
+    <div class="card-head"><h3>${t('correct.result')}</h3>
+      <button class="btn small text" id="copy">${icon('copy', 16)} ${t('correct.copy')}</button></div>
     <div class="sentence corrected" ${tl(c.lang)}>${diffHtml(c.text, c.correctedText)}</div>
-    ${c.mistakes.length ? `<h3>${esc(t('correct.mistakes', { n: c.mistakes.length }))}</h3>${mistakeList(c.mistakes, c.lang)}
-      <p class="muted small">${esc(t('correct.logged'))}</p>` : `<p>${esc(t('correct.noMistakes'))}</p>`}
-    ${c.newWords?.length ? `<p class="muted small">${esc(t('correct.wordsAdded', { w: c.newWords.join(', ') }))}</p>` : ''}
+    ${c.mistakes.length ? html`<h3>${t('correct.mistakes', { n: c.mistakes.length })}</h3>${mistakeList(c.mistakes, c.lang)}
+      <p class="muted small">${t('correct.logged')}</p>` : html`<p>${t('correct.noMistakes')}</p>`}
+    ${c.newWords?.length ? html`<p class="muted small">${t('correct.wordsAdded', { w: c.newWords.join(', ') })}</p>` : ''}
     ${naturalBlock(c.natural, c.naturalReason, c.lang)}
-    ${c.rechecked ? `<p class="muted small">${esc(t('correct.rechecked'))}</p>`
-      : gem() && c.lang === code() ? `<button class="btn small" id="recheck">${esc(t('correct.recheck'))}</button>` : ''}
+    ${c.rechecked ? html`<p class="muted small">${t('correct.rechecked')}</p>`
+      : gem() && c.lang === code() ? html`<button class="btn small" id="recheck">${t('correct.recheck')}</button>` : ''}
   </section>`;
 }
 

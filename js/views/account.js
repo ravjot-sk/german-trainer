@@ -1,7 +1,7 @@
 // The account and sync card in Settings.
 import * as sync from '../sync.js';
 import { t } from '../i18n.js';
-import { esc, $, $$, errorBox, toast, inputAttrs } from '../ui/dom.js';
+import { html, setHtml, replaceHtml, $, $$, errorBox, toast, inputAttrs } from '../ui/dom.js';
 import { confirmSheet } from '../ui/sheet.js';
 import { MAX_USES } from '../invites.js';
 import { forgetResults } from '../ui/context.js';
@@ -22,7 +22,7 @@ const AUTH_ERRORS = {
 const syncError = (e) => (AUTH_ERRORS[e.code] ? t(`sync.err.${AUTH_ERRORS[e.code]}`) : e.message || String(e));
 
 function syncStatusLine(st) {
-  return `<span class="muted" id="syncstatus">${esc(t(`sync.status.${st.status}`, { n: st.pending, m: st.error }))}</span>`;
+  return html`<span class="muted" id="syncstatus">${t(`sync.status.${st.status}`, { n: st.pending, m: st.error })}</span>`;
 }
 
 // Runs a button's action with the button disabled; shows errors under the card.
@@ -31,8 +31,8 @@ function syncAction(id, fn) {
     e.preventDefault();
     const btn = e.currentTarget;
     btn.disabled = true;
-    $('#syncres').innerHTML = '';
-    try { await fn(); } catch (err) { if ($('#syncres')) $('#syncres').innerHTML = errorBox(syncError(err)); }
+    setHtml($('#syncres'), '');
+    try { await fn(); } catch (err) { if ($('#syncres')) setHtml($('#syncres'), errorBox(syncError(err))); }
     finally { btn.disabled = false; }
   });
 }
@@ -49,23 +49,23 @@ export function renderSync() {
   const st = sync.getState();
   shownSync = syncShape(st);
   shownFailed = st.inviteFailed;
-  const res = '<div id="syncres"></div>';
-  const signOutBtn = `<button class="btn" id="ssignout">${esc(t('sync.signOut'))}</button>`;
+  const res = html`<div id="syncres"></div>`;
+  const signOutBtn = html`<button class="btn" id="ssignout">${t('sync.signOut')}</button>`;
   if (st.status === 'off') {
-    el.innerHTML = `<p class="muted small">${esc(t('sync.off'))}</p>`;
+    setHtml(el, html`<p class="muted small">${t('sync.off')}</p>`);
   } else if (st.status === 'signedOut') {
-    el.innerHTML = `
-      <p class="muted small">${esc(t('sync.help'))}</p>
-      <label>${esc(t('sync.email'))}<input id="semail" type="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-      <label>${esc(t('sync.password'))}<input id="spass" type="password" autocomplete="current-password"></label>
-      <label>${esc(t('sync.inviteOptional'))}<input id="scode" ${inputAttrs} autocapitalize="characters" placeholder="ABCD2345"></label>
-      <p class="muted small">${esc(t('sync.inviteHelp'))}</p>
+    setHtml(el, html`
+      <p class="muted small">${t('sync.help')}</p>
+      <label>${t('sync.email')}<input id="semail" type="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+      <label>${t('sync.password')}<input id="spass" type="password" autocomplete="current-password"></label>
+      <label>${t('sync.inviteOptional')}<input id="scode" ${inputAttrs} autocapitalize="characters" placeholder="ABCD2345"></label>
+      <p class="muted small">${t('sync.inviteHelp')}</p>
       <div class="actions">
-        <button class="btn primary" id="ssignin">${esc(t('sync.signIn'))}</button>
-        <button class="btn" id="ssignup">${esc(t('sync.signUp'))}</button>
+        <button class="btn primary" id="ssignin">${t('sync.signIn')}</button>
+        <button class="btn" id="ssignup">${t('sync.signUp')}</button>
       </div>
-      <button class="btn link" id="sforgot">${esc(t('sync.forgot'))}</button>
-      ${res}`;
+      <button class="btn link" id="sforgot">${t('sync.forgot')}</button>
+      ${res}`);
     const creds = () => {
       const email = $('#semail').value.trim();
       const pass = $('#spass').value;
@@ -77,43 +77,43 @@ export function renderSync() {
     syncAction('sforgot', async () => {
       if (!$('#semail').value.trim()) throw new Error(t('sync.needEmail'));
       await sync.resetPassword($('#semail').value);
-      $('#syncres').innerHTML = `<div class="notice ok">${esc(t('sync.resetSent'))}</div>`;
+      setHtml($('#syncres'), html`<div class="notice ok">${t('sync.resetSent')}</div>`);
     });
   } else if (st.status === 'unverified') {
-    el.innerHTML = `
-      <p class="small">${esc(t('sync.unverified', { e: st.email }))}</p>
+    setHtml(el, html`
+      <p class="small">${t('sync.unverified', { e: st.email })}</p>
       <div class="actions">
-        <button class="btn primary" id="sverified">${esc(t('sync.verified'))}</button>
-        <button class="btn" id="sresend">${esc(t('sync.resend'))}</button>
+        <button class="btn primary" id="sverified">${t('sync.verified')}</button>
+        <button class="btn" id="sresend">${t('sync.resend')}</button>
       </div>
-      ${signOutBtn}${res}`;
+      ${signOutBtn}${res}`);
     syncAction('sverified', async () => {
       await sync.recheck();
       if (sync.getState().status === 'unverified') throw new Error(t('sync.stillUnverified'));
     });
     syncAction('sresend', async () => {
       await sync.resendVerification();
-      $('#syncres').innerHTML = `<div class="notice ok">${esc(t('sync.resent'))}</div>`;
+      setHtml($('#syncres'), html`<div class="notice ok">${t('sync.resent')}</div>`);
     });
   } else if (st.status === 'notInvited') {
-    el.innerHTML = `
-      <div class="notice">${esc(t('sync.notInvited', { e: st.email }))}</div>
+    setHtml(el, html`
+      <div class="notice">${t('sync.notInvited', { e: st.email })}</div>
       ${st.inviteFailed ? errorBox(t('sync.err.invite')) : ''}
-      <label>${esc(t('sync.invite'))}<input id="scode" ${inputAttrs} autocapitalize="characters" placeholder="ABCD2345"></label>
-      <button class="btn primary" id="sredeem">${esc(t('sync.redeem'))}</button>
-      <div class="actions"><button class="btn" id="sretry">${esc(t('sync.retry'))}</button>${signOutBtn}</div>
-      ${res}`;
+      <label>${t('sync.invite')}<input id="scode" ${inputAttrs} autocapitalize="characters" placeholder="ABCD2345"></label>
+      <button class="btn primary" id="sredeem">${t('sync.redeem')}</button>
+      <div class="actions"><button class="btn" id="sretry">${t('sync.retry')}</button>${signOutBtn}</div>
+      ${res}`);
     syncAction('sredeem', () => sync.redeemInvite($('#scode').value));
     syncAction('sretry', () => sync.recheck());
   } else if (!st.email) {
     // Still connecting, or offline before the account could be loaded.
-    el.innerHTML = `<p class="small">${syncStatusLine(st)}</p>`;
+    setHtml(el, html`<p class="small">${syncStatusLine(st)}</p>`);
   } else {
-    el.innerHTML = `
-      <p class="small">${esc(t('sync.signedInAs', { e: st.email }))}<br>${syncStatusLine(st)}</p>
+    setHtml(el, html`
+      <p class="small">${t('sync.signedInAs', { e: st.email })}<br>${syncStatusLine(st)}</p>
       ${signOutBtn}
-      <p class="muted small">${esc(t('sync.signOutHelp'))}</p>
-      ${res}`;
+      <p class="muted small">${t('sync.signOutHelp')}</p>
+      ${res}`);
   }
   syncAction('ssignout', async () => {
     let r = await sync.signOut();
@@ -128,7 +128,7 @@ export function renderSync() {
 // While signed in, a status change only updates its line; anything else redraws the card.
 export function showSyncState(st) {
   const line = $('#syncstatus');
-  if (line && syncShape(st) === shownSync && st.inviteFailed === shownFailed) line.outerHTML = syncStatusLine(st);
+  if (line && syncShape(st) === shownSync && st.inviteFailed === shownFailed) replaceHtml(line, syncStatusLine(st));
   else renderSync();
   if (st.admin !== shownAdmin) renderAdmin();
 }
@@ -140,27 +140,27 @@ export function renderAdmin() {
   const el = $('#admincard');
   if (!el) return;
   shownAdmin = sync.getState().admin;
-  if (!shownAdmin) { el.innerHTML = ''; return; }
-  el.innerHTML = `
-    <div class="group-label">${esc(t('invites.title'))}</div>
+  if (!shownAdmin) { setHtml(el, ''); return; }
+  setHtml(el, html`
+    <div class="group-label">${t('invites.title')}</div>
     <section class="card form">
-      <p class="muted small">${esc(t('invites.help'))}</p>
-      <label>${esc(t('invites.maxUses'))}<input id="imax" type="number" inputmode="numeric" min="1" max="${MAX_USES}" value="1"></label>
-      <button class="btn primary" id="inew">${esc(t('invites.create'))}</button>
+      <p class="muted small">${t('invites.help')}</p>
+      <label>${t('invites.maxUses')}<input id="imax" type="number" inputmode="numeric" min="1" max="${MAX_USES}" value="1"></label>
+      <button class="btn primary" id="inew">${t('invites.create')}</button>
       <div id="ires"></div>
     </section>
-    <ul class="list" id="ilist"><li class="loading">…</li></ul>`;
+    <ul class="list" id="ilist"><li class="loading">…</li></ul>`);
   $('#inew').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
-    $('#ires').innerHTML = '';
+    setHtml($('#ires'), '');
     const n = Math.round(Number($('#imax').value));
-    if (!(n >= 1 && n <= MAX_USES)) { $('#ires').innerHTML = errorBox(t('invites.badMax', { n: MAX_USES })); return; }
+    if (!(n >= 1 && n <= MAX_USES)) { setHtml($('#ires'), errorBox(t('invites.badMax', { n: MAX_USES }))); return; }
     btn.disabled = true;
     try {
       const code = await sync.createInvite(n);
       await copy(code);
       await loadInvites();
-    } catch (err) { $('#ires').innerHTML = errorBox(syncError(err)); }
+    } catch (err) { setHtml($('#ires'), errorBox(syncError(err))); }
     finally { btn.disabled = false; }
   });
   loadInvites();
@@ -170,13 +170,13 @@ async function loadInvites() {
   const list = $('#ilist');
   if (!list) return;
   let codes;
-  try { codes = await sync.listInvites(); } catch (e) { list.innerHTML = `<li>${errorBox(syncError(e))}</li>`; return; }
+  try { codes = await sync.listInvites(); } catch (e) { setHtml(list, html`<li>${errorBox(syncError(e))}</li>`); return; }
   if (!$('#ilist')) return;
-  list.innerHTML = codes.length ? codes.map((c) => `
-    <li><span><b class="code">${esc(c.code)}</b><br><span class="muted small">${esc(t(c.uses >= c.maxUses ? 'invites.usedUp' : 'invites.uses', { u: c.uses, m: c.maxUses }))}</span></span>
-      <span class="val"><button class="btn small text" data-copy="${esc(c.code)}">${esc(t('invites.copy'))}</button>
-      <button class="btn small danger" data-del="${esc(c.code)}">${esc(t('invites.delete'))}</button></span></li>`).join('')
-    : `<li class="muted small">${esc(t('invites.none'))}</li>`;
+  setHtml(list, codes.length ? codes.map((c) => html`
+    <li><span><b class="code">${c.code}</b><br><span class="muted small">${t(c.uses >= c.maxUses ? 'invites.usedUp' : 'invites.uses', { u: c.uses, m: c.maxUses })}</span></span>
+      <span class="val"><button class="btn small text" data-copy="${c.code}">${t('invites.copy')}</button>
+      <button class="btn small danger" data-del="${c.code}">${t('invites.delete')}</button></span></li>`)
+    : html`<li class="muted small">${t('invites.none')}</li>`);
   $$('#ilist [data-copy]').forEach((b) => b.addEventListener('click', () => copy(b.dataset.copy)));
   $$('#ilist [data-del]').forEach((b) => b.addEventListener('click', async () => {
     if (!(await confirmSheet(t('invites.confirmDelete', { c: b.dataset.del }), { ok: t('invites.delete') }))) return;

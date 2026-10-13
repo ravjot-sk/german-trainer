@@ -5,7 +5,7 @@ import { t } from '../i18n.js';
 import { recLang, lemmaOf, isSentence, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { poolOf, addToPool, poolFromLookup } from '../gappool.js';
-import { main, titleEl, esc, $, $$, toast, errorBox, waitBox, retryBox, inputAttrs, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
+import { html, setHtml, main, titleEl, $, $$, toast, errorBox, waitBox, retryBox, inputAttrs, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
 import { gem, L, code, langName, noGemini, ui } from '../ui/context.js';
 import { tl, jt, readingLine, toneLabel } from '../ui/text.js';
 import { fillFurigana } from '../background.js';
@@ -18,29 +18,29 @@ export function viewLookup() {
   const recent = [...all].sort((a, b) => b.addedAt - a.addedAt).slice(0, 5);
   const mode = pref('lookupMode', 'word');
   const tone = pref('tone', 'everyday');
-  const romanized = L()?.romanized ? `<p class="muted small">${esc(t('lookup.romanized', { r: L().romanized }))}</p>` : '';
-  const seg = (id, options, current) => `<div class="seg" id="${id}">${options.map(([v, label]) =>
-    `<button type="button" data-v="${esc(v)}" ${pressedAttrs(v === current)}>${esc(label)}</button>`).join('')}</div>`;
+  const romanized = L()?.romanized ? html`<p class="muted small">${t('lookup.romanized', { r: L().romanized })}</p>` : '';
+  const seg = (id, options, current) => html`<div class="seg" id="${id}">${options.map(([v, label]) =>
+    html`<button type="button" data-v="${v}" ${pressedAttrs(v === current)}>${label}</button>`)}</div>`;
   const form = mode === 'sentence'
-    ? `<textarea id="q" rows="3" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.sentencePlaceholder', { l: langName() }))}"></textarea>
-      <div class="field-label">${esc(t('lookup.tone'))}</div>
+    ? html`<textarea id="q" rows="3" class="big-input" ${inputAttrs} placeholder="${t('lookup.sentencePlaceholder', { l: langName() })}"></textarea>
+      <div class="field-label">${t('lookup.tone')}</div>
       ${seg('tone', gemini.TONES.map((x) => [x, toneLabel(x)]), tone)}
-      <p class="muted small" id="tonehelp">${esc(t(`tone.${tone}.help`))}</p>
-      <button class="btn primary" type="submit">${esc(t('lookup.translate'))}</button>`
-    : `<div class="search-field"><input id="q" class="big-input" ${inputAttrs} placeholder="${esc(t('lookup.placeholder', { l: langName() }))}" enterkeyhint="search">
-      <button class="go" type="submit" aria-label="${esc(t('lookup.go'))}">${icon('search', 20)}</button></div>
+      <p class="muted small" id="tonehelp">${t(`tone.${tone}.help`)}</p>
+      <button class="btn primary" type="submit">${t('lookup.translate')}</button>`
+    : html`<div class="search-field"><input id="q" class="big-input" ${inputAttrs} placeholder="${t('lookup.placeholder', { l: langName() })}" enterkeyhint="search">
+      <button class="go" type="submit" aria-label="${t('lookup.go')}">${icon('search', 20)}</button></div>
       ${romanized}
-      <button type="button" class="btn link small" id="addctx">${esc(t('lookup.addContext'))}</button>
-      <textarea id="ctx" rows="2" class="hidden" ${tl()} placeholder="${esc(t('lookup.context'))}"></textarea>`;
-  main.innerHTML = `
+      <button type="button" class="btn link small" id="addctx">${t('lookup.addContext')}</button>
+      <textarea id="ctx" rows="2" class="hidden" ${tl()} placeholder="${t('lookup.context')}"></textarea>`;
+  setHtml(main, html`
     <form class="card" id="lf">
       ${seg('mode', [['word', t('lookup.modeWord')], ['sentence', t('lookup.modeSentence')]], mode)}
       ${form}
     </form>
     <div id="lres">${ui.lastLookup ? lookupResult(ui.lastLookup) : ''}</div>
-    ${recent.length ? `<div class="group-label">${esc(t('lookup.recent'))}</div>${wordRows(recent)}
-      ${all.length > recent.length ? `<a class="more-link" href="#/words">${esc(t('words.all'))} (${all.length})${icon('chevron', 16)}</a>` : ''}` : ''}
-  `;
+    ${recent.length ? html`<div class="group-label">${t('lookup.recent')}</div>${wordRows(recent)}
+      ${all.length > recent.length ? html`<a class="more-link" href="#/words">${t('words.all')} (${all.length})${icon('chevron', 16)}</a>` : ''}` : ''}
+  `);
   $$('#mode button').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.v === mode) return;
     setPref('lookupMode', b.dataset.v);
@@ -67,7 +67,7 @@ export function viewLookup() {
     fillFurigana([store.getWord(ui.lastLookup.word.id)], () => {
       const res = $('#lres');
       if (!res || !ui.lastLookup) return;
-      res.innerHTML = lookupResult(ui.lastLookup);
+      setHtml(res, lookupResult(ui.lastLookup));
       bindWordCard(res);
     });
   }
@@ -87,14 +87,14 @@ async function lookupWord(q, ctx) {
   if (!gem()) {
     const local = store.findWord(q, code(), L()?.articles)
       || store.words(code()).find((w) => w.reading === q || w.meaning.toLowerCase().includes(q.toLowerCase()));
-    if (local) { ui.lastLookup = { word: local, note: t('lookup.offlineHit') }; res.innerHTML = lookupResult(ui.lastLookup); bindWordCard(res); }
-    else res.innerHTML = errorBox(noGemini());
+    if (local) { ui.lastLookup = { word: local, note: t('lookup.offlineHit') }; setHtml(res, lookupResult(ui.lastLookup)); bindWordCard(res); }
+    else setHtml(res, errorBox(noGemini()));
     return;
   }
   const signal = waitBox(res, t('lookup.loading'), 'card');
   try {
     const r = await gemini.lookup(q, ctx, { signal });
-    if (!r.found || !r.lemma) { res.innerHTML = `<div class="notice">${esc(t('lookup.notFound'))}</div>`; return; }
+    if (!r.found || !r.lemma) { setHtml(res, html`<div class="notice">${t('lookup.notFound')}</div>`); return; }
     const { word, created } = saveLookup(r, { lang: code(), contextSentence: ctx, source: 'lookup' });
     ui.lastLookup = { word, note: created ? t('lookup.saved') : t('lookup.already') };
     viewLookup();
@@ -106,17 +106,17 @@ async function lookupWord(q, ctx) {
 // Abbrechen clears the waiting box; other errors offer to try again. The query stays typed.
 function failed(res, err, retry) {
   if (!document.contains(res)) return;
-  if (gemini.isCancel(err)) res.innerHTML = '';
+  if (gemini.isCancel(err)) setHtml(res, '');
   else retryBox(res, err, retry);
 }
 
 async function translate(q, tone) {
   const res = $('#lres');
-  if (!gem()) { res.innerHTML = errorBox(noGemini()); return; }
+  if (!gem()) { setHtml(res, errorBox(noGemini())); return; }
   const signal = waitBox(res, t('lookup.translating'), 'card');
   try {
     const r = await gemini.translateSentence(q, tone, {}, { signal });
-    if (!r.sentence) { res.innerHTML = `<div class="notice">${esc(t('lookup.notTranslated'))}</div>`; return; }
+    if (!r.sentence) { setHtml(res, html`<div class="notice">${t('lookup.notTranslated')}</div>`); return; }
     const { word, created } = store.addSentence({ ...r, query: q }, code());
     ui.lastLookup = { word, note: created ? t('lookup.sentenceSaved') : t('lookup.sentenceAlready') };
     viewLookup();
@@ -132,19 +132,19 @@ function lookupResult({ word, note }) {
   if (isSentence(w)) return sentenceCard(w, note);
   const c = recLang(w);
   const forms = w.verbForms || w.forms;
-  return `<article class="card word-card" data-id="${esc(w.id)}">
+  return html`<article class="card word-card" data-id="${w.id}">
     <div class="word-head">
       <div>${readingLine(w)}<div class="word-title" ${tl(c)}>${jt(wordTitle(w), w, c)}</div>
-      <div class="muted small">${esc(t(`pos.${w.pos || 'other'}`))}${w.plural && w.pos === 'noun' ? ` · ${esc(t('ex.plural'))}: <span ${tl(c)}>${esc(w.plural)}</span>` : ''}</div></div>
-      <button class="icon-btn" data-edit="${esc(w.id)}" aria-label="${esc(t('edit.title'))}">${icon('edit', 20)}</button>
+      <div class="muted small">${t(`pos.${w.pos || 'other'}`)}${w.plural && w.pos === 'noun' ? html` · ${t('ex.plural')}: <span ${tl(c)}>${w.plural}</span>` : ''}</div></div>
+      <button class="icon-btn" data-edit="${w.id}" aria-label="${t('edit.title')}">${icon('edit', 20)}</button>
     </div>
-    ${forms ? `<div class="forms" ${tl(c)}>${esc(forms)}</div>` : ''}
-    <div class="meaning">${esc(w.meaning)}</div>
-    ${w.register ? `<div class="muted small">${esc(w.register)}</div>` : ''}
-    ${w.example ? `<div class="sentence"><span ${tl(c)}>${jt(w.example, w, c)}</span><div class="muted small">${esc(w.exampleTranslation)}</div></div>` : ''}
-    ${(w.moreExamples || []).map((e) => `<div class="sentence"><span ${tl(c)}>${jt(e.text, w, c)}</span><div class="muted small">${esc(e.translation)}</div></div>`).join('')}
-    ${w.contextSentence ? `<div class="sentence ctx" ${tl(c)}>${jt(w.contextSentence, w, c)}</div>` : ''}
-    <div class="saved-note">${icon('check', 16)} ${esc(note)}</div>
+    ${forms ? html`<div class="forms" ${tl(c)}>${forms}</div>` : ''}
+    <div class="meaning">${w.meaning}</div>
+    ${w.register ? html`<div class="muted small">${w.register}</div>` : ''}
+    ${w.example ? html`<div class="sentence"><span ${tl(c)}>${jt(w.example, w, c)}</span><div class="muted small">${w.exampleTranslation}</div></div>` : ''}
+    ${(w.moreExamples || []).map((e) => html`<div class="sentence"><span ${tl(c)}>${jt(e.text, w, c)}</span><div class="muted small">${e.translation}</div></div>`)}
+    ${w.contextSentence ? html`<div class="sentence ctx" ${tl(c)}>${jt(w.contextSentence, w, c)}</div>` : ''}
+    <div class="saved-note">${icon('check', 16)} ${note}</div>
   </article>`;
 }
 
@@ -152,20 +152,20 @@ function sentenceCard(w, note) {
   const c = recLang(w);
   const keyWords = (w.keyWords || []).map((k) => {
     const have = store.findWord(k.lemma, c, store.language(c)?.articles);
-    return `<button type="button" class="kw ${have ? 'have' : ''}" data-kw="${esc(k.lemma)}" ${have ? 'disabled' : ''}>
-      <span ${tl(c)}>${have ? '✓ ' : '＋ '}${esc(k.lemma)}</span> <span class="muted">${esc(k.meaning)}</span></button>`;
-  }).join('');
-  return `<article class="card word-card" data-id="${esc(w.id)}">
+    return html`<button type="button" class="kw ${have ? 'have' : ''}" data-kw="${k.lemma}" ${have ? 'disabled' : ''}>
+      <span ${tl(c)}>${have ? '✓ ' : '＋ '}${k.lemma}</span> <span class="muted">${k.meaning}</span></button>`;
+  });
+  return html`<article class="card word-card" data-id="${w.id}">
     <div class="word-head">
-      <span class="chip">${esc(toneLabel(w.tone))}</span>
-      <button class="icon-btn" data-edit="${esc(w.id)}" aria-label="${esc(t('edit.sentenceTitle'))}">${icon('edit', 20)}</button>
+      <span class="chip">${toneLabel(w.tone)}</span>
+      <button class="icon-btn" data-edit="${w.id}" aria-label="${t('edit.sentenceTitle')}">${icon('edit', 20)}</button>
     </div>
     <div class="sentence-big" ${tl(c)}>${jt(lemmaOf(w), w, c)}</div>
     ${readingLine(w)}
-    <div class="meaning">${esc(w.meaning)}</div>
-    ${w.toneNote ? `<div class="muted small">${esc(w.toneNote)}</div>` : ''}
-    ${keyWords ? `<div class="field-label">${esc(t('lookup.keyWords'))}</div><div class="keywords">${keyWords}</div>` : ''}
-    <div class="saved-note">${icon('check', 16)} ${esc(note)}</div>
+    <div class="meaning">${w.meaning}</div>
+    ${w.toneNote ? html`<div class="muted small">${w.toneNote}</div>` : ''}
+    ${keyWords.length ? html`<div class="field-label">${t('lookup.keyWords')}</div><div class="keywords">${keyWords}</div>` : ''}
+    <div class="saved-note">${icon('check', 16)} ${note}</div>
   </article>`;
 }
 

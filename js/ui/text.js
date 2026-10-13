@@ -9,23 +9,26 @@ import { categoryLabel, migrateCategory } from '../categories.js';
 import { recLang, lemmaOf } from '../languages.js';
 import { segmentsFor, toHtml } from '../furigana.js';
 import { icon } from '../icons.js';
-import { esc, $$, toast } from './dom.js';
+import { html, raw, setHtml, replaceHtml, $$, toast } from './dom.js';
 import { code, cats, gem } from './context.js';
 import { furiMode } from '../appstate.js';
 
 // Marks text in the language being learnt, so iOS picks the right glyphs (Japanese kanji,
 // not Chinese) and right-to-left text runs the right way.
-export const tl = (c = code()) => `lang="${esc(c)}" dir="auto"`;
+export const tl = (c = code()) => html`lang="${c}" dir="auto"`;
 // Furigana over Japanese kanji: 'tap' (shown when the text is tapped), 'always' or 'off'.
 export { furiMode };
 // Text in the language being learnt, with furigana when the record has it for exactly this text.
 export function jt(text, rec, c = code()) {
   const segs = c === 'ja' && furiMode() !== 'off' ? segmentsFor(text, rec) : null;
-  return segs ? `<span class="furi">${toHtml(segs)}</span>` : esc(text);
+  // toHtml escapes the text and readings itself.
+  return segs ? html`<span class="furi">${raw(toHtml(segs))}</span>` : html`${text}`;
 }
+// A sentence with a gap (___), shown with the gap marked.
+export const gapped = (text, rec, c) => raw(jt(text, rec, c).toString().replace('___', '<span class="gap">___</span>'));
 // The separate reading line is only needed when the word itself shows no furigana.
 export const furiShown = (w) => recLang(w) === 'ja' && furiMode() !== 'off' && !!segmentsFor(lemmaOf(w), w);
-export const readingLine = (w) => (w.reading && !furiShown(w) ? `<div class="reading" ${tl(recLang(w))}>${esc(w.reading)}</div>` : '');
+export const readingLine = (w) => (w.reading && !furiShown(w) ? html`<div class="reading" ${tl(recLang(w))}>${w.reading}</div>` : '');
 
 export const toneLabel = (tone) => t(`tone.${tone || 'everyday'}`);
 
@@ -40,34 +43,34 @@ export const fmtDate = (ts) => nearDay(ts, false);
 export const fmtPast = (ts) => nearDay(ts, true);
 
 export function diffHtml(a, b) {
-  return wordDiff(a, b).map((p) =>
-    p.type === 'same' ? esc(p.text) : p.type === 'del' ? `<del>${esc(p.text)}</del>` : `<ins>${esc(p.text)}</ins>`
-  ).join('');
+  return html`${wordDiff(a, b).map((p) =>
+    p.type === 'same' ? p.text : p.type === 'del' ? html`<del>${p.text}</del>` : html`<ins>${p.text}</ins>`
+  )}`;
 }
 
 export function mistakeList(list, c = code()) {
-  return `<ul class="mistakes">${list.map((m) => `
+  return html`<ul class="mistakes">${list.map((m) => html`
     <li>
-      <span class="chip">${esc(categoryLabel(migrateCategory(m.lang || c, m.category), lang(), cats(store.language(m.lang || c))))}</span>
-      <div class="fix" ${tl(m.lang || c)}><del>${esc(m.original)}</del> → <ins>${esc(m.corrected)}</ins></div>
-      <div class="muted">${esc(m.explanation)}</div>
-    </li>`).join('')}</ul>`;
+      <span class="chip">${categoryLabel(migrateCategory(m.lang || c, m.category), lang(), cats(store.language(m.lang || c)))}</span>
+      <div class="fix" ${tl(m.lang || c)}><del>${m.original}</del> → <ins>${m.corrected}</ins></div>
+      <div class="muted">${m.explanation}</div>
+    </li>`)}</ul>`;
 }
 
 // The learner's text with Gemini's corrections marked, and the list of mistakes.
 export const correctionHtml = (answer, corrected, mistakes) =>
-  (mistakes.length ? `<div class="sentence" ${tl()}>${diffHtml(answer, corrected)}</div>${mistakeList(mistakes)}` : '');
+  (mistakes.length ? html`<div class="sentence" ${tl()}>${diffHtml(answer, corrected)}</div>${mistakeList(mistakes)}` : '');
 
 // "More natural" suggestion under a correction, with a button that saves it as a sentence.
 export function naturalBlock(text, reason, c = code()) {
   if (!text) return '';
   const saved = store.findWord(text, c);
-  return `<div class="natural">
-    <div class="natural-title">${icon('bulb', 18)} ${esc(t('natural.title'))}</div>
-    <div class="natural-text" ${tl(c)}>${esc(text)}</div>
-    ${reason ? `<div class="muted small">${esc(reason)}</div>` : ''}
-    ${saved ? `<div class="saved-note">${icon('check', 16)} ${esc(t('natural.inList'))}</div>`
-      : `<button type="button" class="btn small" data-natural="${esc(text)}" data-lang="${esc(c)}">${icon('plus', 16)} ${esc(t('natural.add'))}</button>`}
+  return html`<div class="natural">
+    <div class="natural-title">${icon('bulb', 18)} ${t('natural.title')}</div>
+    <div class="natural-text" ${tl(c)}>${text}</div>
+    ${reason ? html`<div class="muted small">${reason}</div>` : ''}
+    ${saved ? html`<div class="saved-note">${icon('check', 16)} ${t('natural.inList')}</div>`
+      : html`<button type="button" class="btn small" data-natural="${text}" data-lang="${c}">${icon('plus', 16)} ${t('natural.add')}</button>`}
   </div>`;
 }
 
@@ -81,10 +84,10 @@ export function bindNatural(root) {
       // Gemini describes the sentence (English, tone, pieces) so it can be practised.
       const r = c === code() && gem() ? await gemini.translateSentence(text, null, { keep: true }) : { sentence: text };
       store.addSentence(r, c, 'suggestion');
-      b.outerHTML = `<div class="saved-note">${icon('check', 16)} ${esc(t('natural.saved'))}</div>`;
+      replaceHtml(b, html`<div class="saved-note">${icon('check', 16)} ${t('natural.saved')}</div>`);
     } catch (e) {
       b.disabled = false;
-      b.innerHTML = `${icon('plus', 16)} ${esc(t('natural.add'))}`;
+      setHtml(b, html`${icon('plus', 16)} ${t('natural.add')}`);
       toast(e.message || String(e));
     }
   }));

@@ -4,27 +4,27 @@ import * as gemini from '../gemini.js';
 import { t } from '../i18n.js';
 import { isCurated } from '../categories.js';
 import { icon } from '../icons.js';
-import { esc, $, toast, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
+import { html, setHtml, $, toast, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
 import { L, code, langName, resetViews } from '../ui/context.js';
 import { mountSheet } from '../ui/sheet.js';
 
 export function learnCard() {
   const cur = L();
   const opts = store.knownLanguages().map((x) =>
-    `<option value="${esc(x.code)}" ${cur?.code === x.code ? 'selected' : ''}>${esc(langName(x))}</option>`).join('');
-  const levels = cur ? cur.levels.map((l) => `<option ${l === cur.level ? 'selected' : ''}>${esc(l)}</option>`).join('') : '';
-  return `
-    <label>${esc(t('settings.learning'))}
-      <select id="target">${cur ? '' : `<option value="" selected disabled>${esc(t('settings.chooseLanguage'))}</option>`}${opts}
-        <option value="__add">${esc(t('settings.addLanguage'))}</option></select>
+    html`<option value="${x.code}" ${cur?.code === x.code ? 'selected' : ''}>${langName(x)}</option>`);
+  const levels = cur ? cur.levels.map((l) => html`<option ${l === cur.level ? 'selected' : ''}>${l}</option>`) : '';
+  return html`
+    <label>${t('settings.learning')}
+      <select id="target">${cur ? '' : html`<option value="" selected disabled>${t('settings.chooseLanguage')}</option>`}${opts}
+        <option value="__add">${t('settings.addLanguage')}</option></select>
     </label>
     <div id="addlang" class="hidden">
-      <div class="inline"><input id="newlang" ${inputAttrs} placeholder="${esc(t('settings.newLanguage'))}">
-      <button class="btn small" id="addbtn">${esc(t('settings.add'))}</button></div>
-      <p class="muted small">${esc(t('settings.addHelp'))}</p>
+      <div class="inline"><input id="newlang" ${inputAttrs} placeholder="${t('settings.newLanguage')}">
+      <button class="btn small" id="addbtn">${t('settings.add')}</button></div>
+      <p class="muted small">${t('settings.addHelp')}</p>
     </div>
-    ${cur && !isCurated(cur.code) ? `<p class="muted small gen-note">${esc(t('profile.generatedNote', { l: langName(cur) }))}</p>` : ''}
-    ${cur ? `<label>${esc(t('settings.level'))}<select id="level">${cur.level ? '' : `<option value="" selected disabled>${esc(t('settings.chooseLevel'))}</option>`}${levels}</select></label>` : ''}
+    ${cur && !isCurated(cur.code) ? html`<p class="muted small gen-note">${t('profile.generatedNote', { l: langName(cur) })}</p>` : ''}
+    ${cur ? html`<label>${t('settings.level')}<select id="level">${cur.level ? '' : html`<option value="" selected disabled>${t('settings.chooseLevel')}</option>`}${levels}</select></label>` : ''}
     <div id="learnres"></div>`;
 }
 
@@ -53,7 +53,7 @@ export function bindLearnCard(redraw) {
     const signal = waitBox($('#learnres'), t('settings.adding'));
     try {
       const d = await gemini.setupLanguage(name, { signal });
-      if (!d) { $('#learnres').innerHTML = errorBox(t('settings.langNotFound')); return; }
+      if (!d) { setHtml($('#learnres'), errorBox(t('settings.langNotFound'))); return; }
       // A language that is already here (built in or added before) keeps its categories.
       if (!store.knownLanguages().some((x) => x.code === d.code)) {
         const { code: c, ...desc } = d;
@@ -63,7 +63,7 @@ export function bindLearnCard(redraw) {
       resetViews();
       redraw();
     } catch (err) {
-      $('#learnres').innerHTML = gemini.isCancel(err) ? '' : errorBox(err);
+      setHtml($('#learnres'), gemini.isCancel(err) ? '' : errorBox(err));
     } finally {
       btn.disabled = false;
     }
@@ -71,11 +71,11 @@ export function bindLearnCard(redraw) {
 }
 
 export function openLangSheet() {
-  const { el: back, close } = mountSheet(`<div class="sheet form">
-    <div class="sheet-head"><h2>${esc(t('settings.langSheet'))}</h2>
-      <button type="button" class="icon-btn" data-act="close" aria-label="${esc(t('edit.close'))}">${icon('close', 22)}</button></div>
+  const { el: back, close } = mountSheet(html`<div class="sheet form">
+    <div class="sheet-head"><h2>${t('settings.langSheet')}</h2>
+      <button type="button" class="icon-btn" data-act="close" aria-label="${t('edit.close')}">${icon('close', 22)}</button></div>
     ${learnCard()}
-    <p class="muted small">${esc(t('settings.learningHelp'))}</p>
+    <p class="muted small">${t('settings.learningHelp')}</p>
   </div>`);
   $('[data-act=close]', back).addEventListener('click', close);
   bindLearnCard(close);

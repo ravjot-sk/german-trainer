@@ -4,7 +4,7 @@ import { t } from '../i18n.js';
 import { summarizeDue, practicePool, PRACTICE_FOCUS } from '../session.js';
 import { dayStart } from '../srs.js';
 import { icon } from '../icons.js';
-import { main, titleEl, esc, $, $$, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
+import { html, setHtml, main, titleEl, $, $$, pref, setPref, pressedAttrs, choose } from '../ui/dom.js';
 import { gem, L, code, langName, sessionArgs } from '../ui/context.js';
 import { route, go } from '../router.js';
 import { learnCard, bindLearnCard } from './learncard.js';
@@ -15,19 +15,19 @@ import { sortedStats, catList } from '../ui/catlist.js';
 export function viewToday() {
   titleEl.textContent = t('today.title');
   const notes = [];
-  if (!store.getApiKey()) notes.push(`<div class="notice">${esc(t('today.noKey'))} <a href="#/settings">${esc(t('settings.title'))}</a></div>`);
-  else if (navigator.onLine === false) notes.push(`<div class="notice">${esc(t('today.offline'))}</div>`);
+  if (!store.getApiKey()) notes.push(html`<div class="notice">${t('today.noKey')} <a href="#/settings">${t('settings.title')}</a></div>`);
+  else if (navigator.onLine === false) notes.push(html`<div class="notice">${t('today.offline')}</div>`);
 
   // First the language, then the level: nothing is assumed for either.
   const cur = L();
   if (!cur || !cur.level) {
-    main.innerHTML = `
+    setHtml(main, html`
       <section class="card form">
-        <h2>${esc(cur ? t('today.levelTitle', { l: langName() }) : t('today.chooseTitle'))}</h2>
-        ${cur ? `<p class="muted small">${esc(t('today.levelHelp'))}</p>` : ''}
+        <h2>${cur ? t('today.levelTitle', { l: langName() }) : t('today.chooseTitle')}</h2>
+        ${cur ? html`<p class="muted small">${t('today.levelHelp')}</p>` : ''}
         ${learnCard()}
       </section>
-      ${notes.join('')}`;
+      ${notes}`);
     bindLearnCard(route);
     return;
   }
@@ -37,29 +37,29 @@ export function viewToday() {
   const reviewedToday = store.reviews(code()).filter((r) => r.reviewedAt >= today);
   const doneToday = reviewedToday.filter((r) => r.mode !== 'practice').length;
   const practisedToday = reviewedToday.length - doneToday;
-  const stat = (n, label) => `<span class="stat"><b>${n}</b> ${esc(label)}</span>`;
+  const stat = (n, label) => html`<span class="stat"><b>${n}</b> ${label}</span>`;
 
-  main.innerHTML = `
+  setHtml(main, html`
     <section class="card hero">
-      <div class="hero-label">${esc(t('today.due'))}</div>
+      <div class="hero-label">${t('today.due')}</div>
       <div class="hero-num">${s.total}</div>
       <div class="chips">
-        <span class="stat"><b>${s.words}</b> ${esc(t(s.words === 1 ? 'today.word' : 'today.words'))}${s.newWords ? ` · ${esc(t('today.newShort', { n: s.newWords }))}` : ''}</span>
+        <span class="stat"><b>${s.words}</b> ${t(s.words === 1 ? 'today.word' : 'today.words')}${s.newWords ? ` · ${t('today.newShort', { n: s.newWords })}` : ''}</span>
         ${s.sentences ? stat(s.sentences, t(s.sentences === 1 ? 'today.sentence' : 'today.sentences')) : ''}
         ${stat(s.grammar, t('today.drills'))}
       </div>
-      ${s.total ? `<button class="btn primary big" id="start">${esc(t('today.start'))}</button>`
-        : `<p class="muted">${esc(t('today.nothing'))}</p>
+      ${s.total ? html`<button class="btn primary big" id="start">${t('today.start')}</button>`
+        : html`<p class="muted">${t('today.nothing')}</p>
           <div class="empty-actions">
-            <a class="btn" href="#/lookup">${icon('search', 18)} ${esc(t('today.goLookup'))}</a>
-            <a class="btn" href="#/correct">${icon('edit', 18)} ${esc(t('today.goCorrect'))}</a>
+            <a class="btn" href="#/lookup">${icon('search', 18)} ${t('today.goLookup')}</a>
+            <a class="btn" href="#/correct">${icon('edit', 18)} ${t('today.goCorrect')}</a>
           </div>`}
-      ${doneToday ? `<p class="muted small">${esc(t('today.doneToday', { n: doneToday }))}</p>` : ''}
+      ${doneToday ? html`<p class="muted small">${t('today.doneToday', { n: doneToday })}</p>` : ''}
     </section>
     ${practiceCard(practisedToday)}
-    ${notes.join('')}
+    ${notes}
     ${weakSpots()}
-  `;
+  `);
   $('#start')?.addEventListener('click', () => { startSession(); go('session'); });
   bindPracticeCard();
 }
@@ -74,14 +74,14 @@ function practiceCard(practised) {
   const focuses = practiceFocuses();
   const cur = focuses.includes(pref('practiceFocus', 'mix')) ? pref('practiceFocus', 'mix') : 'mix';
   const few = store.words(code()).length < 10;
-  return `<section class="card practice">
-    <div class="card-head"><h3>${esc(t('practice.title'))}</h3></div>
-    <p class="muted small">${esc(t('practice.help'))}</p>
-    ${focuses.length > 1 ? `<div class="seg wrap" id="pfocus">${focuses.map((f) =>
-      `<button type="button" data-v="${f}" ${pressedAttrs(f === cur)}>${esc(t(`practice.focus.${f}`))}</button>`).join('')}</div>` : ''}
-    <button class="btn primary" id="practice">${esc(t('practice.start'))}</button>
-    ${few && gem() ? `<button class="btn" data-suggest>${icon('sparkle', 18)} ${esc(t('suggest.open'))}</button>` : ''}
-    ${practised ? `<p class="muted small">${esc(t('practice.doneToday', { n: practised }))}</p>` : ''}
+  return html`<section class="card practice">
+    <div class="card-head"><h3>${t('practice.title')}</h3></div>
+    <p class="muted small">${t('practice.help')}</p>
+    ${focuses.length > 1 ? html`<div class="seg wrap" id="pfocus">${focuses.map((f) =>
+      html`<button type="button" data-v="${f}" ${pressedAttrs(f === cur)}>${t(`practice.focus.${f}`)}</button>`)}</div>` : ''}
+    <button class="btn primary" id="practice">${t('practice.start')}</button>
+    ${few && gem() ? html`<button class="btn" data-suggest>${icon('sparkle', 18)} ${t('suggest.open')}</button>` : ''}
+    ${practised ? html`<p class="muted small">${t('practice.doneToday', { n: practised })}</p>` : ''}
   </section>`;
 }
 
@@ -100,8 +100,8 @@ function bindPracticeCard() {
 // The top of the mistake profile, with the full profile one tap away.
 function weakSpots() {
   const stats = sortedStats().slice(0, 3);
-  const head = `<div class="group-label">${esc(t('today.weak'))}</div>`;
-  if (!stats.length) return `${head}<section class="card"><p class="muted small">${esc(t('today.weakEmpty'))}</p></section>`;
-  return `${head}<section class="card">${catList(stats)}
-    <a class="more-link" href="#/profile">${esc(t('today.fullProfile'))}${icon('chevron', 16)}</a></section>`;
+  const head = html`<div class="group-label">${t('today.weak')}</div>`;
+  if (!stats.length) return html`${head}<section class="card"><p class="muted small">${t('today.weakEmpty')}</p></section>`;
+  return html`${head}<section class="card">${catList(stats)}
+    <a class="more-link" href="#/profile">${t('today.fullProfile')}${icon('chevron', 16)}</a></section>`;
 }
