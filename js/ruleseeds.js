@@ -101,7 +101,6 @@ export const SEEDS = {
       ['sie_formal_capital', 'The polite Sie, Ihnen, Ihr are capitalised', 'A1'],
     ],
     spelling: [
-      ['ss_eszett', 'ß after a long vowel or diphthong, ss after a short vowel', 'A2'],
       ['compound_one_word', 'Compound nouns are written as one word', 'A2'],
     ],
     punctuation: [

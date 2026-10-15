@@ -91,7 +91,7 @@ function correctionResult(c) {
   return html`<section class="card">
     <div class="card-head"><h3>${t('correct.result')}</h3>
       <button class="btn small text" id="copy">${icon('copy', 16)} ${t('correct.copy')}</button></div>
-    <div class="sentence corrected" ${tl(c.lang)}>${diffHtml(c.text, c.correctedText)}</div>
+    <div class="sentence corrected" ${tl(c.lang)}>${diffHtml(c.text, c.correctedText, c.lang)}</div>
     ${c.mistakes.length ? html`<h3>${t('correct.mistakes', { n: c.mistakes.length })}</h3>${mistakeList(c.mistakes, c.lang)}
       <p class="muted small">${t('correct.logged')}</p>` : html`<p>${t('correct.noMistakes')}</p>`}
     ${c.newWords?.length ? html`<p class="muted small">${t('correct.wordsAdded', { w: c.newWords.join(', ') })}</p>` : ''}

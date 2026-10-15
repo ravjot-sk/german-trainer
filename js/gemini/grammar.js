@@ -58,8 +58,8 @@ Write the instruction in ${explainLang(c)}. Keep sentences natural and everyday 
 // rule, in order.
 const KIND_TEXT = (name) => ({
   pair: `pair: correct follows the rule; wrong is the same ${name} sentence breaking it the way learners do. Nothing else differs.`,
-  gap: `gap: write full first (a correct ${name} sentence), then pick answer (the words in full that the rule decides, one connected piece), then sentence: full with answer replaced by ___, everything else exactly as in full, commas included. The gap is where answer stands in full. Optionally the base form in brackets right after the gap.`,
-  transform: `transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (another tense, a subordinate clause, a noun phrase …) so that the result needs the rule. Different verbs or nouns in each item. answer is the model result, acceptable other correct results.`,
+  gap: `gap: write full first (a correct ${name} sentence), then pick answer (the words in full that the rule decides, one connected piece), then sentence: full with answer replaced by ___, everything else exactly as in full, commas included. The gap is where answer stands in full. The gap hides only what the rule decides (an article, an ending, an auxiliary, a preposition, a conjunction), never a word the learner would have to guess, such as a noun for a gender rule: the learner must be able to tell from the sentence which word goes there. If answer contains such a word (a noun, a verb, an adjective), its base form goes in brackets right after the gap (answer "ist gefallen": "___ (fallen)"). Otherwise a base form in brackets is optional.`,
+  transform: `transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (another tense, a subordinate clause, a noun phrase …) so that the result needs the rule. Different verbs or nouns in each item. The instruction says exactly what to change (e.g. "Setze den Satz ins Perfekt.", "Ersetze das Verb durch das Nomen in Klammern."). answer is the model result: the item with only that change, everything else kept as it was. acceptable lists other correct results that also make only that change.`,
   spot: `spot: write corrected first (2 or 3 correct ${name} sentences), then text: the same with 1 or 2 mistakes against this rule put in and nothing else changed.`,
   produce: 'produce: an instruction to write one new sentence that needs the rule, in a new situation (give the situation and, if useful, a word to use). model is one model sentence.',
 });
@@ -67,7 +67,10 @@ const KIND_TEXT = (name) => ({
 const GAP_EXAMPLE = {
   de: `Example gap for "zu + infinitive after hoffen":
   full "Sie hofft, ihre Prüfung zu bestehen." answer "zu bestehen" sentence "Sie hofft, ihre Prüfung ___ (bestehen)."
-  NOT "Sie hofft ___ (bestehen) ihre Prüfung." (no filling makes that a correct sentence).`,
+  NOT "Sie hofft ___ (bestehen) ihre Prüfung." (no filling makes that a correct sentence).
+Example gap for "nouns ending in -yse are feminine":
+  full "Wir brauchen eine gründliche Analyse." answer "eine" sentence "Wir brauchen ___ gründliche Analyse."
+  NOT "Wir brauchen eine gründliche ___." (that tests guessing the noun, not its gender).`,
 };
 
 const EXPLAIN_EXAMPLE = {
@@ -92,7 +95,7 @@ export const ruleExercises = {
 For each rule, write the kinds listed under it:
 ${used.map((k) => `- ${kinds[k]}`).join('\n')}
 ${used.includes('gap') && GAP_EXAMPLE[L.code] ? `${GAP_EXAMPLE[L.code]}\n` : ''}
-Each exercise also gets trigger and explanation. trigger: the word or words in this exercise that make the rule apply. explanation: in ${explainLang(c, { simpler: true })}, one sentence of at most 20 words: why the rule applies here, naming the trigger, in the rule's own terms (case, verb position, comma, ß after a long vowel …). Never explain with sounds or letters unless the rule is about them. Never mention a wrong form that is not in this exercise. If unsure, say the rule statement in simple words.
+Each exercise also gets trigger and explanation. trigger: the word or words in this exercise that make the rule apply. explanation: in ${explainLang(c, { simpler: true })}, one sentence of at most 20 words: why the rule applies here, naming the trigger, in the rule's own terms (case, verb position, comma, auxiliary …). Never explain with sounds or letters unless the rule is about them. Never mention a wrong form that is not in this exercise. If unsure, say the rule statement in simple words.
 ${EXPLAIN_EXAMPLE[L.code] || ''}
 
 Rules:

@@ -51,6 +51,7 @@ export default {
   'session.almost': 'Fast: achte auf die Schreibweise.',
   'session.almostReading': 'Fast: richtig gelesen, aber so schreibt man es.',
   'session.almostForm': 'Fast: richtiges Wort, aber in diesem Satz steht diese Form.',
+  'session.almostMeaning': 'Fast: richtige Bedeutung, gesucht war aber dieses Wort.',
   'session.wrong': 'Noch nicht.',
   'session.answer': 'Lösung',
   'session.yourFix': 'Deine Antwort, korrigiert',

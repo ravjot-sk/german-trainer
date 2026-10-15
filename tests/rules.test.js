@@ -4,12 +4,13 @@ import { dayStart, addDays } from '../js/srs.js';
 import {
   ruleKey, ruleItemId, parseRuleId, ruleFrom, newRuleItem, afterMistake, afterAnswer, status, kindOf,
   addSet, nextExercise, useExercise, valid, topUpList, migrateData, knownRules, START_RUNG,
-  ruleText, rulePrompt, tidy, mistakeWords, kindsToAsk, suspectRule,
+  ruleText, rulePrompt, tidy, mistakeWords, kindsToAsk, suspectRule, poolOf, DATA_VERSION,
 } from '../js/rules.js';
 import { buildSession, summarizeDue } from '../js/session.js';
 import { CATEGORIES, JAPANESE, migrateCategory, isCurated, hasRules, finishCategories } from '../js/categories.js';
 import { SEEDS } from '../js/ruleseeds.js';
-import { compareExact, fillGap } from '../js/check.js';
+import { compareExact, fillGap, compare, checkRecall, wordDiff } from '../js/check.js';
+import { fixPairs } from '../js/answer.js';
 import * as store from '../js/store.js';
 
 const NOW = new Date('2026-10-06T10:00:00').getTime();
@@ -217,8 +218,8 @@ test('exact comparison for capitalisation and punctuation rules', () => {
 
 // The two rules from the bug reports, as they were stored.
 const issue31 = {
-  item: { ...newRuleItem(rule({ category: 'spelling', key: 'ss_eszett', name: 'Rechtschreibung', statement: 'Wörter müssen korrekt geschrieben werden.' }), NOW), verified: undefined },
-  mistake: { id: 'm31', original: 'Herauseforderung', corrected: 'Herausforderung', category: 'spelling', rule: 'ss_eszett', ruleChecked: true,
+  item: { ...newRuleItem(rule({ category: 'spelling', key: 'compound_one_word', name: 'Rechtschreibung', statement: 'Wörter müssen korrekt geschrieben werden.' }), NOW), verified: undefined },
+  mistake: { id: 'm31', original: 'Herauseforderung', corrected: 'Herausforderung', category: 'spelling', rule: 'compound_one_word', ruleChecked: true,
     fullSentence: 'Wir stehen vor einer großen Herauseforderung.', correctedSentence: 'Wir stehen vor einer großen Herausforderung.', createdAt: NOW, updatedAt: NOW },
 };
 const issue30 = {
@@ -231,8 +232,9 @@ test('a typo or an umlaut slip is a mistake without a rule', () => {
   assert.equal(ruleFrom({ ...issue31.mistake, rulePattern: 'typo' }, 'de'), null);
   assert.equal(ruleFrom({ original: 'schon', corrected: 'schön', category: 'spelling', rule: 'umlaut_letters', ruleName: 'Umlaute' }, 'de'), null,
     'spelling rules only come from the standard list');
-  assert.equal(ruleFrom({ ...issue31.mistake, rulePattern: 'ß after long vowel' }, 'de'), null, 'no ß or ss in the change: not the ß/ss rule');
-  assert.equal(ruleFrom({ original: 'Strasse', corrected: 'Straße', category: 'spelling', rule: 'ss_eszett' }, 'de').key, 'ss_eszett');
+  assert.equal(ruleFrom({ ...issue31.mistake, rulePattern: 'compound noun' }, 'de'), null, 'not two words joined: not the compound rule');
+  assert.equal(ruleFrom({ original: 'Haus Tür', corrected: 'Haustür', category: 'spelling', rule: 'compound_one_word' }, 'de').key, 'compound_one_word');
+  assert.equal(ruleFrom({ original: 'Strasse', corrected: 'Straße', category: 'spelling', rule: 'ss_eszett' }, 'de'), null, '#39: the ß/ss rule is retired');
 });
 
 test('a standard rule brings its own category and wording, and must show in the text', () => {
@@ -242,8 +244,8 @@ test('a standard rule brings its own category and wording, and must show in the 
   assert.equal(ruleFrom({ ...issue30.mistake, rule: 'zu_infinitive' }, 'de', 'en').name, 'Infinitive with zu');
   const own = ruleFrom({ original: 'a', corrected: 'b', category: 'case', rule: 'nach_hause', ruleName: 'nach Hause', rulePattern: 'nach Hause for going home' }, 'de');
   assert.deepEqual([own.name, own.pattern], ['nach Hause', 'nach Hause for going home']);
-  assert.equal(ruleText({ ...issue31.item.rule }, 'de').name, 'ß oder ss', 'shown in its own wording, whatever was stored');
-  assert.equal(rulePrompt(issue31.item.rule).statement, 'ß after a long vowel or diphthong, ss after a short vowel');
+  assert.equal(ruleText({ ...issue31.item.rule }, 'de').name, 'Komposita zusammen', 'shown in its own wording, whatever was stored');
+  assert.equal(rulePrompt(issue31.item.rule).statement, 'Compound nouns are written as one word');
 });
 
 test('a gap must give back its full sentence; the hint goes when it is filled in', () => {
@@ -268,7 +270,8 @@ test('explanations that bring up the learner\'s own mistake or a missing trigger
   assert.equal(tidy('gap', leaky, mistakeWords([issue31.mistake])).explanation, '');
   assert.equal(tidy('pair', { correct: 'Er ist gekommen.', wrong: 'Er hat gekommen.', trigger: 'gegangen', explanation: 'x' }).explanation, '');
   assert.equal(tidy('gap', { ...gap, sentence: 'Wir sind ___ (gegangen).', answer: 'gegangen' }).sentence, 'Wir sind ___.', 'a hint that is the answer goes');
-  const it = addSet(newRuleItem(rule(), NOW), { ...set(), gap: leaky }, { learnerWords: mistakeWords([issue31.mistake]) });
+  const leakyArticle = { ...leaky, sentence: 'Das Projekt stellt uns vor ___ große Herausforderung.', answer: 'eine' };
+  const it = addSet(newRuleItem(rule(), NOW), { ...set(), gap: leakyArticle }, { learnerWords: mistakeWords([issue31.mistake]) });
   assert.equal(it.pool.gap[0].explanation, '', 'cleared when it joins the pool');
   assert.deepEqual(kindsToAsk(it), ['gap', 'transform']);
   assert.deepEqual(kindsToAsk({ ...it, rung: 5 }), ['produce']);
@@ -277,8 +280,8 @@ test('explanations that bring up the learner\'s own mistake or a missing trigger
 test('older rules: the two misfiled ones are suspect, a sound one is not', () => {
   assert.ok(suspectRule(issue31.item, [issue31.mistake]));
   assert.ok(suspectRule(issue30.item, [issue30.mistake]));
-  const good = newRuleItem(ruleFrom({ original: 'Strasse', corrected: 'Straße', category: 'spelling', rule: 'ss_eszett' }, 'de'), NOW);
-  const ms = [{ original: 'Strasse', corrected: 'Straße' }, { original: 'Fuss', corrected: 'Fuß' }];
+  const good = newRuleItem(ruleFrom({ original: 'Haus Tür', corrected: 'Haustür', category: 'spelling', rule: 'compound_one_word' }, 'de'), NOW);
+  const ms = [{ original: 'Haus Tür', corrected: 'Haustür' }, { original: 'Bahn Hof', corrected: 'Bahnhof' }];
   assert.ok(!suspectRule(good, ms));
   assert.ok(suspectRule(good, ms.slice(0, 1)), 'a single mistake is looked at again');
 });
@@ -289,7 +292,7 @@ test('re-filing: mistakes move to the rule named now, empty rules go', () => {
     { id: 'm31', r: { rulePattern: 'typo', rule: '', category: 'spelling' } },
     { id: 'm30', r: { rulePattern: 'zu + infinitive after hoffen', rule: 'zu_infinitive', category: 'connectors' } },
   ], NOW);
-  assert.equal(store.reviewItemFor('rule', 'spelling/ss_eszett'), undefined);
+  assert.equal(store.reviewItemFor('rule', 'spelling/compound_one_word'), undefined);
   assert.equal(store.reviewItemFor('rule', 'connectors/damit_um_zu'), undefined);
   const moved = store.reviewItemFor('rule', 'verb_complex/zu_infinitive');
   assert.equal(moved.rung, START_RUNG, 'starts fresh');
@@ -309,4 +312,54 @@ test('exercises made before the checks are not served', () => {
   const it = { ...newRuleItem(rule(), NOW), pool: { gap: [{ sentence: 'Sie hofft ___ (bestehen) ihre Prüfung.', answer: 'zu bestehen' }] } };
   assert.equal(nextExercise(it), null);
   assert.deepEqual(topUpList([it], { now: NOW }).map((r) => r.id), [it.id]);
+});
+
+// ---- #36 to #40 ----
+
+test('#36: a German gap may not hide a noun the learner has to guess', () => {
+  const analyse = { full: 'Für dieses komplexe Problem müssen wir eine gründliche Analyse erstellen.',
+    sentence: 'Für dieses komplexe Problem müssen wir eine gründliche ___ erstellen.', answer: 'Analyse' };
+  assert.ok(!valid('gap', analyse, 'de'));
+  assert.ok(valid('gap', analyse, 'fr'), 'only checked for German');
+  assert.ok(valid('gap', { ...analyse, sentence: 'Für dieses komplexe Problem müssen wir eine gründliche ___ (Analyse) erstellen.', answer: 'Analysen',
+    full: 'Für dieses komplexe Problem müssen wir eine gründliche Analysen erstellen.' }, 'de'), 'named in brackets');
+  assert.ok(valid('gap', { full: 'Wir brauchen eine gründliche Analyse.', sentence: 'Wir brauchen ___ gründliche Analyse.', answer: 'eine' }, 'de'));
+  assert.ok(valid('gap', { full: 'Diese Analyse ist gut.', sentence: '___ Analyse ist gut.', answer: 'Diese' }, 'de'), 'the first word is capitalised anyway');
+  const item = { ...newRuleItem(rule({ category: 'gender', key: 'gender_by_suffix' }), NOW), pool: { gap: [{ ...analyse, explanation: 'x' }] } };
+  assert.deepEqual(poolOf(item).gap, [], 'the saved one from the report is no longer served');
+});
+
+test('#39: German without ß or umlauts counts as the same spelling', () => {
+  assert.equal(compare('Massnahmen', 'Maßnahmen', 'de'), 'correct');
+  assert.equal(compare('Maedchen', 'Mädchen', 'de'), 'correct');
+  assert.equal(compare('UEBER', 'über', 'de'), 'almost');
+  assert.equal(compare('Massnahmen', 'Maßnahmen'), 'wrong', 'other languages keep their letters');
+  assert.equal(compare('haer', 'här', 'sv'), 'wrong');
+  assert.equal(compareExact('Die Strasse ist lang.', 'Die Straße ist lang.', 'de'), 'correct');
+  const word = { lang: 'de', lemma: 'Maßnahme', article: 'die', pos: 'noun', plural: 'Maßnahmen' };
+  const r = checkRecall(word, 'die Massnahme', 'Massnahmen');
+  assert.equal(r.grade, 'correct');
+  assert.equal(checkRecall(word, 'der Massnahme', 'Massnahmen').plural, 'correct', 'the plural is right even when the article is not');
+  assert.deepEqual(wordDiff('der Massnahme', 'die Maßnahme', 'de').filter((p) => p.type !== 'same').map((p) => p.text.trim()), ['der', 'die']);
+  assert.deepEqual(fixPairs('wrong', [['Massnahmen', 'Maßnahmen']], 'de'), []);
+});
+
+test('#39: the ß/ss rule and spelling-only mistakes go once', () => {
+  const data = {
+    version: 2,
+    mistakes: [
+      { id: 'a', lang: 'de', original: 'Strasse', corrected: 'Straße', category: 'spelling', rule: 'ss_eszett' },
+      { id: 'b', lang: 'de', original: 'Strase', corrected: 'Straße', category: 'spelling', rule: 'ss_eszett' },
+      { id: 'c', lang: 'de', original: 'der', corrected: 'die', category: 'gender', rule: '' },
+    ],
+    reviewItems: [newRuleItem(rule({ category: 'spelling', key: 'ss_eszett' }), NOW), newRuleItem(rule(), NOW)],
+  };
+  const touched = [];
+  assert.ok(migrateData(data, (r) => touched.push(r.id)));
+  assert.deepEqual(data.mistakes.map((m) => [m.id, m.rule]), [['b', ''], ['c', '']]);
+  assert.deepEqual(touched, ['b']);
+  assert.ok(!data.reviewItems.some((r) => r.rule?.key === 'ss_eszett'));
+  assert.equal(data.reviewItems.length, 1);
+  assert.equal(data.version, DATA_VERSION);
+  assert.ok(!migrateData(data, () => {}), 'only once');
 });

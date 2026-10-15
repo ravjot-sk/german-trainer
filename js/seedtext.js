@@ -64,7 +64,6 @@ export const SEED_TEXT = {
     nominalised_verbs_adjectives: ['Nominalised words', 'Nominalisierte Wörter', 'Verben und Adjektive als Nomen schreibt man groß (das Warten, etwas Neues).'],
     paar_bisschen_lowercase: ['ein paar, ein bisschen', 'ein paar, ein bisschen', 'ein paar (einige) und ein bisschen schreibt man klein; das Paar (zwei) ist ein Nomen.'],
     sie_formal_capital: ['Polite Sie', 'Höfliches Sie', 'Das höfliche Sie, Ihnen, Ihr schreibt man groß.'],
-    ss_eszett: ['ß or ss', 'ß oder ss', 'Nach langem Vokal oder Doppellaut steht ß, nach kurzem Vokal ss.'],
     compound_one_word: ['Compounds as one word', 'Komposita zusammen', 'Zusammengesetzte Nomen schreibt man in einem Wort.'],
     comma_subordinate_clause: ['Comma before subordinate clauses', 'Komma beim Nebensatz', 'Ein Komma trennt jeden Nebensatz vom Hauptsatz.'],
     comma_infinitive_group: ['Comma before infinitive groups', 'Komma bei Infinitivgruppen', 'Komma vor einer Infinitivgruppe mit um, ohne, statt oder wenn sie von einem Nomen abhängt.'],

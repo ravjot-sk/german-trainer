@@ -13,7 +13,7 @@ import { dayStart, DAY } from './srs.js';
 import { catKey, parseCatKey, recLang } from './languages.js';
 import { hasRules, migrateCategory } from './categories.js';
 import { seedRule } from './ruleseeds.js';
-import { fillGap, diffSize } from './check.js';
+import { fillGap, diffSize, foldSpelling } from './check.js';
 
 // The mastery ladder: recognise, choose, transform, find, write.
 export const RUNGS = [null, 'pair', 'gap', 'transform', 'spot', 'produce'];
@@ -84,7 +84,7 @@ export function rulePrompt(rule) {
 }
 
 // Standard rules whose mistakes can be seen in the words themselves. A mistake filed under
-// one of them without that sign belongs elsewhere: "Herauseforderung" is no ß/ss mistake,
+// one of them without that sign belongs elsewhere: "Herauseforderung" is no compound noun,
 // and a sentence with neither damit nor um is no damit/um … zu mistake.
 const said = (m) => [m.original, m.corrected].filter(Boolean).join(' ');
 const around = (m) => [m.original, m.corrected, m.sentence, m.fullSentence, m.correctedSentence].filter(Boolean).join(' ');
@@ -95,7 +95,6 @@ const caseOnly = (m) => {
 };
 const EVIDENCE = {
   de: {
-    ss_eszett: (m) => { const o = String(m.original || ''), c = String(m.corrected || ''); return (/ss/i.test(o) && /ß/.test(c)) || (/ß/.test(o) && /ss/i.test(c)); },
     compound_one_word: (m) => { const j = (s) => String(s || '').replace(/[\s-]+/g, '').toLowerCase(); return m.original !== m.corrected && j(m.original) === j(m.corrected); },
     nouns_capitalised: caseOnly,
     nominalised_verbs_adjectives: caseOnly,
@@ -183,7 +182,8 @@ export function status(item) {
 // are left out, so the rule gets new ones.
 export function poolOf(item) {
   const p = item.pool && typeof item.pool === 'object' ? item.pool : {};
-  return Object.fromEntries(KINDS.map((k) => [k, Array.isArray(p[k]) ? p[k].filter((ex) => valid(k, ex)) : []]));
+  const lang = item.rule?.lang || '';
+  return Object.fromEntries(KINDS.map((k) => [k, Array.isArray(p[k]) ? p[k].filter((ex) => valid(k, ex, lang)) : []]));
 }
 
 // The exercise for the rule's current rung, if one is ready.
@@ -201,7 +201,9 @@ export function addSet(item, set, { learnerWords = [] } = {}) {
   const pool = poolOf(item);
   for (const k of KINDS) {
     const ex = set?.[k];
-    if (valid(k, ex)) pool[k] = [...pool[k], tidy(k, ex, learnerWords)].slice(-POOL_MAX);
+    // Checked after tidy, which may take away a hint the check needs.
+    const tidied = ex && typeof ex === 'object' ? tidy(k, ex, learnerWords) : ex;
+    if (valid(k, tidied, item.rule?.lang || '')) pool[k] = [...pool[k], tidied].slice(-POOL_MAX);
   }
   return { ...item, pool };
 }
@@ -246,15 +248,32 @@ export function useExercise(item, kind, ex) {
 // Checks a generated exercise before it is used. A gap must give back its full sentence when
 // the answer is filled in (#30: "Sie hofft ___ (bestehen) ihre Prüfung" had no right answer),
 // and a pair or a text to correct may differ only where the rule's mistakes are.
+// A noun in a German gap's answer that the learner can't know: not named in brackets after
+// the gap, and not the sentence's first word (which is capitalised anyway). "eine gründliche
+// ___ erstellen" with answer "Analyse" tests guessing the word, not the rule (#36).
+export function hiddenNoun(ex) {
+  const hint = (/___\s*[(（]([^)）]*)[)）]/.exec(ex.sentence)?.[1] || '').toLowerCase();
+  const first = String(ex.full || '').trim().startsWith(String(ex.answer).trim());
+  const words = String(ex.answer).trim().split(/\s+/);
+  return words.some((w, i) => {
+    const bare = w.replace(/[^\p{L}-]/gu, '');
+    if (!/^\p{Lu}/u.test(bare) || bare.length < 4 || (i === 0 && first)) return false;
+    // Named if the hint has the word's start (base form "Analyse" for "Analysen").
+    return !hint.includes(bare.toLowerCase().slice(0, 4));
+  });
+}
+
 const sameText = (a, b) => {
   const n = (s) => String(s || '').replace(/\s+/g, ' ').replace(/\s+([,.!?;:。、！？])/g, '$1').trim();
   return n(a) === n(b);
 };
-export function valid(kind, ex) {
+// lang: the rule's language. In German a gap may not hide a noun without naming it (#36).
+export function valid(kind, ex, lang = '') {
   if (!ex || typeof ex !== 'object') return false;
   switch (kind) {
     case 'pair': return !!(ex.correct && ex.wrong && ex.correct.trim() !== ex.wrong.trim()) && diffSize(ex.wrong, ex.correct).hunks === 1;
-    case 'gap': return !!(ex.sentence && ex.sentence.split('___').length === 2 && ex.answer && ex.full) && sameText(fillGap(ex.sentence, ex.answer), ex.full);
+    case 'gap': return !!(ex.sentence && ex.sentence.split('___').length === 2 && ex.answer && ex.full) && sameText(fillGap(ex.sentence, ex.answer), ex.full)
+      && (lang !== 'de' || !hiddenNoun(ex));
     case 'transform': return !!(ex.instruction && Array.isArray(ex.items) && ex.items.length && ex.items.every((x) => x.prompt && x.answer && !sameText(x.prompt, x.answer)));
     case 'spot': {
       if (!(ex.text && ex.corrected && ex.text.trim() !== ex.corrected.trim())) return false;
@@ -275,15 +294,45 @@ export function topUpList(items, { now, days = 3, skip = new Set(), max = 6 } = 
 }
 
 // ---- moving older data onto the new categories ----
-export const DATA_VERSION = 2;
+export const DATA_VERSION = 3;
 
-// Renames retired categories on mistakes and category review items, and removes the old
-// "fix your sentence" review items, which rules replace. Mistakes from free-writing drills
-// used to be hidden from the profile as 'drill'; they were real writing, so they now count.
-// Mutates data; returns true if anything changed. touch(rec) marks a record as edited so
-// sync uploads it.
+// Standard rules that were dropped. ß/ss: German typed with ss for ß (or ae for ä) counts as
+// right (#39), so it can't be practised as a rule.
+export const RETIRED_RULES = { de: ['ss_eszett'] };
+const retired = (r) => isRule(r) && (RETIRED_RULES[r.rule?.lang] || []).includes(r.rule?.key);
+const onlySpelling = (m) => recLang(m) === 'de' && m.original && m.original !== m.corrected
+  && foldSpelling(m.original, 'de') === foldSpelling(m.corrected, 'de');
+
+// Brings saved data up to DATA_VERSION, one version at a time. Mutates data; returns true if
+// anything changed. touch(rec) marks a record as edited so sync uploads it; a record removed
+// here is deleted on the other devices too.
 export function migrateData(data, touch) {
-  if ((data.version || 1) >= DATA_VERSION) return false;
+  const version = data.version || 1;
+  if (version >= DATA_VERSION) return false;
+  if (version < 2) migrateV2(data, touch);
+  if (version < 3) migrateV3(data, touch);
+  data.version = DATA_VERSION;
+  return true;
+}
+
+// Version 3 (#39): retired rules go, with the mistakes that were only ss for ß or ae for ä;
+// other mistakes filed under a retired rule keep their place without it.
+function migrateV3(data, touch) {
+  data.reviewItems = data.reviewItems.filter((r) => !retired(r));
+  data.mistakes = data.mistakes.filter((m) => !onlySpelling(m));
+  for (const m of data.mistakes) {
+    if (m.rule && (RETIRED_RULES[recLang(m)] || []).includes(m.rule)) {
+      m.rule = '';
+      touch(m);
+    }
+  }
+}
+
+// Version 2: renames retired categories on mistakes and category review items, and removes
+// the old "fix your sentence" review items, which rules replace. Mistakes from free-writing
+// drills used to be hidden from the profile as 'drill'; they were real writing, so they now
+// count.
+function migrateV2(data, touch) {
   for (const m of data.mistakes) {
     const c = migrateCategory(recLang(m), m.category);
     const changed = c !== m.category || m.source === 'drill';
@@ -308,8 +357,6 @@ export function migrateData(data, touch) {
     r.id = `category:${to}`;
     touch(r);
   }
-  data.version = DATA_VERSION;
-  return true;
 }
 
 // The rules a prompt should know about, so Gemini reuses a key instead of inventing a second

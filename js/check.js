@@ -27,10 +27,17 @@ export function normalize(s) {
     .trim();
 }
 
-// Returns 'correct', 'almost' (differs only in capitalisation) or 'wrong'.
-export function compare(answer, expected) {
-  let a = normalize(answer);
-  let e = normalize(expected);
+// German written without ß or umlauts (ss, ae, oe, ue, as on a Swiss or foreign keyboard)
+// counts as the same spelling (#39). Other languages are left as they are: ä and ae are
+// different letters in Swedish or Finnish.
+const FOLD = { ß: 'ss', ẞ: 'SS', ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue' };
+export const foldSpelling = (s, lang) => (lang === 'de' ? String(s ?? '').normalize('NFC').replace(/[ßẞäöüÄÖÜ]/g, (ch) => FOLD[ch]) : String(s ?? ''));
+
+// Returns 'correct', 'almost' (differs only in capitalisation) or 'wrong'. lang: the
+// language of the answer, for foldSpelling.
+export function compare(answer, expected, lang = '') {
+  let a = foldSpelling(normalize(answer), lang);
+  let e = foldSpelling(normalize(expected), lang);
   if (isUnspaced(e)) {
     a = a.replace(/\s+/g, '');
     e = e.replace(/\s+/g, '');
@@ -42,10 +49,10 @@ export function compare(answer, expected) {
 }
 
 // Best result across several acceptable answers.
-export function compareAny(answer, expectedList) {
+export function compareAny(answer, expectedList, lang = '') {
   let best = 'wrong';
   for (const e of expectedList.filter(Boolean)) {
-    const r = compare(answer, e);
+    const r = compare(answer, e, lang);
     if (r === 'correct') return r;
     if (r === 'almost') best = r;
   }
@@ -81,14 +88,14 @@ export function checkRecall(word, answer, pluralAnswer) {
     return { grade: main, main, plural: null, target, pluralTarget: '', byReading };
   }
   const target = word.pos === 'noun' && word.article ? `${word.article} ${lemma}` : lemma;
-  let main = compare(answer, target);
+  let main = compare(answer, target, 'de');
   if (main === 'wrong' && word.pos !== 'noun') {
     // Accept "sich erinnern" when the stored form is "erinnern" and vice versa.
-    main = compare(answer.replace(/^sich\s+/i, ''), target.replace(/^sich\s+/i, ''));
+    main = compare(answer.replace(/^sich\s+/i, ''), target.replace(/^sich\s+/i, ''), 'de');
   }
   let plural = null;
   if (needsPlural(word)) {
-    plural = compare(stripArticle(pluralAnswer), stripArticle(word.plural));
+    plural = compare(stripArticle(pluralAnswer), stripArticle(word.plural), 'de');
   }
   const parts = [main, plural].filter(Boolean);
   const grade = parts.includes('wrong') ? 'wrong' : parts.includes('almost') ? 'almost' : 'correct';
@@ -104,7 +111,7 @@ export function checkRecall(word, answer, pluralAnswer) {
 // Returns { grade, byReading, byForm }.
 export function checkGap(word, gap, answer) {
   const accepted = [gap.answer, ...(gap.acceptable || [])].filter(Boolean);
-  const grade = compareAny(answer, accepted);
+  const grade = compareAny(answer, accepted, recLang(word));
   if (grade !== 'wrong') return { grade, byReading: false, byForm: false };
   const kana = toHira(normalize(answer).replace(/\s+/g, ''));
   if (kana && accepted.some((a) => kanaForm(a, word) === kana)) return { grade: 'almost', byReading: true, byForm: false };
@@ -199,17 +206,20 @@ export function shuffled(parts, rnd = Math.random) {
 }
 
 // Word-level diff (LCS) returning [{type: 'same'|'del'|'add', text}]. Text without spaces
-// between words is diffed by character.
-export function wordDiff(a, b) {
+// between words is diffed by character. In German (lang 'de'), a word that differs only by
+// ss/ß or ae/ä (foldSpelling) counts as the same and keeps the learner's (a) spelling.
+export function wordDiff(a, b, lang = '') {
   const split = isUnspaced(`${a}${b}`) ? (s) => Array.from(s || '') : (s) => (s || '').split(/(\s+)/).filter((p) => p !== '');
   const x = split(a);
   const y = split(b);
+  const kx = x.map((p) => foldSpelling(p, lang));
+  const ky = y.map((p) => foldSpelling(p, lang));
   const n = x.length, m = y.length;
   if (n * m > 250000) return [{ type: 'add', text: b }];
   const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = x[i] === y[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      dp[i][j] = kx[i] === ky[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
   }
   const out = [];
@@ -219,7 +229,7 @@ export function wordDiff(a, b) {
   };
   let i = 0, j = 0;
   while (i < n && j < m) {
-    if (x[i] === y[j]) { push('same', x[i]); i++; j++; }
+    if (kx[i] === ky[j]) { push('same', x[i]); i++; j++; }
     else if (dp[i + 1][j] >= dp[i][j + 1]) { push('del', x[i]); i++; }
     else { push('add', y[j]); j++; }
   }
@@ -245,11 +255,11 @@ export function diffSize(a, b) {
 
 // For rules where case and punctuation are the point (capitalisation, commas, spelling):
 // only spacing and quote styles may differ.
-export function compareExact(answer, expected) {
-  const n = (s) => String(s || '').normalize('NFKC').replace(/[„“”«»]/g, '"').replace(/[‚‘’]/g, "'").replace(/\s+/g, ' ').trim();
+export function compareExact(answer, expected, lang = '') {
+  const n = (s) => foldSpelling(String(s || '').normalize('NFKC'), lang).replace(/[„“”«»]/g, '"').replace(/[‚‘’]/g, "'").replace(/\s+/g, ' ').trim();
   return n(answer) && n(answer) === n(expected) ? 'correct' : 'wrong';
 }
 
-export function compareAnyExact(answer, expectedList) {
-  return expectedList.filter(Boolean).some((e) => compareExact(answer, e) === 'correct') ? 'correct' : 'wrong';
+export function compareAnyExact(answer, expectedList, lang = '') {
+  return expectedList.filter(Boolean).some((e) => compareExact(answer, e, lang) === 'correct') ? 'correct' : 'wrong';
 }
