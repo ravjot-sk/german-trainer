@@ -26,8 +26,15 @@ export function nextDrillKind(last) {
 
 const latestReview = (list) => list.reduce((a, v) => (!a || v.reviewedAt >= a.reviewedAt ? v : a), null);
 
-// Picks the exercise for a word from how far along it is.
+// Picks the exercise for a word from how far along it is. A phrase is never asked for from
+// its English meaning alone, which many phrases fit (#40): it is filled into one of its
+// sentences instead, while it has one.
 export function wordExercise(item, word, gemini) {
+  const kind = wordKind(item, word, gemini);
+  return kind === 'recall' && word.pos === 'phrase' && pickGap(word, item.reps || 0) ? 'gap' : kind;
+}
+
+function wordKind(item, word, gemini) {
   const hasGap = !!pickGap(word, item.reps || 0);
   const reps = item.reps || 0;
   if (reps === 0) return 'recall';

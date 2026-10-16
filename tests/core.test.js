@@ -77,6 +77,14 @@ test('word exercises progress from recall to gap fill to writing', () => {
   assert.ok(![2, 3, 4].some((r) => wordExercise(item({ reps: r }), w, false) === 'write'));
 });
 
+test('#40: a phrase is filled into a sentence instead of recalled from its meaning', () => {
+  const p = { lemma: 'auf eine Fährte geraten', pos: 'phrase', meaning: 'to get on a track',
+    gapPool: [{ sentence: 'Die Polizei ist auf eine Fährte ___.', answer: 'geraten', level: 1 }] };
+  assert.ok([0, 1, 2, 3, 4].every((r) => wordExercise(item({ reps: r }), p, true) !== 'recall'));
+  assert.equal(wordExercise(item({ reps: 0 }), p, true), 'gap');
+  assert.equal(wordExercise(item({ reps: 0 }), { ...p, gapPool: [] }, true), 'recall', 'no sentence yet: recall');
+});
+
 test('daily session caps new words and needs Gemini for drills', () => {
   const words = Array.from({ length: 20 }, (_, i) => ({ id: `w${i}`, german: `Wort${i}`, meaning: 'm', pos: 'other' }));
   const items = words.map((w) => item({ itemId: w.id }));

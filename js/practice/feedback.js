@@ -8,6 +8,7 @@ import { recLang, lemmaOf, wordTitle } from '../languages.js';
 import { icon } from '../icons.js';
 import { poolOf } from '../gappool.js';
 import { html } from '../ui/dom.js';
+import { code } from '../ui/context.js';
 import { tl, jt, furiShown, toneLabel, diffHtml, correctionHtml, naturalBlock } from '../ui/text.js';
 import { fixPairs } from '../answer.js';
 
@@ -15,10 +16,10 @@ export const para = (x) => (x ? html`<p>${x}</p>` : '');
 
 // A wrong answer the app checked itself, corrected: what the learner wrote with the wrong
 // words crossed out and the right ones marked. parts: [answer, right answer(s)].
-export function fixHtml(grade, parts, c) {
-  const pairs = fixPairs(grade, parts);
+export function fixHtml(grade, parts, c = code()) {
+  const pairs = fixPairs(grade, parts, c);
   return pairs.length ? html`<div class="your-fix"><div class="muted small">${t('session.yourFix')}</div>
-    ${pairs.map(([a, e]) => html`<div class="sentence" ${tl(c)}>${diffHtml(a, e)}</div>`)}</div>` : '';
+    ${pairs.map(([a, e]) => html`<div class="sentence" ${tl(c)}>${diffHtml(a, e, c)}</div>`)}</div>` : '';
 }
 
 // A verdict, the learner's answer corrected where it was wrong, then the answer (reveal).
@@ -41,23 +42,27 @@ export const writeHtml = (a1, r, mistakes) => html`${para(r.feedback)}${correcti
   ${naturalBlock(r.natural, r.naturalReason)}`;
 
 // A transformation with several sentences: each marked right or wrong. A right sentence shows
-// the model answer; a wrong one shows the learner's answer corrected.
-export function transformHtml(e, grades, answers, rights, notes) {
+// the model answer; a wrong one shows the learner's answer corrected: by Gemini when it judged
+// the sentence (fixes), so the correction matches its note (#38), else against the closest
+// stored answer.
+export function transformHtml(e, grades, answers, rights, notes, fixes = []) {
+  const c = code();
   // A right answer that isn't the model (Gemini accepted it) shows as the learner wrote it.
   const line = (x, i) => {
-    const [fix] = fixPairs(grades[i], [[answers[i], rights[i]]]);
-    if (fix) return diffHtml(...fix);
-    return jt(grades[i] === 'correct' && answers[i]?.trim() && compareAny(answers[i], rights[i]) !== 'correct' ? answers[i].trim() : x.answer, e);
+    const [fix] = fixPairs(grades[i], [[answers[i], fixes[i] || rights[i]]], c);
+    if (fix) return diffHtml(...fix, c);
+    return jt(grades[i] === 'correct' && answers[i]?.trim() && compareAny(answers[i], rights[i], c) !== 'correct' ? answers[i].trim() : x.answer, e);
   };
   return html`<div class="reveal">${e.items.map((x, i) => html`<div class="tf-result ${grades[i] === 'correct' ? 'ok' : 'bad'}">
     ${grades[i] === 'correct' ? icon('check', 16) : icon('close', 16)} <span ${tl()}>${line(x, i)}</span></div>${why(notes[i])}`)}${why(e.explanation)}</div>`;
 }
 
 // "Correct the errors": the learner's answer corrected replaces the corrected exercise text,
-// which would otherwise look like a second correction of their answer.
+// which would otherwise look like a second correction of their answer. When Gemini judged it,
+// its own correction of the answer is used (fixed), so nothing right is crossed out (#37).
 // After a second check that accepts the learner's text, that text is what shows.
-export function spotHtml(verdict, grade, a1, task, rechecked = false) {
-  const fix = fixHtml(grade, [[a1, task.ex.corrected]]);
+export function spotHtml(verdict, grade, a1, task, rechecked = false, fixed = '') {
+  const fix = fixHtml(grade, [[a1, fixed || task.ex.corrected]]);
   if (fix) return html`${para(verdict)}${fix}${why(task.ex.explanation)}`;
   if (rechecked && grade === 'correct' && a1.trim() !== task.ex.corrected.trim()) return html`${para(verdict)}${ownReveal(a1, '', task.ex.explanation, task.ex)}`;
   return html`${para(verdict)}${ruleReveal(task)}`;

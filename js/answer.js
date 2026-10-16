@@ -2,7 +2,7 @@
 // toward the exercise itself, and what is saved and requeued afterwards. Pure functions so
 // they can be unit-tested in Node.
 import { schedule, schedulePractice } from './srs.js';
-import { compareAny, compareAnyExact, wordDiff } from './check.js';
+import { compareAny, compareAnyExact, wordDiff, foldSpelling } from './check.js';
 import { afterAnswer, useExercise, ruleItemId } from './rules.js';
 
 // ---- grading rule exercises ----
@@ -10,7 +10,7 @@ import { afterAnswer, useExercise, ruleItemId } from './rules.js';
 export const EXACT_CATEGORIES = ['capitalisation', 'punctuation', 'spelling'];
 export const isExact = (rule) => EXACT_CATEGORIES.includes(rule.category);
 
-export const ruleCompare = (rule, answer, list) => (isExact(rule) ? compareAnyExact(answer, list) : compareAny(answer, list));
+export const ruleCompare = (rule, answer, list) => (isExact(rule) ? compareAnyExact(answer, list, rule.lang) : compareAny(answer, list, rule.lang));
 
 // A transformation set is right when every item is, almost when none is wrong.
 export const transformGrade = (grades) =>
@@ -35,12 +35,13 @@ export function closestAnswer(answer, list) {
 
 // What to correct in a checked answer: [answer, right answer] for each part the learner wrote
 // that isn't exactly a right answer. parts: [answer, right answer or list of right answers].
-export function fixPairs(grade, parts) {
+// lang: in German, ss for ß and ae for ä are not something to correct (foldSpelling).
+export function fixPairs(grade, parts, lang = '') {
   if (grade === 'correct') return [];
   return parts.map(([answer, expected]) => {
     const a = (answer || '').trim();
     const e = Array.isArray(expected) ? closestAnswer(a, expected) : String(expected || '').trim();
-    return a && e && a !== e ? [a, e] : null;
+    return a && e && foldSpelling(a, lang) !== foldSpelling(e, lang) ? [a, e] : null;
   }).filter(Boolean);
 }
 

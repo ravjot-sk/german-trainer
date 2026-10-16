@@ -51,6 +51,7 @@ export default {
   'session.almost': 'Almost: watch the spelling.',
   'session.almostReading': 'Almost: right reading, but this is how it is written.',
   'session.almostForm': 'Almost: right word, but this sentence uses this form.',
+  'session.almostMeaning': 'Almost: right meaning, but the word asked for is this one.',
   'session.wrong': 'Not yet.',
   'session.answer': 'Answer',
   'session.yourFix': 'Your answer, corrected',

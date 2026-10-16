@@ -83,8 +83,9 @@ test('grading replies: register mistakes and matching tone hints are dropped', (
 test('verdicts from malformed replies become plain booleans and strings', () => {
   assert.deepEqual(grading.checkGap.read({}), { correct: false, feedback: '' });
   assert.deepEqual(grading.checkGap.read({ correct: 'yes', feedback: 3 }), { correct: true, feedback: '3' });
-  assert.deepEqual(grading.judgeAnswer.read({ correct: true, minor: true }), { correct: true, minor: false, feedback: '' });
-  assert.deepEqual(grading.judgeAnswer.read({ correct: false, minor: 1 }), { correct: false, minor: true, feedback: '' });
+  assert.deepEqual(grading.judgeAnswer.read({ correct: true, minor: true, sameMeaning: true }),
+    { correct: true, minor: false, sameMeaning: false, feedback: '', correctedText: '' });
+  assert.deepEqual(grading.judgeAnswer.read({ correct: false, minor: 1 }), { correct: false, minor: true, sameMeaning: false, feedback: '', correctedText: '' });
 });
 
 test('check again: the first verdict goes into the prompt and the temperature drops to 0', () => {
@@ -157,19 +158,53 @@ test('classifyMistakes: answers that come back out of order are not used', () =>
 });
 
 test('ruleExercises: no wrong sentences of the learner, only the kinds needed, a full sentence per gap', () => {
-  const std = { lang: 'de', category: 'spelling', key: 'ss_eszett', name: 'Rechtschreibung', statement: 'Wörter richtig schreiben.' };
+  const std = { lang: 'de', category: 'spelling', key: 'compound_one_word', name: 'Rechtschreibung', statement: 'Wörter richtig schreiben.' };
   const own = { lang: 'de', category: 'case', key: 'nach_hause', name: 'nach Hause', statement: 'Für den Heimweg sagt man nach Hause.', pattern: 'nach Hause for going home' };
   const ask = grammar.ruleExercises.ask(de, [
     { rule: std, kinds: ['gap', 'transform'], examples: [] },
     { rule: own, kinds: ['spot'], examples: ['Ich gehe nach Hause.'] },
   ]);
-  assert.match(ask.prompt, /1\. \[spelling\/ss_eszett\] ß after a long vowel or diphthong, ss after a short vowel \(A2\)/, 'the standard statement, not the stored one');
+  assert.match(ask.prompt, /1\. \[spelling\/compound_one_word\] Compound nouns are written as one word \(A2\)/, 'the standard statement, not the stored one');
   assert.doesNotMatch(ask.prompt, /Rechtschreibung|Wörter richtig/);
   assert.match(ask.prompt, /Pattern: nach Hause for going home\n {3}Correct example: "Ich gehe nach Hause\."/);
   assert.match(ask.prompt, /NOT "Sie hofft ___ \(bestehen\) ihre Prüfung\."/);
+  assert.match(ask.prompt, /never a word the learner would have to guess/, '#36');
+  assert.match(ask.prompt, /The instruction says exactly what to change/, '#38');
   assert.match(ask.prompt, /at B1 level/, 'explanations one level simpler');
   assert.equal(ask.temperature, 0.6);
   const sets = ask.schema.properties.sets.items;
   assert.deepEqual(Object.keys(sets.properties), ['gap', 'transform', 'spot']);
   assert.deepEqual(sets.properties.gap.propertyOrdering.slice(0, 3), ['full', 'answer', 'sentence']);
+});
+
+test('#37: the grader corrects first and decides last', () => {
+  const ask = grading.gradeAnswer.ask(de, { instruction: 'i', prompt: 'p', model: 'm', answer: 'a', category: 'verb_complex' });
+  const order = ask.schema.propertyOrdering;
+  assert.ok(order.indexOf('correctedText') < order.indexOf('correct'));
+  assert.equal(order[order.length - 1], 'correct');
+  assert.match(ask.prompt, /a part the learner left as it was is not a mistake/);
+});
+
+test('#40: recall asks whether another word means the same; #38: a correction comes back', () => {
+  const plain = grading.judgeAnswer.ask(de, { instruction: 'i', expected: 'e', answer: 'a' });
+  assert.ok(!('sameMeaning' in plain.schema.properties));
+  assert.equal(plain.schema.propertyOrdering[0], 'correctedText');
+  const recall = grading.judgeAnswer.ask(de, { instruction: 'i', expected: 'auf eine Fährte geraten', answer: 'auf dem falschen Weg', meaning: true });
+  assert.ok('sameMeaning' in recall.schema.properties);
+  assert.match(recall.prompt, /sameMeaning is true when it is a different German word or phrase/);
+  assert.deepEqual(grading.judgeAnswer.read({ correct: false, sameMeaning: true, correctedText: 'x' }),
+    { correct: false, minor: false, sameMeaning: true, feedback: '', correctedText: 'x' });
+});
+
+test('#39: ss for ß and ae for ä are never mistakes in German', () => {
+  assert.match(grading.judgeAnswer.ask(de, { instruction: 'i', expected: 'e', answer: 'a' }).prompt, /Writing ss for ß/);
+  assert.doesNotMatch(grading.judgeAnswer.ask(ja, { instruction: 'i', expected: 'e', answer: 'a' }).prompt, /Writing ss for ß/);
+  assert.match(sentences.correctText.ask(de, 'Die Strasse.').prompt, /- Writing ss for ß/);
+  const r = grading.gradeAnswer.read({ correct: false, mistakes: [
+    { original: 'Strasse', corrected: 'Straße', category: 'spelling' },
+    { original: 'Maedchen', corrected: 'Mädchen', category: 'spelling' },
+    { original: 'der', corrected: 'die', category: 'gender' },
+  ] }, de);
+  assert.deepEqual(r.mistakes.map((m) => m.original), ['der']);
+  assert.equal(grading.gradeAnswer.read({ mistakes: [{ original: 'Strasse', corrected: 'Straße' }] }, ja).mistakes.length, 1, 'other languages keep them');
 });

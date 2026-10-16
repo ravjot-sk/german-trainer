@@ -42,8 +42,9 @@ function nearDay(ts, past) {
 export const fmtDate = (ts) => nearDay(ts, false);
 export const fmtPast = (ts) => nearDay(ts, true);
 
-export function diffHtml(a, b) {
-  return html`${wordDiff(a, b).map((p) =>
+// c: the language of the texts. In German, ss for ß is not shown as a change (#39).
+export function diffHtml(a, b, c = code()) {
+  return html`${wordDiff(a, b, c).map((p) =>
     p.type === 'same' ? p.text : p.type === 'del' ? html`<del>${p.text}</del>` : html`<ins>${p.text}</ins>`
   )}`;
 }

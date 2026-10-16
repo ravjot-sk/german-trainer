@@ -5,6 +5,7 @@
 import { categoriesFor, categoryGuide, NO_RULES } from '../categories.js';
 import { seedGuide } from '../ruleseeds.js';
 import { parse as parseFurigana } from '../furigana.js';
+import { foldSpelling } from '../check.js';
 
 // propertyOrdering makes Gemini write the fields in the order listed. Without it the REST API
 // writes them alphabetically, so a mistake's category came before its sentence and its rule,
@@ -131,7 +132,7 @@ const RULE_EXAMPLES = {
   de: `Examples:
 - "Herauseforderung" → "Herausforderung": rulePattern "typo", rule "".
 - "schon" → "schön" (missing umlaut): rulePattern "typo", rule "".
-- "Strasse" → "Straße": rulePattern "ß after a long vowel", rule "ss_eszett".
+- "Strasse" for "Straße", "Maedchen" for "Mädchen": correct spelling here, not a mistake at all.
 - "Sie hofft die Prüfung bestehen" → "Sie hofft, die Prüfung zu bestehen": rulePattern "zu + infinitive after hoffen", rule "zu_infinitive" (not damit_um_zu: there is no purpose and no damit or um).
 - "Ich gehe in die Stadt, damit ich einkaufe" → "…, um einzukaufen": rulePattern "um … zu when the subject is the same", rule "damit_um_zu".`,
   ja: `Examples:
@@ -186,9 +187,15 @@ export const correctionProps = (c) => ({
   mistakes: { type: 'ARRAY', items: mistakeSchema(c) },
 });
 
+// German typed without ß or umlauts is fine (#39): the app accepts it, so Gemini must not
+// call it a mistake either.
+export const spellingNote = (L) => (isGerman(L)
+  ? '\nWriting ss for ß, or ae, oe, ue for ä, ö, ü (as on a Swiss or foreign keyboard), is correct spelling here: never count it as a mistake or a slip, and keep the learner\'s spelling in any corrected text.'
+  : '');
+
 export function correctionRules(c) {
   return `Rules for mistakes:
-- One record per distinct mistake. Do not report stylistic preferences when the original is correct and natural.
+- One record per distinct mistake. Do not report stylistic preferences when the original is correct and natural.${spellingNote(c.L).replace('\n', '\n- ')}
 - Pick exactly one category from this fixed list:
 ${categoryGuide(categoriesFor(c.L))}
 - For word_choice mistakes, fill wordToLearn with the right word to learn (dictionary form). Leave wordToLearn out otherwise.
@@ -203,7 +210,13 @@ export function cleanWord(w) {
   return w;
 }
 
-export function cleanMistakes(r) {
+// c: the learner context. In German, a "mistake" that is only ss for ß or ae for ä is dropped
+// in case Gemini reports one anyway (#39).
+export function cleanMistakes(r, c = null) {
+  const de = c?.L && isGerman(c.L);
+  if (de && Array.isArray(r.mistakes)) {
+    r.mistakes = r.mistakes.filter((m) => !m.original || foldSpelling(m.original, 'de') !== foldSpelling(m.corrected, 'de'));
+  }
   for (const m of r.mistakes || []) if (m.wordToLearn) cleanWord(m.wordToLearn);
   return r;
 }

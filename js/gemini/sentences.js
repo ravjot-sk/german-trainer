@@ -13,8 +13,8 @@ ${correctionRules(c)}
 Separately, if the text would sound clearly more natural phrased differently, put that version in natural. That is a suggestion, not a mistake.${recheckNote(recheck)}`;
     return { prompt, schema: S({ ...correctionProps(c), ...naturalProps(c) }), temperature: recheckTemp(recheck) };
   },
-  read(reply) {
-    const r = cleanMistakes(reply);
+  read(reply, c) {
+    const r = cleanMistakes(reply, c);
     return cleanNatural(r, r.correctedText);
   },
 };
