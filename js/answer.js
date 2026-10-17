@@ -45,6 +45,19 @@ export function fixPairs(grade, parts, lang = '') {
   }).filter(Boolean);
 }
 
+// ---- "say this sentence" feedback ----
+// A tone tip that only repeats the "more natural" phrasing shown below it (#42): one of the
+// phrasings it quotes is part of that suggestion, or the other way round. Ignores case,
+// punctuation and spacing; quotes shorter than 8 letters ("Sie") don't count.
+const QUOTED = /[„“"«»‚‘「『]([^„“”"«»‚‘’「」『』]+)[“”"«»‘’」』]/g;
+const bare = (s, lang) => foldSpelling(String(s).toLowerCase().replace(/[\p{P}\s]+/gu, ''), lang);
+export function tipRepeatsNatural(hint, natural, lang = '') {
+  const n = bare(natural || '', lang);
+  if (!hint || !n) return false;
+  return [...String(hint).matchAll(QUOTED)].map((m) => bare(m[1], lang))
+    .some((q) => q.length >= 8 && (n.includes(q) || q.includes(n)));
+}
+
 // ---- after an answer ----
 // Anything written freely counts as new writing, whatever the exercise was about. Only a
 // mistake against the very rule or category being drilled stays out of the profile (it

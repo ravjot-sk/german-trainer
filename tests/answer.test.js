@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dayStart, addDays } from '../js/srs.js';
 import { newRuleItem } from '../js/rules.js';
-import { ruleCompare, transformGrade, strictGrade, ownMistake, followUpIds, answerRecord, requeueAt, closestAnswer, fixPairs } from '../js/answer.js';
+import { ruleCompare, transformGrade, strictGrade, ownMistake, followUpIds, answerRecord, requeueAt, closestAnswer, fixPairs, tipRepeatsNatural } from '../js/answer.js';
 
 const NOW = new Date('2026-10-06T10:00:00').getTime();
 const TODAY = dayStart(NOW);
@@ -126,4 +126,19 @@ test('corrections: a wrong answer is corrected towards the closest right answer'
 test('corrections: nothing to correct in a right, empty or matching answer', () => {
   assert.deepEqual(fixPairs('correct', [['Tische', 'Tisch']]), []);
   assert.deepEqual(fixPairs('wrong', [['', 'Tisch'], [' Tisch ', 'Tisch'], ['Stuhl', ['Tisch', 'Stuhl']]]), []);
+});
+
+test('tone tip: hidden only when it repeats the more natural phrasing (#42)', () => {
+  const natural = 'Es stellt mich vor eine große Herausforderung, Deutsch zu lernen.';
+  const hint = 'Im formalen Stil sagt man dazu: „Es stellt mich vor eine große Herausforderung.“ oder „Das ist für mich eine große Herausforderung.“';
+  assert.equal(tipRepeatsNatural(hint, natural, 'de'), true);
+  // The natural phrasing quoted in full, in English quotes, other case and ss for ß.
+  assert.equal(tipRepeatsNatural('Formal: "es stellt mich vor eine grosse Herausforderung, Deutsch zu lernen"', natural, 'de'), true);
+  // A different phrasing, a short quote, no quote, or nothing shown below: the tip stays.
+  assert.equal(tipRepeatsNatural('Förmlich sagt man: „Das Erlernen der deutschen Sprache ist anspruchsvoll.“', natural, 'de'), false);
+  assert.equal(tipRepeatsNatural('Nimm „Es“ am Anfang.', natural, 'de'), false);
+  assert.equal(tipRepeatsNatural('Im formalen Stil klingt das sachlicher.', natural, 'de'), false);
+  assert.equal(tipRepeatsNatural(hint, '', 'de'), false);
+  // Japanese corner brackets, no spaces.
+  assert.equal(tipRepeatsNatural('丁寧に言うと「ドイツ語の勉強は大変です」です。', 'ドイツ語の勉強は大変です。', 'ja'), true);
 });
