@@ -14,6 +14,7 @@ import { catKey, parseCatKey, recLang } from './languages.js';
 import { hasRules, migrateCategory } from './categories.js';
 import { seedRule } from './ruleseeds.js';
 import { fillGap, diffSize, foldSpelling } from './check.js';
+import { mentionsMark, targetFits } from './target.js';
 
 // The mastery ladder: recognise, choose, transform, find, write.
 export const RUNGS = [null, 'pair', 'gap', 'transform', 'spot', 'produce'];
@@ -274,7 +275,7 @@ export function valid(kind, ex, lang = '') {
     case 'pair': return !!(ex.correct && ex.wrong && ex.correct.trim() !== ex.wrong.trim()) && diffSize(ex.wrong, ex.correct).hunks === 1;
     case 'gap': return !!(ex.sentence && ex.sentence.split('___').length === 2 && ex.answer && ex.full) && sameText(fillGap(ex.sentence, ex.answer), ex.full)
       && (lang !== 'de' || !hiddenNoun(ex));
-    case 'transform': return !!(ex.instruction && Array.isArray(ex.items) && ex.items.length && ex.items.every((x) => x.prompt && x.answer && !sameText(x.prompt, x.answer)));
+    case 'transform': return !!(ex.instruction && Array.isArray(ex.items) && ex.items.length && ex.items.every((x) => x.prompt && x.answer && !sameText(x.prompt, x.answer) && targetFits(x)));
     case 'spot': {
       if (!(ex.text && ex.corrected && ex.text.trim() !== ex.corrected.trim())) return false;
       const d = diffSize(ex.text, ex.corrected);
@@ -294,7 +295,7 @@ export function topUpList(items, { now, days = 3, skip = new Set(), max = 6 } = 
 }
 
 // ---- moving older data onto the new categories ----
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 
 // Standard rules that were dropped. ß/ss: German typed with ss for ß (or ae for ä) counts as
 // right (#39), so it can't be practised as a rule.
@@ -311,8 +312,21 @@ export function migrateData(data, touch) {
   if (version >= DATA_VERSION) return false;
   if (version < 2) migrateV2(data, touch);
   if (version < 3) migrateV3(data, touch);
+  if (version < 4) migrateV4(data, touch);
   data.version = DATA_VERSION;
   return true;
+}
+
+// Version 4 (#44): a transformation whose instruction points at a mark ("das unterstrichene
+// Nomen") but doesn't say which word is meant can't be done; it goes, and a new one is made.
+export const unmarked = (ex) => mentionsMark(ex?.instruction) && (ex.items || []).some((x) => !String(x?.target || '').trim());
+function migrateV4(data, touch) {
+  for (const r of data.reviewItems) {
+    const list = isRule(r) && Array.isArray(r.pool?.transform) ? r.pool.transform : null;
+    if (!list?.some(unmarked)) continue;
+    r.pool = { ...r.pool, transform: list.filter((ex) => !unmarked(ex)) };
+    touch(r);
+  }
 }
 
 // Version 3 (#39): retired rules go, with the mistakes that were only ss for ß or ae for ä;

@@ -219,6 +219,7 @@ body.in-session main { min-height: 100vh; min-height: 100dvh; }
 .prompt.sentence { font-weight: 500; font-size: var(--fs-lead); }
 .instruction { font-weight: 600; }
 .gap { color: var(--accent); font-weight: 700; }
+.target { text-decoration: underline 2px var(--accent); text-underline-offset: 0.2em; }
 /* Answer buttons stay at the bottom of the screen, in thumb reach */
 .dock {
   position: sticky; bottom: 0; z-index: 2; margin: auto -16px 0; padding: 10px 16px calc(env(safe-area-inset-bottom) + 12px);

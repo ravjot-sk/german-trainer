@@ -8,6 +8,7 @@ import { html, $, waitBox } from '../ui/dom.js';
 import { gem, code } from '../ui/context.js';
 import { ruleCompare, transformGrade, strictGrade, isExact } from '../answer.js';
 import { rulePrompt } from '../rules.js';
+import { withTarget } from '../target.js';
 import * as show from './feedback.js';
 
 // The check under way: its Abbrechen stops every Gemini call it makes (see gradeTask).
@@ -144,7 +145,7 @@ async function gradeOnce(task, a1, a2, fb, recheck) {
       view = show.checked(verdict, grade, [[a1, [d.answer, ...(d.acceptableAnswers || [])]]], undefined, show.drillReveal(task));
     } else {
       grading(fb);
-      const r = await gemini.gradeAnswer({ instruction: d.instruction, prompt: d.prompt, model: d.answer, answer: a1, category: task.category, recheck }, call());
+      const r = await gemini.gradeAnswer({ instruction: withTarget(d.instruction, d.target), prompt: d.prompt, model: d.answer, answer: a1, category: task.category, recheck }, call());
       mistakes = r.mistakes || [];
       grade = r.correct ? 'correct' : 'wrong';
       verdict = r.feedback || '';
@@ -200,7 +201,7 @@ async function checkRule(task, a1, fb, recheck) {
         const first = task.itemVerdicts || [];
         await Promise.all(unsure.map(async (i) => {
           const x = e.items[i];
-          const o = await gemini.judgeAnswer({ instruction: `${e.instruction}${about}`, shown: x.prompt, expected: x.answer, answer: answers[i],
+          const o = await gemini.judgeAnswer({ instruction: `${withTarget(e.instruction, x.target)}${about}`, shown: x.prompt, expected: x.answer, answer: answers[i],
             recheck: { correct: first[i]?.grade === 'correct', feedback: first[i]?.note || '' } }, call());
           grades[i] = o.correct ? 'correct' : o.minor ? 'almost' : 'wrong';
           notes[i] = o.correct ? '' : o.feedback;
@@ -211,7 +212,7 @@ async function checkRule(task, a1, fb, recheck) {
         // (another word order, another correct form): Gemini gets a second look at it.
         await Promise.all(unsure.filter((i) => grades[i] === 'wrong').map(async (i) => {
           const x = e.items[i];
-          const r = await gemini.gradeAnswer({ instruction: e.instruction, prompt: x.prompt, model: x.answer, answer: answers[i], category: rule.category, rule }, call())
+          const r = await gemini.gradeAnswer({ instruction: withTarget(e.instruction, x.target), prompt: x.prompt, model: x.answer, answer: answers[i], category: rule.category, rule }, call())
             .catch((err) => { if (gemini.isCancel(err)) throw err; return null; });
           if (r?.correct) grades[i] = 'correct';
           else if (r) {

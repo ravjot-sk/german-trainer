@@ -8,6 +8,7 @@ import { wordDiff } from '../check.js';
 import { categoryLabel, migrateCategory } from '../categories.js';
 import { recLang, lemmaOf } from '../languages.js';
 import { segmentsFor, toHtml } from '../furigana.js';
+import { targetSpan, markRuns } from '../target.js';
 import { icon } from '../icons.js';
 import { html, raw, setHtml, replaceHtml, $$, toast } from './dom.js';
 import { code, cats, gem } from './context.js';
@@ -26,6 +27,16 @@ export function jt(text, rec, c = code()) {
 }
 // A sentence with a gap (___), shown with the gap marked.
 export const gapped = (text, rec, c) => raw(jt(text, rec, c).toString().replace('___', '<span class="gap">___</span>'));
+// A sentence with the words a transformation is about underlined (#44). Without a target, or
+// when it isn't in the sentence, the plain sentence.
+export function marked(text, target, rec, c = code()) {
+  const span = targetSpan(text, target);
+  if (!span) return jt(text, rec, c);
+  const furi = c === 'ja' && furiMode() !== 'off' ? segmentsFor(text, rec) : null;
+  const runs = markRuns(furi || [{ text }], span).map((r) => (r.mark ? `<u class="target">${toHtml(r.segs)}</u>` : toHtml(r.segs)));
+  // toHtml escapes the text and readings itself.
+  return furi ? html`<span class="furi">${raw(runs.join(''))}</span>` : raw(runs.join(''));
+}
 // The separate reading line is only needed when the word itself shows no furigana.
 export const furiShown = (w) => recLang(w) === 'ja' && furiMode() !== 'off' && !!segmentsFor(lemmaOf(w), w);
 export const readingLine = (w) => (w.reading && !furiShown(w) ? html`<div class="reading" ${tl(recLang(w))}>${w.reading}</div>` : '');
