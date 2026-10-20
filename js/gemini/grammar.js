@@ -4,7 +4,12 @@ import { categoriesFor, categoryGuide, categoryLabel } from '../categories.js';
 import { KINDS, rulePrompt } from '../rules.js';
 import { wordTitle } from '../languages.js';
 import { parse as parseFurigana } from '../furigana.js';
+import { targetSpan } from '../target.js';
 import { S, STR, hasFurigana, furiganaOf, collectFurigana, isGerman, levelText, explainLang, ruleProps, ruleRules } from './shared.js';
+
+// The words a transformation is about, which the app underlines (#44, see target.js).
+const TARGET = { type: 'STRING', description: 'The word or words to change, copied exactly from the sentence; empty if the change is about the whole sentence.' };
+const DRILL_TARGET = 'target: the word or words in prompt the change is about (a noun to put in the plural, a verb to replace …), copied exactly; the app underlines them. Empty when the change is about the whole sentence. Never refer to underlining, bold or other marks in the instruction without a target.';
 
 // Grammar drills for a weak category. kind: gapfill | transform | constraint.
 export const generateDrill = {
@@ -19,9 +24,9 @@ export const generateDrill = {
       : '';
     const kinds = {
       gapfill: `A single ${name} sentence with exactly one gap written as "___" that tests this category (e.g. ${isGerman(L) ? 'an ending, a preposition, an auxiliary' : 'an ending, a particle, a verb form'}). answer is the exact text for the gap; acceptableAnswers lists other fully correct fillings.`,
-      transform: isGerman(L)
-        ? 'A transformation task: give one or two German sentences in prompt and an instruction such as combining with "weil", moving to the Perfekt, or switching to indirect speech, so that the result tests this category. answer is the model result sentence.'
-        : `A transformation task: give one or two ${name} sentences in prompt and an instruction such as combining them, changing the tense, or changing the politeness level, so that the result tests this category. answer is the model result sentence.`,
+      transform: `${isGerman(L)
+        ? 'A transformation task: give one or two German sentences in prompt and an instruction such as combining with "weil", moving to the Perfekt, or switching to indirect speech, so that the result tests this category.'
+        : `A transformation task: give one or two ${name} sentences in prompt and an instruction such as combining them, changing the tense, or changing the politeness level, so that the result tests this category.`} answer is the model result sentence. ${DRILL_TARGET}`,
       constraint: `A free-writing task: the instruction asks the learner to write one sentence that must use a specific structure from this category${word ? ` and the word "${wordTitle(word)}"` : ''}. prompt may be empty. answer is one model sentence.`,
     };
     const prompt = `Create one ${name} grammar exercise for a learner at ${levelText(L)}.
@@ -32,6 +37,7 @@ Write the instruction in ${explainLang(c)}. Keep sentences natural and everyday 
     return { prompt, temperature: 0.9, schema: S({
       instruction: STR,
       prompt: { type: 'STRING', description: `${name} sentence(s) shown to the learner; for gapfill it contains ___.` },
+      ...(kind === 'transform' ? { target: TARGET } : {}),
       answer: STR,
       acceptableAnswers: { type: 'ARRAY', items: STR },
       explanation: { type: 'STRING', description: `Why the answer is right, in ${explainLang(c)}.` },
@@ -39,6 +45,8 @@ Write the instruction in ${explainLang(c)}. Keep sentences natural and everyday 
     }) };
   },
   read(r, { L }) {
+    // A target that isn't in the sentence would point the grader at the wrong word.
+    if (r.target && !targetSpan(r.prompt, r.target)) r.target = '';
     if (!hasFurigana(L)) return r;
     // A gapfill answer is shown in its sentence afterwards, so the filled sentence gets furigana too.
     const valid = (m, plain) => (m && plain && parseFurigana(m, plain) ? m : '');
@@ -59,7 +67,7 @@ Write the instruction in ${explainLang(c)}. Keep sentences natural and everyday 
 const KIND_TEXT = (name) => ({
   pair: `pair: correct follows the rule; wrong is the same ${name} sentence breaking it the way learners do. Nothing else differs.`,
   gap: `gap: write full first (a correct ${name} sentence), then pick answer (the words in full that the rule decides, one connected piece), then sentence: full with answer replaced by ___, everything else exactly as in full, commas included. The gap is where answer stands in full. The gap hides only what the rule decides (an article, an ending, an auxiliary, a preposition, a conjunction), never a word the learner would have to guess, such as a noun for a gender rule: the learner must be able to tell from the sentence which word goes there. If answer contains such a word (a noun, a verb, an adjective), its base form goes in brackets right after the gap (answer "ist gefallen": "___ (fallen)"). Otherwise a base form in brackets is optional.`,
-  transform: `transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (another tense, a subordinate clause, a noun phrase …) so that the result needs the rule. Different verbs or nouns in each item. The instruction says exactly what to change (e.g. "Setze den Satz ins Perfekt.", "Ersetze das Verb durch das Nomen in Klammern."). answer is the model result: the item with only that change, everything else kept as it was. acceptable lists other correct results that also make only that change.`,
+  transform: `transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (another tense, a subordinate clause, a noun phrase …) so that the result needs the rule. Different verbs or nouns in each item. The instruction says exactly what to change (e.g. "Setze den Satz ins Perfekt.", "Ersetze das Verb durch das Nomen in Klammern."). answer is the model result: the item with only that change, everything else kept as it was. acceptable lists other correct results that also make only that change. target: the word or words in the item the change is about (the noun to put in the plural, the verb to replace …), copied exactly from it; the app underlines them. Empty when the change is about the whole sentence (another tense). Never refer to underlining, bold or other marks in the instruction unless every item has a target.`,
   spot: `spot: write corrected first (2 or 3 correct ${name} sentences), then text: the same with 1 or 2 mistakes against this rule put in and nothing else changed.`,
   produce: 'produce: an instruction to write one new sentence that needs the rule, in a new situation (give the situation and, if useful, a word to use). model is one model sentence.',
 });
@@ -110,7 +118,7 @@ ${lines}`;
         sentence: { type: 'STRING', description: 'full with answer replaced by ___ (once). Everything else exactly as in full. Optionally the base form in brackets right after the gap.' },
         acceptable: alt, ...why,
       }),
-      transform: S({ instruction: STR, items: { type: 'ARRAY', items: S({ prompt: STR, answer: STR, acceptable: alt }) }, ...why }),
+      transform: S({ instruction: STR, items: { type: 'ARRAY', items: S({ prompt: STR, target: TARGET, answer: STR, acceptable: alt }) }, ...why }),
       spot: S({ corrected: STR, text: STR, ...why }),
       produce: S({ instruction: STR, model: STR, ...why }),
     };

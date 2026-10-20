@@ -10,7 +10,7 @@ import { practicePool, newInPool } from '../session.js';
 import { segmentsFor, cutChunks, toHtml } from '../furigana.js';
 import { html, raw, setHtml, main, titleEl, $, $$, errorBox, waitBox, inputAttrs } from '../ui/dom.js';
 import { gem, code, langName, cats, sessionArgs, ui } from '../ui/context.js';
-import { tl, furiMode, jt, gapped, readingLine, toneLabel, bindNatural } from '../ui/text.js';
+import { tl, furiMode, jt, gapped, marked, readingLine, toneLabel, bindNatural } from '../ui/text.js';
 import { go } from '../router.js';
 import { logTaskMistakes, topUpPractice, advance, nextRound, retryPrepare, waitTag, saveSession, clearSession, resumeSession } from './runtime.js';
 import { promote, isCancel } from '../gemini.js';
@@ -157,7 +157,7 @@ async function renderTask(task) {
     body = html`
       <div class="ex-label">${t('ex.drill', { c: categoryLabel(task.category, lang(), cats()) })}</div>
       <div class="instruction">${d.instruction}</div>
-      ${d.prompt ? html`<div class="prompt sentence" ${tl()}>${gapped(d.prompt, d)}</div>` : ''}
+      ${d.prompt ? html`<div class="prompt sentence" ${tl()}>${isGap ? gapped(d.prompt, d) : marked(d.prompt, d.target, d)}</div>` : ''}
       ${isGap ? html`<input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}">`
         : html`<textarea class="answer" id="a1" rows="3" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}"></textarea>`}`;
   }
@@ -244,7 +244,7 @@ function ruleBody(task) {
         <input class="answer" id="a1" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}">`;
     case 'transform':
       return html`${head}<div class="instruction">${e.instruction}</div>
-        ${e.items.map((x, i) => html`<div class="tf-item"><div class="sentence" ${tl()}>${jt(x.prompt, e)}</div>
+        ${e.items.map((x, i) => html`<div class="tf-item"><div class="sentence" ${tl()}>${marked(x.prompt, x.target, e)}</div>
           <input class="answer" id="${i ? `t${i}` : 'a1'}" ${inputAttrs} ${tl()} placeholder="${t('ex.yourAnswer')}"></div>`)}`;
     case 'spot':
       return html`${head}<div class="instruction">${t('ex.spot')}</div>
