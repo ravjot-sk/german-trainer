@@ -10,7 +10,7 @@ import { poolOf } from '../gappool.js';
 import { html } from '../ui/dom.js';
 import { code } from '../ui/context.js';
 import { tl, jt, furiShown, toneLabel, diffHtml, correctionHtml, naturalBlock } from '../ui/text.js';
-import { fixPairs } from '../answer.js';
+import { fixPairs, tipRepeatsNatural } from '../answer.js';
 
 export const para = (x) => (x ? html`<p>${x}</p>` : '');
 
@@ -31,11 +31,16 @@ export const graded = (a1, r, mistakes, reveal) => html`${para(r.feedback)}
   ${reveal}`;
 
 // "Say this sentence": a different tone is only a tip; a more natural phrasing shows when right.
-export const sayHtml = (w, a1, r, mistakes, grade) => html`${para(r.feedback)}
+// When right, a tip that only repeats that phrasing is left out (#42).
+export function sayHtml(w, a1, r, mistakes, grade) {
+  const natural = grade === 'correct' ? r.natural : '';
+  const tip = r.toneHint && !tipRepeatsNatural(r.toneHint, natural, code());
+  return html`${para(r.feedback)}
   ${correctionHtml(a1, r.correctedText, mistakes)}
-  ${r.toneHint ? html`<div class="tip"><b>${t('ex.toneTip', { tone: toneLabel(w.tone) })}</b> ${r.toneHint}</div>` : ''}
+  ${tip ? html`<div class="tip"><b>${t('ex.toneTip', { tone: toneLabel(w.tone) })}</b> ${r.toneHint}</div>` : ''}
   ${sentenceReveal(w)}
-  ${grade === 'correct' ? naturalBlock(r.natural, r.naturalReason) : ''}`;
+  ${natural ? naturalBlock(natural, r.naturalReason) : ''}`;
+}
 
 // "Write a sentence": the sentence corrected and a more natural phrasing.
 export const writeHtml = (a1, r, mistakes) => html`${para(r.feedback)}${correctionHtml(a1, r.correctedText, mistakes)}
