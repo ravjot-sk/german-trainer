@@ -66,7 +66,7 @@ Write the instruction in ${explainLang(c)}. Keep sentences natural and everyday 
 // rule, in order.
 const KIND_TEXT = (name) => ({
   pair: `pair: correct follows the rule; wrong is the same ${name} sentence breaking it the way learners do. Nothing else differs.`,
-  gap: `gap: write full first (a correct ${name} sentence), then pick answer (the words in full that the rule decides, one connected piece), then sentence: full with answer replaced by ___, everything else exactly as in full, commas included. The gap is where answer stands in full. The gap hides only what the rule decides (an article, an ending, an auxiliary, a preposition, a conjunction), never a word the learner would have to guess, such as a noun for a gender rule: the learner must be able to tell from the sentence which word goes there. If answer contains such a word (a noun, a verb, an adjective), its base form goes in brackets right after the gap (answer "ist gefallen": "___ (fallen)"). Otherwise a base form in brackets is optional.`,
+  gap: `gap: write full first (a correct ${name} sentence), then pick answer (the words in full that the rule decides, one connected piece), then sentence: full with answer replaced by ___, everything else exactly as in full, commas included. The gap is where answer stands in full. The gap hides only what the rule decides (an article, an ending, an auxiliary, a preposition, a conjunction), never a word the learner would have to guess, such as a noun for a gender rule or a number for a plural rule: the learner must be able to tell from the sentence which word goes there. If answer contains such a word (a noun, a verb, an adjective, a number), its base form goes in brackets right after the gap (answer "ist gefallen": "___ (fallen)"), even when it is the same as answer (answer "erfolgreich": "___ (erfolgreich)"). Otherwise a base form in brackets is optional.`,
   transform: `transform: an instruction and 3 short items, each a ${name} sentence or phrase to change (another tense, a subordinate clause, a noun phrase …) so that the result needs the rule. Different verbs or nouns in each item. The instruction says exactly what to change (e.g. "Setze den Satz ins Perfekt.", "Ersetze das Verb durch das Nomen in Klammern."). answer is the model result: the item with only that change, everything else kept as it was. acceptable lists other correct results that also make only that change. target: the word or words in the item the change is about (the noun to put in the plural, the verb to replace …), copied exactly from it; the app underlines them. Empty when the change is about the whole sentence (another tense). Never refer to underlining, bold or other marks in the instruction unless every item has a target.`,
   spot: `spot: write corrected first (2 or 3 correct ${name} sentences), then text: the same with 1 or 2 mistakes against this rule put in and nothing else changed.`,
   produce: 'produce: an instruction to write one new sentence that needs the rule, in a new situation (give the situation and, if useful, a word to use). model is one model sentence.',
@@ -78,7 +78,10 @@ const GAP_EXAMPLE = {
   NOT "Sie hofft ___ (bestehen) ihre Prüfung." (no filling makes that a correct sentence).
 Example gap for "nouns ending in -yse are feminine":
   full "Wir brauchen eine gründliche Analyse." answer "eine" sentence "Wir brauchen ___ gründliche Analyse."
-  NOT "Wir brauchen eine gründliche ___." (that tests guessing the noun, not its gender).`,
+  NOT "Wir brauchen eine gründliche ___." (that tests guessing the noun, not its gender).
+Example gap for "plural forms of nouns":
+  full "Wir brauchen zwei neue Bücher." answer "Bücher" sentence "Wir brauchen zwei neue ___ (Buch)."
+  NOT "Wir brauchen ___ neue Bücher." (that tests guessing a number, not the plural).`,
 };
 
 const EXPLAIN_EXAMPLE = {

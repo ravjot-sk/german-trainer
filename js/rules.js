@@ -214,15 +214,12 @@ const shown = (ex) => [ex.full, ex.sentence, ex.answer, ex.correct, ex.wrong, ex
   ...(ex.items || []).flatMap((x) => [x.prompt, x.answer])].filter(Boolean).join(' ');
 const letters = (s) => String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
 
-// Removes what would confuse: a hint in brackets that gives the answer away, and an
-// explanation that names a trigger the exercise doesn't have or a word it doesn't show
-// (the "ause" of #31). The rule's statement still shows under the exercise.
+// Removes an explanation that names a trigger the exercise doesn't have or a word it doesn't
+// show (the "ause" of #31). The rule's statement still shows under the exercise. A hint in
+// brackets stays even when it is the answer: "ist sehr ___ (erfolgreich)" asks whether the
+// form changes, which is what a rule about unchanged forms tests (#47).
 export function tidy(kind, ex, learnerWords = []) {
   const out = { ...ex };
-  if (kind === 'gap') {
-    const hint = /___\s*[(（]([^)）]*)[)）]/.exec(out.sentence)?.[1];
-    if (hint && hint.trim().toLowerCase() === String(out.answer).trim().toLowerCase()) out.sentence = out.sentence.replace(/(___)\s*[(（][^)）]*[)）]/, '$1');
-  }
   const text = new Set(letters(shown(out)));
   const trigger = String(out.trigger || '').trim();
   const triggerMissing = trigger && !letters(trigger).every((w) => text.has(w));
@@ -249,18 +246,43 @@ export function useExercise(item, kind, ex) {
 // Checks a generated exercise before it is used. A gap must give back its full sentence when
 // the answer is filled in (#30: "Sie hofft ___ (bestehen) ihre Prüfung" had no right answer),
 // and a pair or a text to correct may differ only where the rule's mistakes are.
-// A noun in a German gap's answer that the learner can't know: not named in brackets after
-// the gap, and not the sentence's first word (which is capitalised anyway). "eine gründliche
-// ___ erstellen" with answer "Analyse" tests guessing the word, not the rule (#36).
-export function hiddenNoun(ex) {
-  const hint = (/___\s*[(（]([^)）]*)[)）]/.exec(ex.sentence)?.[1] || '').toLowerCase();
+
+// German words a gap may hide without a hint, because the sentence and the rule decide them:
+// articles and other determiners, pronouns, prepositions, conjunctions, auxiliaries, zu.
+const DETERMINERS = ['d', 'ein', 'kein', 'mein', 'dein', 'sein', 'ihr', 'unser', 'euer', 'eur', 'dies', 'jen', 'jed', 'welch', 'manch', 'solch', 'all'];
+const FUNCTION_WORDS = new Set([
+  ...DETERMINERS.flatMap((d) => ['', 'e', 'en', 'em', 'er', 'es'].map((e) => d + e)),
+  'der', 'die', 'das', 'den', 'dem', 'des', 'dessen', 'deren', 'denen',
+  'ich', 'du', 'er', 'sie', 'es', 'wir', 'ihr', 'mich', 'dich', 'ihn', 'uns', 'euch', 'mir', 'dir', 'ihm', 'ihnen', 'sich', 'man',
+  'wer', 'wen', 'wem', 'wessen', 'was', 'wo', 'wohin', 'woher', 'wann', 'wie', 'warum',
+  'an', 'am', 'ans', 'auf', 'aus', 'bei', 'beim', 'bis', 'durch', 'für', 'gegen', 'hinter', 'in', 'im', 'ins', 'mit', 'nach', 'neben',
+  'ohne', 'seit', 'über', 'um', 'unter', 'von', 'vom', 'vor', 'während', 'wegen', 'zu', 'zum', 'zur', 'zwischen', 'trotz', 'statt',
+  'anstatt', 'außer', 'gegenüber', 'entlang', 'innerhalb', 'außerhalb', 'dank', 'laut',
+  'und', 'oder', 'aber', 'denn', 'sondern', 'dass', 'ob', 'weil', 'wenn', 'als', 'da', 'damit', 'obwohl', 'bevor', 'nachdem',
+  'seitdem', 'sobald', 'solange', 'sodass', 'so', 'falls', 'indem', 'nicht',
+  'bin', 'bist', 'ist', 'sind', 'seid', 'war', 'warst', 'waren', 'wart', 'gewesen', 'wäre', 'wärst', 'wären', 'wärt',
+  'habe', 'hast', 'hat', 'haben', 'habt', 'hatte', 'hattest', 'hatten', 'hattet', 'hätte', 'hättest', 'hätten', 'hättet', 'gehabt',
+  'werde', 'wirst', 'wird', 'werden', 'werdet', 'wurde', 'wurdest', 'wurden', 'wurdet', 'würde', 'würdest', 'würden', 'würdet', 'worden', 'geworden',
+]);
+// darauf, worüber …
+const PRONOMINAL_ADVERB = /^(da|wo)r?(an|auf|aus|bei|durch|für|gegen|hinter|in|mit|nach|neben|über|um|unter|von|vor|zu|zwischen)$/;
+const fold = (s) => s.toLowerCase().replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ß/g, 'ss');
+
+// A word in a German gap's answer that the learner can't know from the sentence: anything but
+// a function word (an adjective, a verb, a number, a noun) with no hint in brackets after the
+// gap. "ist sehr ___" with answer "erfolgreich" (#47) and "brauchen wir ___ neue Computer"
+// with answer "zwei" (#45) test guessing a word, not the rule. A noun must be named by its
+// start in the hint ("Analyse" for "Analysen", "Buch" for "Bücher"), since "eine gründliche
+// ___ (Analyse)" is the only fair way to hide one (#36); other words take any hint, so a verb
+// works with its infinitive ("___ (fallen)" for "ist gefallen").
+export function hiddenWord(ex) {
+  const hint = fold(/___\s*[(（]([^)）]*)[)）]/.exec(ex.sentence)?.[1] || '').trim();
   const first = String(ex.full || '').trim().startsWith(String(ex.answer).trim());
-  const words = String(ex.answer).trim().split(/\s+/);
-  return words.some((w, i) => {
-    const bare = w.replace(/[^\p{L}-]/gu, '');
-    if (!/^\p{Lu}/u.test(bare) || bare.length < 4 || (i === 0 && first)) return false;
-    // Named if the hint has the word's start (base form "Analyse" for "Analysen").
-    return !hint.includes(bare.toLowerCase().slice(0, 4));
+  return String(ex.answer).trim().split(/\s+/).some((w, i) => {
+    const bare = w.replace(/[^\p{L}\p{N}-]/gu, '');
+    if (!bare || FUNCTION_WORDS.has(bare.toLowerCase()) || PRONOMINAL_ADVERB.test(bare.toLowerCase())) return false;
+    const noun = /^\p{Lu}/u.test(bare) && !(i === 0 && first);
+    return noun ? !hint.includes(fold(bare).slice(0, 4)) : !hint;
   });
 }
 
@@ -268,13 +290,13 @@ const sameText = (a, b) => {
   const n = (s) => String(s || '').replace(/\s+/g, ' ').replace(/\s+([,.!?;:。、！？])/g, '$1').trim();
   return n(a) === n(b);
 };
-// lang: the rule's language. In German a gap may not hide a noun without naming it (#36).
+// lang: the rule's language. In German a gap may not hide a word without naming it (#36, #45, #47).
 export function valid(kind, ex, lang = '') {
   if (!ex || typeof ex !== 'object') return false;
   switch (kind) {
     case 'pair': return !!(ex.correct && ex.wrong && ex.correct.trim() !== ex.wrong.trim()) && diffSize(ex.wrong, ex.correct).hunks === 1;
     case 'gap': return !!(ex.sentence && ex.sentence.split('___').length === 2 && ex.answer && ex.full) && sameText(fillGap(ex.sentence, ex.answer), ex.full)
-      && (lang !== 'de' || !hiddenNoun(ex));
+      && (lang !== 'de' || !hiddenWord(ex));
     case 'transform': return !!(ex.instruction && Array.isArray(ex.items) && ex.items.length && ex.items.every((x) => x.prompt && x.answer && !sameText(x.prompt, x.answer) && targetFits(x)));
     case 'spot': {
       if (!(ex.text && ex.corrected && ex.text.trim() !== ex.corrected.trim())) return false;

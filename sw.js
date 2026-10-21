@@ -2,7 +2,7 @@
 // even on a weak signal. A new version is downloaded in the background and waits until the app
 // asks for it (the "Neue Version" bar, or the next start); see app.js.
 // Gemini and Firebase requests go to other origins and are never cached.
-const VERSION = 'gt-v28';
+const VERSION = 'gt-v29';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/appstate.js', './js/html.js', './js/store.js', './js/i18n.js', './js/i18n/de.js', './js/i18n/en.js', './js/srs.js',
