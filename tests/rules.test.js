@@ -269,7 +269,7 @@ test('explanations that bring up the learner\'s own mistake or a missing trigger
   const leaky = { ...gap, explanation: 'Nicht Herauseforderung schreiben.' };
   assert.equal(tidy('gap', leaky, mistakeWords([issue31.mistake])).explanation, '');
   assert.equal(tidy('pair', { correct: 'Er ist gekommen.', wrong: 'Er hat gekommen.', trigger: 'gegangen', explanation: 'x' }).explanation, '');
-  assert.equal(tidy('gap', { ...gap, sentence: 'Wir sind ___ (gegangen).', answer: 'gegangen' }).sentence, 'Wir sind ___.', 'a hint that is the answer goes');
+  assert.equal(tidy('gap', { ...gap, sentence: 'Wir sind ___ (gegangen).', answer: 'gegangen' }).sentence, 'Wir sind ___ (gegangen).', 'a hint that is the answer stays (#47)');
   const leakyArticle = { ...leaky, sentence: 'Das Projekt stellt uns vor ___ große Herausforderung.', answer: 'eine' };
   const it = addSet(newRuleItem(rule(), NOW), { ...set(), gap: leakyArticle }, { learnerWords: mistakeWords([issue31.mistake]) });
   assert.equal(it.pool.gap[0].explanation, '', 'cleared when it joins the pool');
@@ -362,4 +362,24 @@ test('#39: the ß/ss rule and spelling-only mistakes go once', () => {
   assert.equal(data.reviewItems.length, 1);
   assert.equal(data.version, DATA_VERSION);
   assert.ok(!migrateData(data, () => {}), 'only once');
+});
+
+// ---- #45, #47 ----
+
+test('#45, #47: a German gap may not hide an adjective, verb or number without a hint', () => {
+  const computer = { full: 'Für das Projekt brauchen wir zwei neue Computer.', sentence: 'Für das Projekt brauchen wir ___ neue Computer.', answer: 'zwei' };
+  assert.ok(!valid('gap', computer, 'de'), '#45: any number fits');
+  const projekt = { full: 'Das neue Projekt ist sehr erfolgreich.', sentence: 'Das neue Projekt ist sehr ___.', answer: 'erfolgreich' };
+  assert.ok(!valid('gap', projekt, 'de'), '#47: any adjective fits');
+  const hinted = { ...projekt, sentence: 'Das neue Projekt ist sehr ___ (erfolgreich).' };
+  assert.ok(valid('gap', hinted, 'de'), 'named in brackets, even as the answer itself');
+  assert.equal(tidy('gap', hinted).sentence, hinted.sentence, 'and the hint is kept');
+  assert.ok(valid('gap', { full: 'Wir brauchen zwei neue Bücher.', sentence: 'Wir brauchen zwei neue ___ (Buch).', answer: 'Bücher' }, 'de'), 'a plural with umlaut matches its singular');
+  assert.ok(valid('gap', { full: 'Er ist vom Rad gefallen.', sentence: 'Er ist vom Rad ___ (fallen).', answer: 'gefallen' }, 'de'), 'a verb with its infinitive');
+  for (const [full, answer] of [['Ich warte auf den Bus.', 'auf den'], ['Worauf wartest du?', 'Worauf'], ['Sie hat es ihm gegeben.', 'hat'], ['Er sagt, dass er kommt.', 'dass'], ['Ich gebe es meinem Bruder.', 'meinem']]) {
+    assert.ok(valid('gap', { full, answer, sentence: full.replace(answer, '___') }, 'de'), `${answer} is decided by the rule`);
+  }
+  assert.ok(!valid('gap', { full: 'Ich habe einen neuen Laptop.', sentence: 'Ich habe einen ___ Laptop.', answer: 'neuen' }, 'de'), 'an adjective ending needs its adjective named');
+  const item = { ...newRuleItem(rule({ category: 'number', key: 'plural_forms' }), NOW), pool: { gap: [computer] } };
+  assert.deepEqual(poolOf(item).gap, [], 'the saved one from the report is no longer served');
 });
